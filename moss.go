@@ -10,13 +10,13 @@
 //  governing permissions and limitations under the License.
 
 // Package moss stands for "memory-oriented sorted segments", and
-// provides a data structure that manages an ordered collection of
+// provides a data structure that manages an ordered Collection of
 // key-val entries.
 //
 // The design is similar to a (much) simplified LSM tree, in that
 // there is a stack of sorted key-val arrays or "segments".  To
-// incorporate the next batch (see: ExecuteBatch()), we sort the
-// incoming batch of key-val mutations into a "segment" and atomically
+// incorporate the next Batch (see: ExecuteBatch()), we sort the
+// incoming Batch of key-val mutations into a "segment" and atomically
 // push the new segment onto the stack.  A higher segment in the stack
 // will shadow entries of the same key from lower segments.
 //
@@ -36,7 +36,7 @@
 //
 // In this design, stacks are treated as immutable via a copy-on-write
 // approach whenever a stack is "modified".  So, readers and writers
-// essentially don't block each other, and taking a snapshot is also a
+// essentially don't block each other, and taking a Snapshot is also a
 // similarly cheap operation by cloning a stack.
 
 package moss
@@ -57,7 +57,7 @@ type Collection interface {
 	// Close synchronously stops background tasks and releases resources.
 	Close() error
 
-	// Snapshot returns a stable snapshot of the key-value entries.
+	// Snapshot returns a stable Snapshot of the key-value entries.
 	Snapshot() (Snapshot, error)
 
 	// NewBatch returns a new Batch instance with preallocated
@@ -97,13 +97,13 @@ type Batch interface {
 	// Close must be invoked to release resources.
 	Close() error
 
-	// Set creates or updates an key-val entry in the collection.  The
+	// Set creates or updates an key-val entry in the Collection.  The
 	// key must be unique (not repeated) within the Batch.  Set copies
 	// the key and val bytes into the Batch, so the key-val memory may
 	// be reused by the caller.
 	Set(key, val []byte) error
 
-	// Del deletes a key-val entry from the collection.  The key must
+	// Del deletes a key-val entry from the Collection.  The key must
 	// be unique (not repeated) within the Batch.  Del copies the key
 	// bytes into the Batch, so the key bytes may be memory by the
 	// caller.  Del() on a non-existent key results in a nil error.
@@ -152,10 +152,10 @@ type Iterator interface {
 	Close() error
 
 	// Next moves the Iterator to the next key-val entry and will
-	// return ErrIteratorDone if the iterator is done.
+	// return ErrIteratorDone if the Iterator is done.
 	Next() error
 
-	// Current returns ErrIteratorDone when the iterator is done.
+	// Current returns ErrIteratorDone when the Iterator is done.
 	// Otherwise, Current() returns the current key and val, which
 	// should be treated as immutable and as "owned" by the Iterator.
 	// The key and val bytes will remain available until the next call
@@ -176,7 +176,7 @@ type MergeOperator interface {
 	// FullMerge().
 	PartialMerge(key, leftOperand, rightOperand []byte) ([]byte, bool)
 
-	// Name returns an application specific identifier for this merge
-	// operator.
+	// Name returns an identifier for this merge operator, which might
+	// be used for logging / debugging.
 	Name() string
 }
