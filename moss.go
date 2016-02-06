@@ -984,6 +984,35 @@ func (iter *iterator) Next() error {
 		return ErrIteratorDone
 	}
 
+	// ---------------------------------------------
+	// Special case when only have 1 cursor left.
+
+	if len(iter.cursors) == 1 {
+		for {
+			next := &iter.cursors[0]
+			next.pos += 1
+			next.op, next.k, next.v =
+				iter.bs.a[next.bsIndex].getOperationKeyVal(next.pos)
+			if (next.op == 0 && next.k == nil && next.v == nil) ||
+				(iter.endKeyExclusive != nil &&
+					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
+				heap.Pop(iter)
+
+				return ErrIteratorDone
+			}
+
+			if !iter.includeDeletions &&
+				iter.cursors[0].op == operationDel {
+				continue
+			}
+
+			return nil
+		}
+	}
+
+	// ---------------------------------------------
+	// Otherwise use min-heap.
+
 	lastK := iter.cursors[0].k
 
 	for {
