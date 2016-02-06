@@ -241,9 +241,9 @@ const operationDel = uint64(0x0200000000000000)
 // segmentStack.  Iterator also implements the sort.Interface and
 // heap.Interface on its cursors.
 type iterator struct {
-	bs *segmentStack
+	ss *segmentStack
 
-	cursors []cursor // The len(cursors) <= len(bs.a).
+	cursors []cursor // The len(cursors) <= len(ss.a).
 
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
@@ -253,8 +253,8 @@ type iterator struct {
 // A cursor rerpresents a logical entry position inside a segment in a
 // segmentStack.
 type cursor struct {
-	bsIndex int // Index into Iterator.bs.a.
-	pos     int // Logical entry position into Iterator.bs.a[bsIndex].kvs.
+	ssIndex int // Index into Iterator.ss.a.
+	pos     int // Logical entry position into Iterator.ss.a[ssIndex].kvs.
 
 	op uint64
 	k  []byte
@@ -549,12 +549,12 @@ OUTER:
 
 // merge returns a new segmentStack, merging all the segments at
 // newTopLevel and higher.
-func (bs *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
-	totOps := len(bs.a[newTopLevel].kvs) / 2
-	totBytes := len(bs.a[newTopLevel].buf)
+func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
+	totOps := len(ss.a[newTopLevel].kvs) / 2
+	totBytes := len(ss.a[newTopLevel].buf)
 
 	iterPrealloc, err :=
-		bs.startIterator(nil, nil, true, newTopLevel+1)
+		ss.startIterator(nil, nil, true, newTopLevel+1)
 	if err != nil {
 		return nil, err
 	}
@@ -589,13 +589,14 @@ func (bs *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		return nil, err
 	}
 
-	iter, err := bs.startIterator(nil, nil, true, newTopLevel)
+	iter, err := ss.startIterator(nil, nil, true, newTopLevel)
 	if err != nil {
 		return nil, err
 	}
 
 	defer iter.Close()
 
+OUTER:
 	for {
 		op, key, val, err := iter.current()
 		if err == ErrIteratorDone {
@@ -603,6 +604,27 @@ func (bs *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+
+		if len(iter.cursors) == 1 {
+			// When only 1 cursor remains, copy the remains of the
+			// last segment more directly instead of Next()'ing
+			// through the iterator.
+			cursor := &iter.cursors[0]
+
+			segment := iter.ss.a[cursor.ssIndex]
+			segmentOps := len(segment.kvs) / 2
+
+			for pos := cursor.pos; pos < segmentOps; pos++ {
+				op, k, v := segment.getOperationKeyVal(pos)
+
+				err = mergedSegment.mutate(op, k, v)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			break OUTER
 		}
 
 		err = mergedSegment.mutate(op, key, val)
@@ -621,7 +643,7 @@ func (bs *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 
 	var a []*segment
 
-	a = append(a, bs.a[0:newTopLevel]...)
+	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
 
 	return &segmentStack{a: a}, nil
@@ -664,7 +686,7 @@ func (m *collection) runPersister() {
 // ------------------------------------------------------
 
 // Close releases associated resources.
-func (bs *segmentStack) Close() error {
+func (ss *segmentStack) Close() error {
 	return nil
 }
 
@@ -825,9 +847,9 @@ func (a *segment) Less(i, j int) bool {
 // ------------------------------------------------------
 
 // Get retrieves a val from the segmentStack.
-func (bs *segmentStack) Get(key []byte) ([]byte, error) {
-	for j := len(bs.a) - 1; j >= 0; j-- {
-		b := bs.a[j]
+func (ss *segmentStack) Get(key []byte) ([]byte, error) {
+	for j := len(ss.a) - 1; j >= 0; j-- {
+		b := ss.a[j]
 
 		operation, k, v :=
 			b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
@@ -900,10 +922,10 @@ func (b *segment) getOperationKeyVal(pos int) (
 // A startKeyInclusive of nil means the logical "bottom-most" possible
 // key and an endKeyExclusive of nil means the logical "top-most"
 // possible key.
-func (bs *segmentStack) StartIterator(
+func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 ) (Iterator, error) {
-	return bs.startIterator(startKeyInclusive, endKeyExclusive,
+	return ss.startIterator(startKeyInclusive, endKeyExclusive,
 		false, 0)
 }
 
@@ -923,22 +945,22 @@ func (bs *segmentStack) StartIterator(
 // startIterator can ignore lower segments, via the minLevel
 // parameter.  For example, to ignore the lowest, 0th segment, use
 // minLevel of 1.
-func (bs *segmentStack) startIterator(
+func (ss *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	includeDeletions bool,
 	minLevel int,
 ) (*iterator, error) {
 	iter := &iterator{
-		bs:      bs,
-		cursors: make([]cursor, 0, len(bs.a)),
+		ss:      ss,
+		cursors: make([]cursor, 0, len(ss.a)),
 
 		startKeyInclusive: startKeyInclusive,
 		endKeyExclusive:   endKeyExclusive,
 		includeDeletions:  includeDeletions,
 	}
 
-	for bsIndex := minLevel; bsIndex < len(bs.a); bsIndex++ {
-		b := bs.a[bsIndex]
+	for ssIndex := minLevel; ssIndex < len(ss.a); ssIndex++ {
+		b := ss.a[ssIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)
 
@@ -953,7 +975,7 @@ func (bs *segmentStack) startIterator(
 		}
 
 		iter.cursors = append(iter.cursors, cursor{
-			bsIndex: bsIndex,
+			ssIndex: ssIndex,
 			pos:     pos,
 			op:      op,
 			k:       k,
@@ -992,7 +1014,7 @@ func (iter *iterator) Next() error {
 			next := &iter.cursors[0]
 			next.pos += 1
 			next.op, next.k, next.v =
-				iter.bs.a[next.bsIndex].getOperationKeyVal(next.pos)
+				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
 			if (next.op == 0 && next.k == nil && next.v == nil) ||
 				(iter.endKeyExclusive != nil &&
 					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
@@ -1019,7 +1041,7 @@ func (iter *iterator) Next() error {
 		next := &iter.cursors[0]
 		next.pos += 1
 		next.op, next.k, next.v =
-			iter.bs.a[next.bsIndex].getOperationKeyVal(next.pos)
+			iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
 		if (next.op == 0 && next.k == nil && next.v == nil) ||
 			(iter.endKeyExclusive != nil &&
 				bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
@@ -1076,7 +1098,7 @@ func (iter *iterator) Less(i, j int) bool {
 		return false
 	}
 
-	return iter.cursors[i].bsIndex > iter.cursors[j].bsIndex
+	return iter.cursors[i].ssIndex > iter.cursors[j].ssIndex
 }
 
 func (iter *iterator) Swap(i, j int) {

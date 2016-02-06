@@ -479,7 +479,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 
 			if false {
 				fmt.Printf("  itr: %#v, %s, %s\n", itr, startKey, endKey)
-				for i, b := range itr.bs.a {
+				for i, b := range itr.ss.a {
 					fmt.Printf("    batch: %d %#v\n", i, b)
 				}
 				for i, c := range itr.cursors {
@@ -960,7 +960,7 @@ func testOps(t *testing.T, m Collection) {
 
 			if false {
 				fmt.Printf("  itr: %#v, %s, %s\n", itr, startKey, endKey)
-				for i, b := range itr.bs.a {
+				for i, b := range itr.ss.a {
 					fmt.Printf("    batch: %d %#v\n", i, b)
 				}
 				for i, c := range itr.cursors {
