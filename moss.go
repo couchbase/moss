@@ -237,9 +237,9 @@ const maskValLength = uint64(0x00000000FFFFFFFF)
 const operationSet = uint64(0x0100000000000000)
 const operationDel = uint64(0x0200000000000000)
 
-// An Iterator is implemented by tracking a min-heap "scan-line" of
-// cursors through a segmentStack.  Iterator also implements the
-// heap.Interface on the cursors.
+// An iterator tracks a min-heap "scan-line" of cursors through a
+// segmentStack.  Iterator also implements the sort.Interface and
+// heap.Interface on its cursors.
 type iterator struct {
 	bs *segmentStack
 
@@ -250,6 +250,8 @@ type iterator struct {
 	includeDeletions  bool
 }
 
+// A cursor rerpresents a logical entry position inside a segment in a
+// segmentStack.
 type cursor struct {
 	bsIndex int // Index into Iterator.bs.a.
 	pos     int // Logical entry position into Iterator.bs.a[bsIndex].kvs.
@@ -418,7 +420,10 @@ func (m *collection) runMerger() {
 
 OUTER:
 	for {
-		notifyPongChs(pongChs) // Notify pongChs from last loop.
+		// ---------------------------------------------
+		// Notify pongChs from last loop.
+
+		notifyPongChs(pongChs)
 		pongChs = nil
 
 		// ---------------------------------------------
@@ -526,6 +531,9 @@ OUTER:
 				len(nextStackBase.a[len(nextStackBase.a)-1].kvs)/2,
 				soHeight)
 		}
+
+		// ---------------------------------------------
+		// Notify persister.
 
 		if m.awakePersisterCh != nil && dirty {
 			m.awakePersisterCh <- stackBase
@@ -649,13 +657,7 @@ func (m *collection) runPersister() {
 			}
 		}
 
-		if persistableSS == nil ||
-			len(persistableSS.a) != 1 {
-			// TODO: err handling
-			continue
-		}
-
-		// TODO: actually persist the "height of 1" persistableSS.
+		// TODO: actually persist the persistableSS.
 	}
 }
 
@@ -668,6 +670,7 @@ func (bs *segmentStack) Close() error {
 
 // ------------------------------------------------------
 
+// newSegment allocates a segment with hinted amount of resources.
 func newSegment(totalOps, totalKeyValBytes int) (
 	*segment, error) {
 	return &segment{
@@ -710,7 +713,7 @@ func (a *segment) mutate(operation uint64, key, val []byte) error {
 
 func (a *segment) mutateEx(operation uint64,
 	keyStart, keyLength, valLength int) error {
-	if keyLength <= 0 {
+	if keyLength <= 0 && valLength <= 0 {
 		keyStart = 0
 	}
 
@@ -752,7 +755,7 @@ func (a *segment) Alloc(numBytes int) ([]byte, error) {
 }
 
 // AllocSet is like Set(), but the caller must provide []byte
-// parameters that came from Alloc().
+// parameters that came from Alloc(), for less buffer copying.
 func (a *segment) AllocSet(keyFromAlloc, valFromAlloc []byte) error {
 	bufCap := cap(a.buf)
 
@@ -763,7 +766,7 @@ func (a *segment) AllocSet(keyFromAlloc, valFromAlloc []byte) error {
 }
 
 // AllocDel is like Del(), but the caller must provide []byte
-// parameters that came from Alloc().
+// parameters that came from Alloc(), for less buffer copying.
 func (a *segment) AllocDel(keyFromAlloc []byte) error {
 	bufCap := cap(a.buf)
 
@@ -843,7 +846,9 @@ func (bs *segmentStack) Get(key []byte) ([]byte, error) {
 // ------------------------------------------------------
 
 // findStartKeyInclusivePos returns the logical entry position for the
-// given start key (inclusive).
+// given (inclusive) start key.  With segment keys of [b, d, f],
+// looking for 'c' will return 1.  Looking for 'd' will return 1.
+// Looking for 'g' will return 3.  Looking for 'a' will return 0.
 func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	n := len(b.kvs) / 2
 
@@ -886,9 +891,11 @@ func (b *segment) getOperationKeyVal(pos int) (
 // ------------------------------------------------------
 
 // StartIterator returns a new iterator instance based on the
-// segmentStack / Snapshot.  On success, the returned Iterator will be
-// positioned so that Iterator.Current() will either provide the first
-// entry in the range or ErrIteratorDone.
+// segmentStack.
+//
+// On success, the returned Iterator will be positioned so that
+// Iterator.Current() will either provide the first entry in the
+// iteration range or ErrIteratorDone.
 //
 // A startKeyInclusive of nil means the logical "bottom-most" possible
 // key and an endKeyExclusive of nil means the logical "top-most"
@@ -896,9 +903,26 @@ func (b *segment) getOperationKeyVal(pos int) (
 func (bs *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 ) (Iterator, error) {
-	return bs.startIterator(startKeyInclusive, endKeyExclusive, false, 0)
+	return bs.startIterator(startKeyInclusive, endKeyExclusive,
+		false, 0)
 }
 
+// startIterator returns a new iterator instance on the segmentStack.
+//
+// On success, the returned Iterator will be positioned so that
+// Iterator.Current() will either provide the first entry in the
+// iteration range or ErrIteratorDone.
+//
+// A startKeyInclusive of nil means the logical "bottom-most" possible
+// key and an endKeyExclusive of nil means the logical "top-most"
+// possible key.
+//
+// startIterator can optionally include deletion operations in the
+// enumeration via the includeDeletions flag.
+//
+// startIterator can ignore lower segments, via the minLevel
+// parameter.  For example, to ignore the lowest, 0th segment, use
+// minLevel of 1.
 func (bs *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	includeDeletions bool,
@@ -913,10 +937,8 @@ func (bs *segmentStack) startIterator(
 		includeDeletions:  includeDeletions,
 	}
 
-	for bsIndex, b := range bs.a {
-		if bsIndex < minLevel {
-			continue
-		}
+	for bsIndex := minLevel; bsIndex < len(bs.a); bsIndex++ {
+		b := bs.a[bsIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)
 
@@ -992,7 +1014,7 @@ func (iter *iterator) Next() error {
 }
 
 // Current returns ErrIteratorDone if the iterator is done.
-// Otherwise, Current() returns the current key, val, which should
+// Otherwise, Current() returns the current key and val, which should
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
 func (iter *iterator) Current() (key, val []byte, err error) {
