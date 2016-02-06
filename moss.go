@@ -175,7 +175,7 @@ type collection struct {
 	options CollectionOptions
 
 	stopCh          chan struct{}
-	pingMergerCh    chan chan struct{}
+	pingMergerCh    chan ping
 	doneMergerCh    chan struct{}
 	donePersisterCh chan struct{}
 
@@ -261,6 +261,12 @@ type cursor struct {
 	v  []byte
 }
 
+// A ping message is used to notify and wait for asynchronous tasks.
+type ping struct {
+	kind   string
+	pongCh chan struct{}
+}
+
 // ------------------------------------------------------
 
 // NewCollection returns a new, unstarted Collection instance.
@@ -269,7 +275,7 @@ func NewCollection(options CollectionOptions) (
 	return &collection{
 		options:         options,
 		stopCh:          make(chan struct{}),
-		pingMergerCh:    make(chan chan struct{}, 10),
+		pingMergerCh:    make(chan ping, 10),
 		doneMergerCh:    make(chan struct{}),
 		donePersisterCh: make(chan struct{}),
 
@@ -361,9 +367,15 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 // ------------------------------------------------------
 
 // WaitForMerger blocks until the merger has run another cycle.
-func (m *collection) WaitForMerger() error {
+// Providing a kind of "mergeAll" forces a full merge and can be
+// useful for applications that are no longer performing mutations and
+// that want to optimize for retrievals.
+func (m *collection) WaitForMerger(kind string) error {
 	pongCh := make(chan struct{})
-	m.pingMergerCh <- pongCh
+	m.pingMergerCh <- ping{
+		kind:   kind,
+		pongCh: pongCh,
+	}
 	<-pongCh
 	return nil
 }
@@ -403,17 +415,19 @@ func (m *collection) runMerger() {
 		minMergePercentage = DefaultCollectionOptions.MinMergePercentage
 	}
 
-	var pongChs []chan struct{}
+	pings := []ping{}
 
-	notifyPongChs := func(pongChsIn []chan struct{}) {
-		for _, pongCh := range pongChsIn {
-			close(pongCh)
+	replyToPings := func(pings []ping) {
+		for _, ping := range pings {
+			if ping.pongCh != nil {
+				close(ping.pongCh)
+			}
 		}
 	}
 
 	defer func() {
-		notifyPongChs(pongChs)
-		pongChs = nil
+		replyToPings(pings)
+		pings = pings[0:0]
 	}()
 
 	// ---------------------------------------------------
@@ -421,10 +435,10 @@ func (m *collection) runMerger() {
 OUTER:
 	for {
 		// ---------------------------------------------
-		// Notify pongChs from last loop.
+		// Notify ping'ers from the previous loop.
 
-		notifyPongChs(pongChs)
-		pongChs = nil
+		replyToPings(pings)
+		pings = pings[0:0]
 
 		// ---------------------------------------------
 		// Wait for new stackOpen entries.
@@ -440,12 +454,19 @@ OUTER:
 
 		m.m.Unlock()
 
+		mergeAll := false
+
 		if awakeMergerCh != nil {
 			select {
 			case <-m.stopCh:
 				return
-			case pongCh := <-m.pingMergerCh:
-				pongChs = append(pongChs, pongCh)
+
+			case ping := <-m.pingMergerCh:
+				pings = append(pings, ping)
+				if ping.kind == "mergeAll" {
+					mergeAll = true
+				}
+
 			case <-awakeMergerCh:
 				// NO-OP.
 			}
@@ -453,13 +474,17 @@ OUTER:
 
 		// ---------------------------------------------
 
-	COLLECT_MORE_PONGS:
+	COLLECT_MORE_PINGS:
 		for {
 			select {
-			case pongCh := <-m.pingMergerCh:
-				pongChs = append(pongChs, pongCh)
+			case ping := <-m.pingMergerCh:
+				pings = append(pings, ping)
+				if ping.kind == "mergeAll" {
+					mergeAll = true
+				}
+
 			default:
-				break COLLECT_MORE_PONGS
+				break COLLECT_MORE_PINGS
 			}
 		}
 
@@ -493,16 +518,21 @@ OUTER:
 		// Merge multiple stackBase layers.
 
 		if len(stackBase.a) > 1 {
-			maxTopLevel := len(stackBase.a) - 2
 			newTopLevel := 0
-			for newTopLevel < maxTopLevel {
-				numX0 := len(stackBase.a[newTopLevel].kvs)
-				numX1 := len(stackBase.a[newTopLevel+1].kvs)
-				if (float64(numX1) / float64(numX0)) > minMergePercentage {
-					break
-				}
 
-				newTopLevel += 1
+			// If we have not been asked to merge all segments, then
+			// compute a newTopLevel based on minMergePercentage's.
+			if !mergeAll {
+				maxTopLevel := len(stackBase.a) - 2
+				for newTopLevel < maxTopLevel {
+					numX0 := len(stackBase.a[newTopLevel].kvs)
+					numX1 := len(stackBase.a[newTopLevel+1].kvs)
+					if (float64(numX1) / float64(numX0)) > minMergePercentage {
+						break
+					}
+
+					newTopLevel += 1
+				}
 			}
 
 			nextStackBase, err := stackBase.merge(newTopLevel)
@@ -525,7 +555,7 @@ OUTER:
 			stackBase = nextStackBase
 
 			m.Log("stackBase height: %d,"+
-				" top level size: %d,"+
+				" stackBase top size: %d,"+
 				" stackOpen height: %d\n",
 				len(nextStackBase.a),
 				len(nextStackBase.a[len(nextStackBase.a)-1].kvs)/2,
@@ -533,7 +563,7 @@ OUTER:
 		}
 
 		// ---------------------------------------------
-		// Notify persister.
+		// Optionally notify persister.
 
 		if m.awakePersisterCh != nil && dirty {
 			m.awakePersisterCh <- stackBase
