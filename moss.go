@@ -995,11 +995,12 @@ func (iter *iterator) Next() error {
 			(iter.endKeyExclusive != nil &&
 				bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
 			heap.Pop(iter)
-			if len(iter.cursors) <= 0 {
-				return ErrIteratorDone
-			}
 		} else {
 			heap.Fix(iter, 0)
+		}
+
+		if len(iter.cursors) <= 0 {
+			return ErrIteratorDone
 		}
 
 		if !bytes.Equal(iter.cursors[0].k, lastK) {
