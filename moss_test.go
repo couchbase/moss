@@ -25,7 +25,7 @@ type testMergeOperatorAppend struct {
 	numPartial int
 }
 
-func (mo *testMergeOperatorAppend)	Name() string {
+func (mo *testMergeOperatorAppend) Name() string {
 	return "testMergeOperatorAppend"
 }
 
@@ -256,17 +256,6 @@ func TestBatchSort(t *testing.T) {
 	if i != 3 {
 		t.Errorf("wrong i")
 	}
-}
-
-func TestOpsNoAsyncMergeBatchSize1(t *testing.T) {
-	m, err := NewCollection(CollectionOptions{})
-	if err != nil || m == nil {
-		t.Errorf("expected moss")
-	}
-
-	// NOTE: Not Start()'ing to avoid concurrent merging.
-
-	testOpsBatchSize1(t, m)
 }
 
 func TestOpsAsyncMergeBatchSize1(t *testing.T) {
@@ -577,19 +566,6 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 			}
 		}
 	}
-}
-
-func TestOpsNoAsyncMerge(t *testing.T) {
-	m, err := NewCollection(CollectionOptions{
-		MergeOperator: &testMergeOperatorAppend{},
-	})
-	if err != nil || m == nil {
-		t.Errorf("expected moss")
-	}
-
-	// NOTE: Not Start()'ing to avoid concurrent merging.
-
-	testOps(t, m)
 }
 
 func TestOpsAsyncMerge(t *testing.T) {

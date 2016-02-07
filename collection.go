@@ -61,11 +61,20 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 		return nil
 	}
 
+	maxStackOpenHeight := m.options.MaxStackOpenHeight
+	if maxStackOpenHeight <= 0 {
+		maxStackOpenHeight = DefaultCollectionOptions.MaxStackOpenHeight
+	}
+
 	bsorted := b.sort()
 
 	stackOpen := &segmentStack{collection: m}
 
 	m.m.Lock()
+
+	for m.stackOpen != nil && len(m.stackOpen.a) >= maxStackOpenHeight {
+		m.stackOpenCond.Wait()
+	}
 
 	if m.stackOpen != nil {
 		stackOpen.a = append(stackOpen.a, m.stackOpen.a...)
@@ -218,6 +227,9 @@ OUTER:
 			m.snapshot(func(ss *segmentStack) {
 				m.stackOpen = nil
 				m.stackBase = ss
+
+				// Awake any writers waiting for more stackOpen space.
+				m.stackOpenCond.Signal()
 			})
 
 		// ---------------------------------------------
@@ -232,26 +244,31 @@ OUTER:
 				newTopLevel = stackBase.calcTargetTopLevel()
 			}
 
-			nextStackBase, err := stackBase.merge(newTopLevel)
+			mergedStackBase, err := stackBase.merge(newTopLevel)
 			if err != nil {
 				// TODO: err handling.
+
+				m.Log("collection: runMerger stackBase.merge,"+
+					" newTopLevel: %d, err: %v",
+					newTopLevel, err)
+
 				continue OUTER
 			}
 
 			m.m.Lock()
-			m.stackBase = nextStackBase
+			m.stackBase = mergedStackBase
 			m.m.Unlock()
 
-			stackBase = nextStackBase
-
-			m.Log("prev stackBase height: %d,"+
-				" prev stackOpen height: %d"+
-				" stackBase height: %d,"+
-				" stackBase top size: %d,",
-				numWasBase, numWasOpen,
-				len(stackBase.a),
-				len(stackBase.a[len(stackBase.a)-1].kvs)/2)
+			stackBase = mergedStackBase
 		}
+
+		m.Log("prev stackBase height: %d,"+
+			" prev stackOpen height: %d"+
+			" stackBase height: %d,"+
+			" stackBase top size: %d",
+			numWasBase, numWasOpen,
+			len(stackBase.a),
+			len(stackBase.a[len(stackBase.a)-1].kvs)/2)
 
 		// ---------------------------------------------
 		// Optionally notify persister.

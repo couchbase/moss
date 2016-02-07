@@ -30,6 +30,8 @@ type collection struct {
 
 	m sync.Mutex // Protects the fields that follow.
 
+	stackOpenCond *sync.Cond // For waiting for stackOpen availability.
+
 	// New segments will be pushed onto stackOpen by ExecuteBatch().
 	stackOpen *segmentStack
 

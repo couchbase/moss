@@ -43,6 +43,7 @@ package moss
 
 import (
 	"errors"
+	"sync"
 )
 
 var ErrAllocTooLarge = errors.New("alloc-too-large")
@@ -89,6 +90,11 @@ type CollectionOptions struct {
 	// merged downards.
 	MinMergePercentage float64
 
+	// MaxStackOpenHeight is the max height of the stack of
+	// to-be-merged segments before blocking mutations to allow the
+	// merger to catch up.
+	MaxStackOpenHeight int
+
 	Debug int // Higher means more logging, when Log != nil.
 
 	Log func(format string, a ...interface{}) // Optional, may be nil.
@@ -98,6 +104,7 @@ type CollectionOptions struct {
 var DefaultCollectionOptions = CollectionOptions{
 	MergeOperator:      nil,
 	MinMergePercentage: 0.8,
+	MaxStackOpenHeight: 10,
 	Debug:              0,
 	Log:                nil,
 }
@@ -209,7 +216,7 @@ type MergeOperator interface {
 // NewCollection returns a new, unstarted Collection instance.
 func NewCollection(options CollectionOptions) (
 	Collection, error) {
-	return &collection{
+	c := &collection{
 		options:         options,
 		stopCh:          make(chan struct{}),
 		pingMergerCh:    make(chan ping, 10),
@@ -217,5 +224,9 @@ func NewCollection(options CollectionOptions) (
 		donePersisterCh: make(chan struct{}),
 
 		awakePersisterCh: make(chan *segmentStack, 10),
-	}, nil
+	}
+
+	c.stackOpenCond = sync.NewCond(&c.m)
+
+	return c, nil
 }
