@@ -71,6 +71,9 @@ type Collection interface {
 	// the Collection.  The Batch instance should not be reused after
 	// ExecuteBatch() returns.
 	ExecuteBatch(b Batch) error
+
+	// Options returns the options currently being used.
+	Options() CollectionOptions
 }
 
 // CollectionOptions allows applications to specify config settings.
@@ -185,6 +188,10 @@ type Iterator interface {
 // A MergeOperator is implemented by applications that wish to use the
 // merge functionality.
 type MergeOperator interface {
+	// Name returns an identifier for this merge operator, which might
+	// be used for logging / debugging.
+	Name() string
+
 	// FullMerge the full sequence of operands on top of an
 	// existingValue and returns the merged value.  The existingValue
 	// may be nil if no value currently exists.  If full merge cannot
@@ -195,10 +202,6 @@ type MergeOperator interface {
 	// return (nil, false), which will defer processing until a later
 	// FullMerge().
 	PartialMerge(key, leftOperand, rightOperand []byte) ([]byte, bool)
-
-	// Name returns an identifier for this merge operator, which might
-	// be used for logging / debugging.
-	Name() string
 }
 
 // ------------------------------------------------------------

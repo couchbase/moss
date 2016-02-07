@@ -15,8 +15,45 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
+
+type testMergeOperatorAppend struct {
+	m          sync.Mutex
+	numFull    int
+	numPartial int
+}
+
+func (mo *testMergeOperatorAppend)	Name() string {
+	return "testMergeOperatorAppend"
+}
+
+func (mo *testMergeOperatorAppend) FullMerge(key, existingValue []byte,
+	operands [][]byte) ([]byte, bool) {
+	mo.m.Lock()
+	mo.numFull++
+	mo.m.Unlock()
+
+	s := string(existingValue)
+
+	for _, operand := range operands {
+		s = s + ":" + string(operand)
+	}
+
+	return []byte(s), true
+}
+
+func (mo *testMergeOperatorAppend) PartialMerge(key,
+	leftOperand, rightOperand []byte) ([]byte, bool) {
+	mo.m.Lock()
+	mo.numPartial++
+	mo.m.Unlock()
+
+	return []byte(string(leftOperand) + ":" + string(rightOperand)), true
+}
+
+// ----------------------------------------------------------------
 
 func TestNewCollection(t *testing.T) {
 	m, err := NewCollection(CollectionOptions{})
@@ -543,7 +580,9 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 }
 
 func TestOpsNoAsyncMerge(t *testing.T) {
-	m, err := NewCollection(CollectionOptions{})
+	m, err := NewCollection(CollectionOptions{
+		MergeOperator: &testMergeOperatorAppend{},
+	})
 	if err != nil || m == nil {
 		t.Errorf("expected moss")
 	}
@@ -554,7 +593,9 @@ func TestOpsNoAsyncMerge(t *testing.T) {
 }
 
 func TestOpsAsyncMerge(t *testing.T) {
-	m, err := NewCollection(CollectionOptions{})
+	m, err := NewCollection(CollectionOptions{
+		MergeOperator: &testMergeOperatorAppend{},
+	})
 	if err != nil || m == nil {
 		t.Errorf("expected moss")
 	}
@@ -821,6 +862,38 @@ func testOps(t *testing.T, m Collection) {
 		{"itr", "S", "e:_", "+f=F", nil},
 		{"itr", "S", "f:_", "+f=F", nil},
 		{"itr", "S", "g:_", "", nil},
+
+		// ---------------------------------
+
+		// Test merge oeprator.
+		{"bb+", "10", "", "", nil},
+		{"merge", "10", "m", "M", nil},
+		{"bb!", "10", "", "", nil},
+
+		{"ss+", "S3", "", "", nil},
+		{"get", "S3", "m", ":M", nil},
+		{"Itr", "S3", "_:_", "+b=B8,+d=D9,+f=F8,+m=:M", nil},
+		{"ss-", "S3", "", "", nil},
+
+		{"bb+", "11", "", "", nil},
+		{"merge", "11", "m", "N", nil},
+		{"bb!", "11", "", "", nil},
+
+		{"ss+", "S3", "", "", nil},
+		{"get", "S3", "m", ":M:N", nil},
+		{"Itr", "S3", "_:_", "+b=B8,+d=D9,+f=F8,+m=:M:N", nil},
+		// Keep snapshot S3 open for little.
+
+		{"bb+", "12", "", "", nil},
+		{"merge", "12", "m", "O", nil},
+		{"bb!", "12", "", "", nil},
+
+		{"ss+", "S4", "", "", nil},
+		{"Itr", "S4", "_:_", "+b=B8,+d=D9,+f=F8,+m=:M:N:O", nil},
+		{"ss-", "S4", "", "", nil},
+
+		{"Itr", "S3", "_:_", "+b=B8,+d=D9,+f=F8,+m=:M:N", nil},
+		{"ss-", "S3", "", "", nil},
 	}
 
 	runOpTests(t, m, tests)
@@ -959,7 +1032,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 			}
 		}
 
-		if test.op == "itr" {
+		if test.op == "itr" || test.op == "Itr" {
 			ss := snapshots[test.sb]
 			if ss == nil {
 				t.Errorf("itr, testi: %d, test: %#v, expected ss ok",
@@ -995,37 +1068,70 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 
 			var gotEntries []string
 
-			for {
-				gotOp, gotK, gotV, gotErr := itr.current()
+			if test.op == "itr" {
+				for {
+					gotOp, gotK, gotV, gotErr := itr.current()
 
-				// fmt.Printf("    curr: %x %s %s %v\n",
-				//     gotOp, gotK, gotV, gotErr)
+					// fmt.Printf("    curr: %x %s %s %v\n",
+					//     gotOp, gotK, gotV, gotErr)
 
-				if gotErr == ErrIteratorDone {
-					break
-				}
-				if gotErr != nil {
-					t.Errorf("itr, testi: %d, test: %#v, curr gotErr: %v",
-						testi, test, gotErr)
-				}
+					if gotErr == ErrIteratorDone {
+						break
+					}
+					if gotErr != nil {
+						t.Errorf("itr, testi: %d, test: %#v, curr gotErr: %v",
+							testi, test, gotErr)
+					}
 
-				s := ""
-				if gotOp == operationSet {
-					s = "+" + string(gotK) + "=" + string(gotV)
-				}
-				if gotOp == operationDel {
-					s = "-" + string(gotK) + "=" + string(gotV)
-				}
+					s := ""
+					if gotOp == operationSet {
+						s = "+" + string(gotK) + "=" + string(gotV)
+					}
+					if gotOp == operationDel {
+						s = "-" + string(gotK) + "=" + string(gotV)
+					}
+					if gotOp == operationMerge {
+						s = "^" + string(gotK) + "=" + string(gotV)
+					}
 
-				gotEntries = append(gotEntries, s)
+					gotEntries = append(gotEntries, s)
 
-				gotErr = itr.Next()
-				if gotErr == ErrIteratorDone {
-					break
+					gotErr = itr.Next()
+					if gotErr == ErrIteratorDone {
+						break
+					}
+					if gotErr != nil {
+						t.Errorf("itr, testi: %d, test: %#v, next gotErr: %v",
+							testi, test, gotErr)
+					}
 				}
-				if gotErr != nil {
-					t.Errorf("itr, testi: %d, test: %#v, next gotErr: %v",
-						testi, test, gotErr)
+			} else { // test.op == "Itr (uses public Current() API)
+				for {
+					gotK, gotV, gotErr := itr.Current()
+
+					// fmt.Printf("    curr: %s %s %v\n",
+					//     gotK, gotV, gotErr)
+
+					if gotErr == ErrIteratorDone {
+						break
+					}
+					if gotErr != nil {
+						t.Errorf("itr, testi: %d, test: %#v, curr gotErr: %v",
+							testi, test, gotErr)
+					}
+
+					s := "+" + string(gotK) + "=" + string(gotV)
+
+					gotEntries = append(gotEntries, s)
+
+					gotErr = itr.Next()
+					if gotErr == ErrIteratorDone {
+						break
+					}
+					if gotErr != nil {
+						t.Errorf("itr, testi: %d, test: %#v, next gotErr: %v",
+							testi, test, gotErr)
+					}
 				}
 			}
 

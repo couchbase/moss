@@ -30,6 +30,10 @@ func (m *collection) Close() error {
 	return nil
 }
 
+func (m *collection) Options() CollectionOptions {
+	return m.options
+}
+
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
 	rv, _, _ := m.snapshot(nil)
@@ -113,6 +117,9 @@ func (m *collection) Log(format string, a ...interface{}) {
 
 // ------------------------------------------------------
 
+// snapshot atomically clones the stackBase and stackOpen into a new
+// segmentStack, and also optionally invokes the given callback while
+// holding the collection lock.
 func (m *collection) snapshot(cb func(*segmentStack)) (
 	*segmentStack, int, int) {
 	rv := &segmentStack{collection: m}
