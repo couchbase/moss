@@ -78,9 +78,11 @@ type segment struct {
 
 // TODO: Consider using some bytes from val length, perhaps for LRU?
 
-const maskOperation = uint64(0xFF00000000000000)
-const maskKeyLength = uint64(0x00FFFFFF00000000)
-const maskValLength = uint64(0x00000000FFFFFFFF)
+const maskOperation = uint64(0x0F00000000000000)
+const maskKeyLength = uint64(0x00FFFFFF00000000) // 24 bits key length.
+const maskValLength = uint64(0x000000000FFFFFFF) // 28 bits val length.
+
+const maskRESERVED = uint64(0xF0000000F0000000)
 
 const operationSet = uint64(0x0100000000000000)
 const operationDel = uint64(0x0200000000000000)
