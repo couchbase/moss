@@ -45,8 +45,9 @@ import (
 	"errors"
 )
 
-var ErrIteratorDone = errors.New("iterator-done")
 var ErrAllocTooLarge = errors.New("alloc-too-large")
+var ErrIteratorDone = errors.New("iterator-done")
+var ErrUnimplemented = errors.New("unimplemented")
 
 // A Collection represents an ordered mapping of key-val entries,
 // where a Collection is snapshot'able and atomically updatable.
@@ -72,6 +73,10 @@ type Collection interface {
 
 // CollectionOptions allows applications to specify config settings.
 type CollectionOptions struct {
+	// MergeOperator is an optional func provided by an application
+	// that wants to use the Merge()'ing feature.
+	MergeOperator MergeOperator
+
 	// MinMergePercentage allows the merger to avoid premature merging
 	// of segments that are too small, where a segment X has to reach
 	// a certain size percentage compared to the next lower segment
@@ -86,6 +91,7 @@ type CollectionOptions struct {
 
 // DefaultCollectionOptions are the default config settings.
 var DefaultCollectionOptions = CollectionOptions{
+	MergeOperator:      nil,
 	MinMergePercentage: 0.8,
 	Debug:              0,
 	Log:                nil,
@@ -108,6 +114,13 @@ type Batch interface {
 	// bytes into the Batch, so the key bytes may be memory by the
 	// caller.  Del() on a non-existent key results in a nil error.
 	Del(key []byte) error
+
+	// Merge creates or updates a key-val entry in the Collection via
+	// the MergeOperator defined in the CollectionOptions.  The key
+	// must be unique (not repeated) within the Batch.  Set copies the
+	// key and val bytes into the Batch, so the key-val memory may be
+	// reused by the caller.
+	Merge(key, val []byte) error
 
 	// ----------------------------------------------------
 
@@ -179,4 +192,20 @@ type MergeOperator interface {
 	// Name returns an identifier for this merge operator, which might
 	// be used for logging / debugging.
 	Name() string
+}
+
+// ------------------------------------------------------------
+
+// NewCollection returns a new, unstarted Collection instance.
+func NewCollection(options CollectionOptions) (
+	Collection, error) {
+	return &collection{
+		options:         options,
+		stopCh:          make(chan struct{}),
+		pingMergerCh:    make(chan ping, 10),
+		doneMergerCh:    make(chan struct{}),
+		donePersisterCh: make(chan struct{}),
+
+		awakePersisterCh: make(chan *segmentStack, 10),
+	}, nil
 }
