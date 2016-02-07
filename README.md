@@ -1,21 +1,22 @@
 moss
 ----
 
-moss provides a simple, ordered key-value collection data structure as
-a 100% golang library.
+moss provides a simple, ordered key-val collection data structure as a
+100% golang library.
 
-moss stands for "memory-oriented sorted segments"
+moss stands for "memory-oriented sorted segments".
 
 Features
 ========
 
 * ordered key-val collection API.
-* range iterators.
+* range iteration.
+* snapshots provide for reader isolation.
 * all mutations are performed via atomic batches.
-* snapshots provide for isolation across multiple retrievals.
-* merge operations allow for support for write-heavy counters, bags, etc.
+* merge operations allow for read-compute-write optimizations
+  for write-heavy use cases (e.g., counters).
 * concurrent readers and writers don't block each other.
-* AllocXxx() API's to avoid extra memory copying.
+* optional, advanced API's to avoid extra memory copying.
 
 License
 =======
@@ -77,7 +78,7 @@ Max key length is 2^24 (24 bits used to track key length).
 
 Max val length is 2^28 (28 bits used to track val length).
 
-Read performance is roughly O(log N) for key-value retrieval.
+Read performance is roughly O(log N) for key-val retrieval.
 
 Write performance is roughly O(M log M), where M is the number of
 mutations in a batch when invoking ExecuteBatch().

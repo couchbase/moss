@@ -82,7 +82,8 @@ const maskOperation = uint64(0x0F00000000000000)
 const maskKeyLength = uint64(0x00FFFFFF00000000) // 24 bits key length.
 const maskValLength = uint64(0x000000000FFFFFFF) // 28 bits val length.
 
-// TODO: Consider using some bits from reserved, perhaps for LRU?
+// TODO: Consider using some bits from reserved, perhaps for LRU,
+// perhaps to track whether an item was persisted?
 
 const maskRESERVED = uint64(0xF0000000F0000000)
 
@@ -116,6 +117,8 @@ type cursor struct {
 
 // A ping message is used to notify and wait for asynchronous tasks.
 type ping struct {
-	kind   string
+	kind string // The kind of ping.
+
+	// When non-nil, the pongCh will be closed when task is done.
 	pongCh chan struct{}
 }

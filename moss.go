@@ -188,8 +188,10 @@ type Iterator interface {
 	Current() (key, val []byte, err error)
 }
 
-// A MergeOperator is implemented by applications that wish to use the
-// merge functionality.
+// A MergeOperator may be implemented by applications that wish to
+// optimize their read-compute-write use cases.  Write-heavy counters,
+// for example, could be implemented efficiently by using the
+// MergeOperator functionality.
 type MergeOperator interface {
 	// Name returns an identifier for this merge operator, which might
 	// be used for logging / debugging.

@@ -30,6 +30,7 @@ func (m *collection) Close() error {
 	return nil
 }
 
+// Options returns the current options.
 func (m *collection) Options() CollectionOptions {
 	return m.options
 }
@@ -114,6 +115,8 @@ func (m *collection) WaitForMerger(kind string) error {
 
 // ------------------------------------------------------
 
+// Log invokes the user's configured Log callback, if any, if the
+// debug levels are met.
 func (m *collection) Log(format string, a ...interface{}) {
 	if m.options.Log == nil {
 		return
@@ -126,9 +129,9 @@ func (m *collection) Log(format string, a ...interface{}) {
 
 // ------------------------------------------------------
 
-// snapshot atomically clones the stackBase and stackOpen into a new
-// segmentStack, and also optionally invokes the given callback while
-// holding the collection lock.
+// snapshot() atomically clones the stackBase and stackOpen into a new
+// segmentStack, and also invokes the optional callback while holding
+// the collection lock.
 func (m *collection) snapshot(cb func(*segmentStack)) (
 	*segmentStack, int, int) {
 	rv := &segmentStack{collection: m}
@@ -167,6 +170,7 @@ func (m *collection) snapshot(cb func(*segmentStack)) (
 
 // ------------------------------------------------------
 
+// runMerger() is the merger goroutine.
 func (m *collection) runMerger() {
 	defer close(m.doneMergerCh)
 
@@ -290,6 +294,7 @@ OUTER:
 
 // ------------------------------------------------------
 
+// runPersister() is the persister goroutine.
 func (m *collection) runPersister() {
 	defer close(m.donePersisterCh)
 
@@ -324,6 +329,7 @@ func (m *collection) runPersister() {
 
 // ------------------------------------------------------
 
+// replyToPings() is a helper funciton to respond to ping requests.
 func replyToPings(pings []ping) {
 	for _, ping := range pings {
 		if ping.pongCh != nil {
@@ -333,6 +339,8 @@ func replyToPings(pings []ping) {
 	}
 }
 
+// receivePings() collects any available ping requests, but will not
+// block if there are no incoming ping requests.
 func receivePings(pingCh chan ping, pings []ping,
 	kindMatch string, kindSeen bool) ([]ping, bool) {
 	for {

@@ -27,7 +27,7 @@ func (ss *segmentStack) Get(key []byte) ([]byte, error) {
 	return ss.get(key, len(ss.a)-1)
 }
 
-// get retreives a val from a segmentStack, but only considers
+// get() retreives a val from a segmentStack, but only considers
 // segments at or below the segStart level.
 func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 	if segStart < 0 {
@@ -74,6 +74,8 @@ func (ss *segmentStack) StartIterator(
 
 // ------------------------------------------------------
 
+// getMerged() retrieves a lower level val for a given key and returns
+// a merged val, based on the configured merge operator.
 func (ss *segmentStack) getMerged(key, val []byte, segStart int) (
 	[]byte, error) {
 	mo := ss.collection.options.MergeOperator
@@ -96,7 +98,8 @@ func (ss *segmentStack) getMerged(key, val []byte, segStart int) (
 
 // ------------------------------------------------------
 
-// Heuristically calculate a new top level to merge to.
+// calcTargetTopLevel() heuristically computes a new top level that
+// the segmentStack should be merged to.
 func (ss *segmentStack) calcTargetTopLevel() int {
 	minMergePercentage := ss.collection.options.MinMergePercentage
 	if minMergePercentage <= 0 {
@@ -121,8 +124,8 @@ func (ss *segmentStack) calcTargetTopLevel() int {
 
 // ------------------------------------------------------
 
-// merge returns a new segmentStack, merging all the segments at
-// newTopLevel and higher.
+// merge() returns a new segmentStack, merging all the segments that
+// are at the given newTopLevel and higher.
 func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
@@ -159,6 +162,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	}
 
 	// ----------------------------------------------------
+	// Next, use an iterator for the actual merge.
 
 	mergedSegment, err := newSegment(totOps, totBytes)
 	if err != nil {
@@ -204,8 +208,8 @@ OUTER:
 		}
 
 		if op == operationMerge {
-			// TODO: merge operator handling is inefficiently non-lazy
-			// right now.
+			// TODO: the merge operator implementation is currently
+			// inefficient and not lazy enough right now.
 			val, err = iter.ss.Get(key)
 			if err != nil {
 				return nil, err
@@ -242,7 +246,7 @@ OUTER:
 
 // ------------------------------------------------------
 
-// newSegment allocates a segment with hinted amount of resources.
+// newSegment() allocates a segment with hinted amount of resources.
 func newSegment(totalOps, totalKeyValBytes int) (
 	*segment, error) {
 	return &segment{
@@ -374,8 +378,8 @@ func (a *segment) mutateEx(operation uint64,
 
 // ------------------------------------------------------
 
-// sort returns a new, sorted segment from a given segment, where the
-// underlying buf bytes might be shared.
+// sort() returns a new, sorted segment from a given segment, where
+// the underlying buf bytes might be shared.
 func (b *segment) sort() *segment {
 	rv := *b // Copy fields.
 
@@ -420,8 +424,8 @@ func (a *segment) Less(i, j int) bool {
 
 // ------------------------------------------------------
 
-// findStartKeyInclusivePos returns the logical entry position for the
-// given (inclusive) start key.  With segment keys of [b, d, f],
+// findStartKeyInclusivePos() returns the logical entry position for
+// the given (inclusive) start key.  With segment keys of [b, d, f],
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
 func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
@@ -438,7 +442,7 @@ func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	})
 }
 
-// getOperationKeyVal returns the operation, key, val for a given
+// getOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
 func (b *segment) getOperationKeyVal(pos int) (
 	uint64, []byte, []byte) {
@@ -465,7 +469,7 @@ func (b *segment) getOperationKeyVal(pos int) (
 
 // ------------------------------------------------------
 
-// startIterator returns a new iterator instance on the segmentStack.
+// startIterator() returns a new iterator on the given segmentStack.
 //
 // On success, the returned Iterator will be positioned so that
 // Iterator.Current() will either provide the first entry in the
@@ -569,7 +573,7 @@ func (iter *iterator) Next() error {
 	}
 
 	// ---------------------------------------------
-	// Otherwise use min-heap.
+	// Otherwise use heap to find the next entry.
 
 	lastK := iter.cursors[0].k
 
@@ -628,7 +632,10 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 	return key, val, err
 }
 
-func (iter *iterator) current() (op uint64, key, val []byte, err error) {
+// current() returns the ErrIteratorDone if the iterator is done.
+// Otherwise, the current operation, key, val are turned.
+func (iter *iterator) current() (
+	op uint64, key, val []byte, err error) {
 	if len(iter.cursors) <= 0 {
 		return 0, nil, nil, ErrIteratorDone
 	}
