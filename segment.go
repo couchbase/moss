@@ -197,7 +197,7 @@ func (a *segment) Del(key []byte) error {
 // MergeOperator defined in the CollectionOptions.  The key must be
 // unique (not repeated) within the segment.
 func (a *segment) Merge(key, val []byte) error {
-	return ErrUnimplemented
+	return ErrUnimplemented // TODO.
 }
 
 // ------------------------------------------------------
