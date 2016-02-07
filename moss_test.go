@@ -564,15 +564,17 @@ func TestOpsAsyncMerge(t *testing.T) {
 	m.Close()
 }
 
-func testOps(t *testing.T, m Collection) {
-	tests := []struct {
-		op string
-		sb string // Snapshot or batch name.
-		k  string
-		v  string
+type opTest struct {
+	op string
+	sb string // Snapshot or batch name.
+	k  string
+	v  string
 
-		expErr error
-	}{
+	expErr error
+}
+
+func testOps(t *testing.T, m Collection) {
+	tests := []opTest{
 		{"ss+", "S", "", "", nil},
 		{"get", "S", "a", "_", nil},
 		{"get", "S", "b", "_", nil},
@@ -821,6 +823,10 @@ func testOps(t *testing.T, m Collection) {
 		{"itr", "S", "g:_", "", nil},
 	}
 
+	runOpTests(t, tests)
+}
+
+func runOpTests(t *testing.T, tests []opTest) {
 	toBytes := func(s string) []byte {
 		if s == "_" {
 			return nil
