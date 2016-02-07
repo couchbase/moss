@@ -298,6 +298,9 @@ OUTER:
 		}
 	}
 
+	// TODO: Concurrent merging goroutines of disjoint slices of the
+	// stackBase instead of the current, single-threaded merger.
+	//
 	// TODO: Delay merger until lots of deletion tombstones?
 	//
 	// TODO: The base layer is likely the largest, so instead of heap
