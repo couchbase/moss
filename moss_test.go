@@ -823,10 +823,10 @@ func testOps(t *testing.T, m Collection) {
 		{"itr", "S", "g:_", "", nil},
 	}
 
-	runOpTests(t, tests)
+	runOpTests(t, m, tests)
 }
 
-func runOpTests(t *testing.T, tests []opTest) {
+func runOpTests(t *testing.T, m Collection, tests []opTest) {
 	toBytes := func(s string) []byte {
 		if s == "_" {
 			return nil
@@ -927,6 +927,20 @@ func runOpTests(t *testing.T, tests []opTest) {
 			err := b.Set(toBytes(test.k), toBytes(test.v))
 			if err != test.expErr {
 				t.Errorf("set, testi: %d, test: %#v, expErr: %s, err: %s",
+					testi, test, test.expErr, err)
+			}
+		}
+
+		if test.op == "merge" {
+			b := batches[test.sb]
+			if b == nil {
+				t.Errorf("merge, testi: %d, test: %#v,"+
+					" expected b ok", testi, test)
+			}
+
+			err := b.Merge(toBytes(test.k), toBytes(test.v))
+			if err != test.expErr {
+				t.Errorf("merge, testi: %d, test: %#v, expErr: %s, err: %s",
 					testi, test, test.expErr, err)
 			}
 		}
