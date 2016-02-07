@@ -62,9 +62,6 @@ In the best case, a remaining, single, large sorted segment will be
 efficient in memory usage and efficient for binary search and range
 iteration.
 
-Another asynchronous goroutine (the "persister") can optionally
-persist the most recent work of the merger to outside storage.
-
 Iterations when the stack height is > 1 are implementing using a
 simple N-way heap merge.
 
