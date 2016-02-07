@@ -70,7 +70,8 @@ copy-on-write approach whenever the stack needs to be "modified".  So,
 multiple readers and writers won't block each other, and taking a
 Snapshot is also a similarly cheap operation by cloning a stack.
 
-== Limitations
+Limitations
+===========
 
 Max key length is 2^24 (24 bits used to track key length).
 
