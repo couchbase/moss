@@ -24,14 +24,28 @@ func (ss *segmentStack) Close() error {
 
 // Get retrieves a val from a segmentStack.
 func (ss *segmentStack) Get(key []byte) ([]byte, error) {
-	for j := len(ss.a) - 1; j >= 0; j-- {
-		b := ss.a[j]
+	return ss.get(key, len(ss.a)-1)
+}
+
+// get retreives a val from a segmentStack, but only considers
+// segments at or below the segStart level.
+func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
+	if segStart < 0 {
+		return nil, nil
+	}
+
+	for seg := segStart; seg >= 0; seg-- {
+		b := ss.a[seg]
 
 		operation, k, v :=
 			b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
 		if k != nil && bytes.Equal(k, key) {
 			if operation == operationDel {
 				return nil, nil
+			}
+
+			if operation == operationMerge {
+				return ss.getMerged(k, v, seg-1)
 			}
 
 			return v, nil
@@ -60,14 +74,63 @@ func (ss *segmentStack) StartIterator(
 
 // ------------------------------------------------------
 
+func (ss *segmentStack) getMerged(key, val []byte, segStart int) (
+	[]byte, error) {
+	mo := ss.collection.options.MergeOperator
+	if mo == nil {
+		return nil, ErrMergeOperatorNil
+	}
+
+	vLower, err := ss.get(key, segStart)
+	if err != nil {
+		return nil, err
+	}
+
+	vMerged, ok := mo.FullMerge(key, vLower, [][]byte{val})
+	if !ok {
+		return nil, ErrMergeOperatorFullMergeFailed
+	}
+
+	return vMerged, nil
+}
+
+// ------------------------------------------------------
+
+// Heuristically calculate a new top level to merge to.
+func (ss *segmentStack) calcTargetTopLevel() int {
+	minMergePercentage := ss.collection.options.MinMergePercentage
+	if minMergePercentage <= 0 {
+		minMergePercentage = DefaultCollectionOptions.MinMergePercentage
+	}
+
+	newTopLevel := 0
+	maxTopLevel := len(ss.a) - 2
+
+	for newTopLevel < maxTopLevel {
+		numX0 := len(ss.a[newTopLevel].kvs)
+		numX1 := len(ss.a[newTopLevel+1].kvs)
+		if (float64(numX1) / float64(numX0)) > minMergePercentage {
+			break
+		}
+
+		newTopLevel += 1
+	}
+
+	return newTopLevel
+}
+
+// ------------------------------------------------------
+
 // merge returns a new segmentStack, merging all the segments at
 // newTopLevel and higher.
 func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
+	// ----------------------------------------------------
+	// First, rough estimate the bytes neeeded.
+
 	totOps := len(ss.a[newTopLevel].kvs) / 2
 	totBytes := len(ss.a[newTopLevel].buf)
 
-	iterPrealloc, err :=
-		ss.startIterator(nil, nil, true, newTopLevel+1)
+	iterPrealloc, err := ss.startIterator(nil, nil, true, newTopLevel+1)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +203,21 @@ OUTER:
 			break OUTER
 		}
 
+		if op == operationMerge {
+			// TODO: merge operator handling is inefficiently non-lazy
+			// right now.
+			val, err = iter.ss.Get(key)
+			if err != nil {
+				return nil, err
+			}
+
+			if val == nil {
+				continue OUTER
+			}
+
+			op = operationSet
+		}
+
 		err = mergedSegment.mutate(op, key, val)
 		if err != nil {
 			return nil, err
@@ -159,7 +237,7 @@ OUTER:
 	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
 
-	return &segmentStack{a: a}, nil
+	return &segmentStack{collection: ss.collection, a: a}, nil
 }
 
 // ------------------------------------------------------
@@ -190,14 +268,14 @@ func (a *segment) Set(key, val []byte) error {
 // Del copies the key bytes into the segment as a "deletion" mutation.
 // The key must be unique (not repeated) within the segment.
 func (a *segment) Del(key []byte) error {
-	return a.mutate(operationDel, key, []byte(nil))
+	return a.mutate(operationDel, key, nil)
 }
 
 // Merge creates or updates a key-val entry in the Collection via the
 // MergeOperator defined in the CollectionOptions.  The key must be
 // unique (not repeated) within the segment.
 func (a *segment) Merge(key, val []byte) error {
-	return ErrUnimplemented // TODO.
+	return a.mutate(operationMerge, key, val)
 }
 
 // ------------------------------------------------------
@@ -241,6 +319,17 @@ func (a *segment) AllocDel(keyFromAlloc []byte) error {
 		keyStart, len(keyFromAlloc), 0)
 }
 
+// AllocMerge is like Merge(), but the caller must provide []byte
+// parameters that came from Alloc(), for less buffer copying.
+func (a *segment) AllocMerge(keyFromAlloc, valFromAlloc []byte) error {
+	bufCap := cap(a.buf)
+
+	keyStart := bufCap - cap(keyFromAlloc)
+
+	return a.mutateEx(operationMerge,
+		keyStart, len(keyFromAlloc), len(valFromAlloc))
+}
+
 // ------------------------------------------------------
 
 func (a *segment) mutate(operation uint64, key, val []byte) error {
@@ -272,6 +361,8 @@ func (a *segment) mutateEx(operation uint64,
 		a.totOperationSet += 1
 	case operationDel:
 		a.totOperationDel += 1
+	case operationMerge:
+		a.totOperationMerge += 1
 	default:
 	}
 
@@ -514,8 +605,25 @@ func (iter *iterator) Next() error {
 // Otherwise, Current() returns the current key and val, which should
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
-func (iter *iterator) Current() (key, val []byte, err error) {
-	_, key, val, err = iter.current()
+func (iter *iterator) Current() ([]byte, []byte, error) {
+	operation, key, val, err := iter.current()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if operation == operationDel {
+		return nil, nil, nil
+	}
+
+	if operation == operationMerge {
+		valMerged, err :=
+			iter.ss.getMerged(key, val, iter.cursors[0].ssIndex-1)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return key, valMerged, nil
+	}
 
 	return key, val, err
 }

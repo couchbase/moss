@@ -47,6 +47,8 @@ import (
 
 var ErrAllocTooLarge = errors.New("alloc-too-large")
 var ErrIteratorDone = errors.New("iterator-done")
+var ErrMergeOperatorNil = errors.New("merge-operator-nil")
+var ErrMergeOperatorFullMergeFailed = errors.New("merge-operator-full-merge-failed")
 var ErrUnimplemented = errors.New("unimplemented")
 
 // A Collection represents an ordered mapping of key-val entries,
@@ -135,6 +137,10 @@ type Batch interface {
 	// AllocDel is like Del(), but the caller must provide []byte
 	// parameters that came from Alloc().
 	AllocDel(keyFromAlloc []byte) error
+
+	// AllocMerge is like Merge(), but the caller must provide []byte
+	// parameters that came from Alloc().
+	AllocMerge(keyFromAlloc, valFromAlloc []byte) error
 }
 
 // A Snapshot is a stable view of a Collection for readers, isolated
@@ -181,7 +187,8 @@ type Iterator interface {
 type MergeOperator interface {
 	// FullMerge the full sequence of operands on top of an
 	// existingValue and returns the merged value.  The existingValue
-	// may be nil if no value currently exists.
+	// may be nil if no value currently exists.  If full merge cannot
+	// be done, return (nil, false).
 	FullMerge(key, existingValue []byte, operands [][]byte) ([]byte, bool)
 
 	// Partially merge two operands.  If partial merge cannot be done,

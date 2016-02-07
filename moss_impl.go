@@ -50,6 +50,8 @@ type collection struct {
 // entries of the same key from lower in the stack.  A segmentStack
 // implements the Snapshot interface.
 type segmentStack struct {
+	collection *collection
+
 	a []*segment
 }
 
@@ -67,10 +69,11 @@ type segment struct {
 	// Contiguous backing memory for the keys and vals of the segment.
 	buf []byte
 
-	totOperationSet uint64
-	totOperationDel uint64
-	totKeyByte      uint64
-	totValByte      uint64
+	totOperationSet   uint64
+	totOperationDel   uint64
+	totOperationMerge uint64
+	totKeyByte        uint64
+	totValByte        uint64
 }
 
 // TODO: Consider using some bytes from val length, perhaps for LRU?
@@ -81,6 +84,7 @@ const maskValLength = uint64(0x00000000FFFFFFFF)
 
 const operationSet = uint64(0x0100000000000000)
 const operationDel = uint64(0x0200000000000000)
+const operationMerge = uint64(0x0300000000000000)
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
 // segmentStack.  Iterator also implements the sort.Interface and

@@ -32,20 +32,7 @@ func (m *collection) Close() error {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
-	rv := &segmentStack{}
-
-	m.m.Lock()
-
-	rv.a = make([]*segment, 0, m.stackOpenBaseLenLOCKED())
-
-	if m.stackBase != nil {
-		rv.a = append(rv.a, m.stackBase.a...)
-	}
-	if m.stackOpen != nil {
-		rv.a = append(rv.a, m.stackOpen.a...)
-	}
-
-	m.m.Unlock()
+	rv, _, _ := m.snapshot(nil)
 
 	return rv, nil
 }
@@ -72,7 +59,7 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 
 	bsorted := b.sort()
 
-	stackOpen := &segmentStack{}
+	stackOpen := &segmentStack{collection: m}
 
 	m.m.Lock()
 
@@ -126,15 +113,40 @@ func (m *collection) Log(format string, a ...interface{}) {
 
 // ------------------------------------------------------
 
-func (m *collection) stackOpenBaseLenLOCKED() int {
-	rv := 0
-	if m.stackOpen != nil {
-		rv += len(m.stackOpen.a)
-	}
+func (m *collection) snapshot(cb func(*segmentStack)) (
+	*segmentStack, int, int) {
+	rv := &segmentStack{collection: m}
+
+	numBase := 0
+	numOpen := 0
+
+	m.m.Lock()
+
 	if m.stackBase != nil {
-		rv += len(m.stackBase.a)
+		numBase = len(m.stackBase.a)
 	}
-	return rv
+
+	if m.stackOpen != nil {
+		numOpen = len(m.stackOpen.a)
+	}
+
+	rv.a = make([]*segment, 0, numBase+numOpen)
+
+	if m.stackBase != nil {
+		rv.a = append(rv.a, m.stackBase.a...)
+	}
+
+	if m.stackOpen != nil {
+		rv.a = append(rv.a, m.stackOpen.a...)
+	}
+
+	if cb != nil {
+		cb(rv)
+	}
+
+	m.m.Unlock()
+
+	return rv, numBase, numOpen
 }
 
 // ------------------------------------------------------
@@ -142,20 +154,7 @@ func (m *collection) stackOpenBaseLenLOCKED() int {
 func (m *collection) runMerger() {
 	defer close(m.doneMergerCh)
 
-	minMergePercentage := m.options.MinMergePercentage
-	if minMergePercentage <= 0 {
-		minMergePercentage = DefaultCollectionOptions.MinMergePercentage
-	}
-
 	pings := []ping{}
-
-	replyToPings := func(pings []ping) {
-		for _, ping := range pings {
-			if ping.pongCh != nil {
-				close(ping.pongCh)
-			}
-		}
-	}
 
 	defer func() {
 		replyToPings(pings)
@@ -171,7 +170,7 @@ OUTER:
 		pings = pings[0:0]
 
 		// ---------------------------------------------
-		// Wait for new stackOpen entries.
+		// Wait for new stackOpen entries and/or pings.
 
 		var awakeMergerCh chan struct{}
 
@@ -202,45 +201,17 @@ OUTER:
 			}
 		}
 
-	COLLECT_MORE_PINGS:
-		for {
-			select {
-			case ping := <-m.pingMergerCh:
-				pings = append(pings, ping)
-				if ping.kind == "mergeAll" {
-					mergeAll = true
-				}
-
-			default:
-				break COLLECT_MORE_PINGS
-			}
-		}
+		pings, mergeAll =
+			receivePings(m.pingMergerCh, pings, "mergeAll", mergeAll)
 
 		// ---------------------------------------------
-		// Atomically ingest stackOpen into stackBase.
+		// Atomically ingest stackOpen into m.stackBase.
 
-		dirty := false
-
-		stackBase := &segmentStack{}
-
-		m.m.Lock()
-
-		stackBase.a = make([]*segment, 0, m.stackOpenBaseLenLOCKED())
-
-		if m.stackBase != nil {
-			stackBase.a = append(stackBase.a, m.stackBase.a...)
-		}
-
-		if m.stackOpen != nil {
-			stackBase.a = append(stackBase.a, m.stackOpen.a...)
-			m.stackOpen = nil
-
-			dirty = true
-		}
-
-		m.stackBase = stackBase
-
-		m.m.Unlock()
+		stackBase, numWasBase, numWasOpen :=
+			m.snapshot(func(ss *segmentStack) {
+				m.stackOpen = nil
+				m.stackBase = ss
+			})
 
 		// ---------------------------------------------
 		// Merge multiple stackBase layers.
@@ -248,19 +219,10 @@ OUTER:
 		if len(stackBase.a) > 1 {
 			newTopLevel := 0
 
-			// If we have not been asked to merge all segments, then
-			// compute a newTopLevel based on minMergePercentage's.
 			if !mergeAll {
-				maxTopLevel := len(stackBase.a) - 2
-				for newTopLevel < maxTopLevel {
-					numX0 := len(stackBase.a[newTopLevel].kvs)
-					numX1 := len(stackBase.a[newTopLevel+1].kvs)
-					if (float64(numX1) / float64(numX0)) > minMergePercentage {
-						break
-					}
-
-					newTopLevel += 1
-				}
+				// If we have not been asked to merge all segments,
+				// then heuristically calc a newTopLevel.
+				newTopLevel = stackBase.calcTargetTopLevel()
 			}
 
 			nextStackBase, err := stackBase.merge(newTopLevel)
@@ -270,30 +232,24 @@ OUTER:
 			}
 
 			m.m.Lock()
-
 			m.stackBase = nextStackBase
-
-			soHeight := 0
-			if m.stackOpen != nil {
-				soHeight = len(m.stackOpen.a)
-			}
-
 			m.m.Unlock()
 
 			stackBase = nextStackBase
 
-			m.Log("stackBase height: %d,"+
-				" stackBase top size: %d,"+
-				" stackOpen height: %d\n",
-				len(nextStackBase.a),
-				len(nextStackBase.a[len(nextStackBase.a)-1].kvs)/2,
-				soHeight)
+			m.Log("prev stackBase height: %d,"+
+				" prev stackOpen height: %d"+
+				" stackBase height: %d,"+
+				" stackBase top size: %d,",
+				numWasBase, numWasOpen,
+				len(stackBase.a),
+				len(stackBase.a[len(stackBase.a)-1].kvs)/2)
 		}
 
 		// ---------------------------------------------
 		// Optionally notify persister.
 
-		if m.awakePersisterCh != nil && dirty {
+		if m.awakePersisterCh != nil && numWasOpen > 0 {
 			m.awakePersisterCh <- stackBase
 		}
 	}
@@ -339,5 +295,32 @@ func (m *collection) runPersister() {
 		}
 
 		// TODO: actually persist the persistableSS.
+	}
+}
+
+// ------------------------------------------------------
+
+func replyToPings(pings []ping) {
+	for _, ping := range pings {
+		if ping.pongCh != nil {
+			close(ping.pongCh)
+			ping.pongCh = nil
+		}
+	}
+}
+
+func receivePings(pingCh chan ping, pings []ping,
+	kindMatch string, kindSeen bool) ([]ping, bool) {
+	for {
+		select {
+		case ping := <-pingCh:
+			pings = append(pings, ping)
+			if ping.kind == kindMatch {
+				kindSeen = true
+			}
+
+		default:
+			return pings, kindSeen
+		}
 	}
 }
