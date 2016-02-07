@@ -9,12 +9,13 @@ moss stands for "memory-oriented sorted segments"
 Features
 ========
 
-* ordered key-val collection API
-* range iterators
-* batched mutations
-* snapshots for stability and isolation across multiple reads
+* ordered key-val collection API.
+* range iterators.
+* all mutations are performed via atomic batches.
+* snapshots provide for isolation across multiple retrievals.
 * merge operations allow for support for write-heavy counters, bags, etc.
-* concurrent readers and writers don't block each other
+* concurrent readers and writers don't block each other.
+* AllocXxx() API's to avoid extra memory copying.
 
 License
 =======
@@ -35,9 +36,11 @@ Example
     batch.Close()
 
     ss, err := c.Snapshot()
-    val0, err := ss.Get([]byte("car-0") // val0 == []byte("tesla").
-    valX, err := ss.Get([]byte("car-not-there") // valX == nil.
+    val0, err := ss.Get([]byte("car-0")) // val0 == []byte("tesla").
+    valX, err := ss.Get([]byte("car-not-there")) // valX == nil.
     ss.Close()
+
+    c.Close()
 
 Design
 ======
