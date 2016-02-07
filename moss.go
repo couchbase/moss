@@ -21,12 +21,11 @@
 // will shadow entries of the same key from lower segments.
 //
 // Separately, an asynchronous goroutine (the "merger") will
-// continuously merge N sorted segments into a single sorted segment
-// to keep stack height low.  After you stop mutations, that is, the
-// stack will eventually be merged down into a stack of height 1.
+// continuously merge N sorted segments to keep stack height low.
 //
-// The remaining, single, large sorted segment will be efficient in
-// memory usage and efficient for binary search and range iteration.
+// In the best case, a remaining, single, large sorted segment will be
+// efficient in memory usage and efficient for binary search and range
+// iteration.
 //
 // Another asynchronous goroutine (the "persister") can optionally
 // persist the most recent work of the merger to outside storage.
