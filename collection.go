@@ -170,7 +170,7 @@ func (m *collection) snapshot(cb func(*segmentStack)) (
 
 // ------------------------------------------------------
 
-// runMerger() is the merger goroutine.
+// runMerger() implements the background merger task.
 func (m *collection) runMerger() {
 	defer close(m.doneMergerCh)
 
@@ -294,7 +294,7 @@ OUTER:
 
 // ------------------------------------------------------
 
-// runPersister() is the persister goroutine.
+// runPersister() implements the persister task.
 func (m *collection) runPersister() {
 	defer close(m.donePersisterCh)
 
