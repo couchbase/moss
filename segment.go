@@ -19,6 +19,11 @@ import (
 
 // Close releases associated resources.
 func (ss *segmentStack) Close() error {
+	if ss.lowerLevelSnapshot != nil {
+		ss.lowerLevelSnapshot.Close()
+		ss.lowerLevelSnapshot = nil
+	}
+
 	return nil
 }
 
@@ -50,16 +55,8 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 		}
 	}
 
-	ss.collection.m.Lock()
-	llss := ss.collection.lowerLevelSnapshot.addRef()
-	ss.collection.m.Unlock()
-
-	if llss != nil {
-		val, err := llss.Get(key)
-
-		llss.decRef()
-
-		return val, err
+	if ss.lowerLevelSnapshot != nil {
+		return ss.lowerLevelSnapshot.Get(key)
 	}
 
 	return nil, nil
@@ -536,10 +533,7 @@ func (ss *segmentStack) startIterator(
 	}
 
 	if includeLowerLevel {
-		ss.collection.m.Lock()
-		llss := ss.collection.lowerLevelSnapshot.addRef()
-		ss.collection.m.Unlock()
-
+		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
 			lowerLevelIter, err :=
 				llss.StartIterator(startKeyInclusive, endKeyExclusive)

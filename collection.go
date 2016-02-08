@@ -45,7 +45,9 @@ func (m *collection) Options() CollectionOptions {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
-	rv, _, _ := m.snapshot(nil)
+	rv, _, _ := m.snapshot(func(ss *segmentStack) {
+		ss.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
+	})
 
 	return rv, nil
 }

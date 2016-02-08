@@ -59,6 +59,8 @@ type segmentStack struct {
 	collection *collection
 
 	a []*segment
+
+	lowerLevelSnapshot *snapshotWrapper
 }
 
 // A segment is a sequence of key-val entries or operations.  A
