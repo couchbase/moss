@@ -41,11 +41,11 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 			operation, k, v :=
 				b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
 			if k != nil && bytes.Equal(k, key) {
-				if operation == operationDel {
+				if operation == OperationDel {
 					return nil, nil
 				}
 
-				if operation == operationMerge {
+				if operation == OperationMerge {
 					return ss.getMerged(k, v, seg-1)
 				}
 
@@ -215,7 +215,7 @@ OUTER:
 			break OUTER
 		}
 
-		if op == operationMerge {
+		if op == OperationMerge {
 			// TODO: the merge operator implementation is currently
 			// inefficient and not lazy enough right now.
 			val, err = iter.ss.Get(key)
@@ -227,7 +227,7 @@ OUTER:
 				continue OUTER
 			}
 
-			op = operationSet
+			op = OperationSet
 		}
 
 		err = mergedSegment.mutate(op, key, val)
@@ -331,7 +331,7 @@ func (ss *segmentStack) startIterator(
 				iter.cursors = append(iter.cursors, cursor{
 					ssIndex: -1,
 					pos:     -1,
-					op:      operationSet,
+					op:      OperationSet,
 					k:       k,
 					v:       v,
 				})
@@ -345,7 +345,7 @@ func (ss *segmentStack) startIterator(
 
 	if !iter.includeDeletions {
 		op, _, _, _ := iter.current()
-		if op == operationDel {
+		if op == OperationDel {
 			iter.Next()
 		}
 	}
@@ -402,7 +402,7 @@ func (iter *iterator) Next() error {
 			}
 
 			if !iter.includeDeletions &&
-				iter.cursors[0].op == operationDel {
+				iter.cursors[0].op == OperationDel {
 				continue
 			}
 
@@ -449,7 +449,7 @@ func (iter *iterator) Next() error {
 
 		if !bytes.Equal(iter.cursors[0].k, lastK) {
 			if !iter.includeDeletions &&
-				iter.cursors[0].op == operationDel {
+				iter.cursors[0].op == OperationDel {
 				return iter.Next()
 			}
 
@@ -468,11 +468,11 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 
-	if operation == operationDel {
+	if operation == OperationDel {
 		return nil, nil, nil
 	}
 
-	if operation == operationMerge {
+	if operation == OperationMerge {
 		valMerged, err :=
 			iter.ss.getMerged(key, val, iter.cursors[0].ssIndex-1)
 		if err != nil {

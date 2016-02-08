@@ -93,9 +93,9 @@ const maskValLength = uint64(0x000000000FFFFFFF) // 28 bits val length.
 
 const maskRESERVED = uint64(0xF0000000F0000000)
 
-const operationSet = uint64(0x0100000000000000)
-const operationDel = uint64(0x0200000000000000)
-const operationMerge = uint64(0x0300000000000000)
+const OperationSet = uint64(0x0100000000000000)
+const OperationDel = uint64(0x0200000000000000)
+const OperationMerge = uint64(0x0300000000000000)
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
 // segmentStack.  Iterator also implements the sort.Interface and

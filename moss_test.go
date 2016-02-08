@@ -189,30 +189,30 @@ func TestBatchSort(t *testing.T) {
 	b.Set([]byte("b"), []byte("B"))
 
 	o, k, v := b.getOperationKeyVal(0)
-	if o != operationSet || string(k) != "f" || string(v) != "F" {
+	if o != OperationSet || string(k) != "f" || string(v) != "F" {
 		t.Errorf("wrong okv")
 	}
 	o, k, v = b.getOperationKeyVal(1)
-	if o != operationSet || string(k) != "d" || string(v) != "D" {
+	if o != OperationSet || string(k) != "d" || string(v) != "D" {
 		t.Errorf("wrong okv")
 	}
 	o, k, v = b.getOperationKeyVal(2)
-	if o != operationSet || string(k) != "b" || string(v) != "B" {
+	if o != OperationSet || string(k) != "b" || string(v) != "B" {
 		t.Errorf("wrong okv")
 	}
 
 	b2 := b.sort()
 
 	o, k, v = b2.getOperationKeyVal(0)
-	if o != operationSet || string(k) != "b" || string(v) != "B" {
+	if o != OperationSet || string(k) != "b" || string(v) != "B" {
 		t.Errorf("wrong okv")
 	}
 	o, k, v = b2.getOperationKeyVal(1)
-	if o != operationSet || string(k) != "d" || string(v) != "D" {
+	if o != OperationSet || string(k) != "d" || string(v) != "D" {
 		t.Errorf("wrong okv")
 	}
 	o, k, v = b2.getOperationKeyVal(2)
-	if o != operationSet || string(k) != "f" || string(v) != "F" {
+	if o != OperationSet || string(k) != "f" || string(v) != "F" {
 		t.Errorf("wrong okv")
 	}
 	o, k, v = b2.getOperationKeyVal(3)
@@ -535,10 +535,10 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 				}
 
 				s := ""
-				if gotOp == operationSet {
+				if gotOp == OperationSet {
 					s = "+" + string(gotK) + "=" + string(gotV)
 				}
-				if gotOp == operationDel {
+				if gotOp == OperationDel {
 					s = "-" + string(gotK) + "=" + string(gotV)
 				}
 
@@ -1060,13 +1060,13 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 					}
 
 					s := ""
-					if gotOp == operationSet {
+					if gotOp == OperationSet {
 						s = "+" + string(gotK) + "=" + string(gotV)
 					}
-					if gotOp == operationDel {
+					if gotOp == OperationDel {
 						s = "-" + string(gotK) + "=" + string(gotV)
 					}
-					if gotOp == operationMerge {
+					if gotOp == OperationMerge {
 						s = "^" + string(gotK) + "=" + string(gotV)
 					}
 

@@ -36,20 +36,20 @@ func (a *segment) Close() error {
 // mutation.  The key must be unique (not repeated) within the
 // segment.
 func (a *segment) Set(key, val []byte) error {
-	return a.mutate(operationSet, key, val)
+	return a.mutate(OperationSet, key, val)
 }
 
 // Del copies the key bytes into the segment as a "deletion" mutation.
 // The key must be unique (not repeated) within the segment.
 func (a *segment) Del(key []byte) error {
-	return a.mutate(operationDel, key, nil)
+	return a.mutate(OperationDel, key, nil)
 }
 
 // Merge creates or updates a key-val entry in the Collection via the
 // MergeOperator defined in the CollectionOptions.  The key must be
 // unique (not repeated) within the segment.
 func (a *segment) Merge(key, val []byte) error {
-	return a.mutate(operationMerge, key, val)
+	return a.mutate(OperationMerge, key, val)
 }
 
 // ------------------------------------------------------
@@ -78,7 +78,7 @@ func (a *segment) AllocSet(keyFromAlloc, valFromAlloc []byte) error {
 
 	keyStart := bufCap - cap(keyFromAlloc)
 
-	return a.mutateEx(operationSet,
+	return a.mutateEx(OperationSet,
 		keyStart, len(keyFromAlloc), len(valFromAlloc))
 }
 
@@ -89,7 +89,7 @@ func (a *segment) AllocDel(keyFromAlloc []byte) error {
 
 	keyStart := bufCap - cap(keyFromAlloc)
 
-	return a.mutateEx(operationDel,
+	return a.mutateEx(OperationDel,
 		keyStart, len(keyFromAlloc), 0)
 }
 
@@ -100,7 +100,7 @@ func (a *segment) AllocMerge(keyFromAlloc, valFromAlloc []byte) error {
 
 	keyStart := bufCap - cap(keyFromAlloc)
 
-	return a.mutateEx(operationMerge,
+	return a.mutateEx(OperationMerge,
 		keyStart, len(keyFromAlloc), len(valFromAlloc))
 }
 
@@ -131,11 +131,11 @@ func (a *segment) mutateEx(operation uint64,
 	a.kvs = append(a.kvs, opKlVl, uint64(keyStart))
 
 	switch operation {
-	case operationSet:
+	case OperationSet:
 		a.totOperationSet += 1
-	case operationDel:
+	case OperationDel:
 		a.totOperationDel += 1
-	case operationMerge:
+	case OperationMerge:
 		a.totOperationMerge += 1
 	default:
 	}
