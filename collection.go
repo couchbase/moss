@@ -87,6 +87,13 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 		m.stackOpenCond.Wait()
 	}
 
+	numOpen := 0
+	if m.stackOpen != nil {
+		numOpen = len(m.stackOpen.a)
+	}
+
+	stackOpen.a = make([]*segment, 0, numOpen+1)
+
 	if m.stackOpen != nil {
 		stackOpen.a = append(stackOpen.a, m.stackOpen.a...)
 	}
