@@ -30,26 +30,36 @@ func (ss *segmentStack) Get(key []byte) ([]byte, error) {
 // get() retreives a val from a segmentStack, but only considers
 // segments at or below the segStart level.
 func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
-	if segStart < 0 {
-		return nil, nil
+	if segStart >= 0 {
+		for seg := segStart; seg >= 0; seg-- {
+			b := ss.a[seg]
+
+			operation, k, v :=
+				b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
+			if k != nil && bytes.Equal(k, key) {
+				if operation == operationDel {
+					return nil, nil
+				}
+
+				if operation == operationMerge {
+					return ss.getMerged(k, v, seg-1)
+				}
+
+				return v, nil
+			}
+		}
 	}
 
-	for seg := segStart; seg >= 0; seg-- {
-		b := ss.a[seg]
+	ss.collection.m.Lock()
+	llss := ss.collection.lowerLevelSnapshot.addRef()
+	ss.collection.m.Unlock()
 
-		operation, k, v :=
-			b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
-		if k != nil && bytes.Equal(k, key) {
-			if operation == operationDel {
-				return nil, nil
-			}
+	if llss != nil {
+		val, err := llss.Get(key)
 
-			if operation == operationMerge {
-				return ss.getMerged(k, v, seg-1)
-			}
+		llss.decRef()
 
-			return v, nil
-		}
+		return val, err
 	}
 
 	return nil, nil
@@ -69,7 +79,7 @@ func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 ) (Iterator, error) {
 	return ss.startIterator(startKeyInclusive, endKeyExclusive,
-		false, 0)
+		false, true, 0)
 }
 
 // ------------------------------------------------------
@@ -133,7 +143,8 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	totOps := len(ss.a[newTopLevel].kvs) / 2
 	totBytes := len(ss.a[newTopLevel].buf)
 
-	iterPrealloc, err := ss.startIterator(nil, nil, true, newTopLevel+1)
+	iterPrealloc, err :=
+		ss.startIterator(nil, nil, true, false, newTopLevel+1)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +180,8 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		return nil, err
 	}
 
-	iter, err := ss.startIterator(nil, nil, true, newTopLevel)
+	iter, err :=
+		ss.startIterator(nil, nil, true, false, newTopLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -487,12 +499,12 @@ func (b *segment) getOperationKeyVal(pos int) (
 // minLevel of 1.
 func (ss *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
-	includeDeletions bool,
+	includeDeletions bool, includeLowerLevel bool,
 	minLevel int,
 ) (*iterator, error) {
 	iter := &iterator{
 		ss:      ss,
-		cursors: make([]cursor, 0, len(ss.a)),
+		cursors: make([]cursor, 0, len(ss.a)+1),
 
 		startKeyInclusive: startKeyInclusive,
 		endKeyExclusive:   endKeyExclusive,
@@ -523,6 +535,42 @@ func (ss *segmentStack) startIterator(
 		})
 	}
 
+	if includeLowerLevel {
+		ss.collection.m.Lock()
+		llss := ss.collection.lowerLevelSnapshot.addRef()
+		ss.collection.m.Unlock()
+
+		if llss != nil {
+			lowerLevelIter, err :=
+				llss.StartIterator(startKeyInclusive, endKeyExclusive)
+
+			llss.decRef()
+
+			if err != nil {
+				return nil, err
+			}
+
+			k, v, err := lowerLevelIter.Current()
+			if err != nil && err != ErrIteratorDone {
+				return nil, err
+			}
+			if err == ErrIteratorDone {
+				lowerLevelIter.Close()
+			}
+			if err == nil {
+				iter.cursors = append(iter.cursors, cursor{
+					ssIndex: -1,
+					pos:     -1,
+					op:      operationSet,
+					k:       k,
+					v:       v,
+				})
+
+				iter.lowerLevelIter = lowerLevelIter
+			}
+		}
+	}
+
 	heap.Init(iter)
 
 	if !iter.includeDeletions {
@@ -537,6 +585,11 @@ func (ss *segmentStack) startIterator(
 
 // Close must be invoked to release resources.
 func (iter *iterator) Close() error {
+	if iter.lowerLevelIter != nil {
+		iter.lowerLevelIter.Close()
+		iter.lowerLevelIter = nil
+	}
+
 	return nil
 }
 
@@ -552,6 +605,21 @@ func (iter *iterator) Next() error {
 	if len(iter.cursors) == 1 {
 		for {
 			next := &iter.cursors[0]
+
+			if next.ssIndex < 0 && next.pos < 0 {
+				err := iter.lowerLevelIter.Next()
+				if err != nil {
+					iter.lowerLevelIter.Close()
+					iter.lowerLevelIter = nil
+
+					heap.Pop(iter)
+
+					return err
+				}
+
+				return nil
+			}
+
 			next.pos += 1
 			next.op, next.k, next.v =
 				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
@@ -579,15 +647,30 @@ func (iter *iterator) Next() error {
 
 	for {
 		next := &iter.cursors[0]
-		next.pos += 1
-		next.op, next.k, next.v =
-			iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
-		if (next.op == 0 && next.k == nil && next.v == nil) ||
-			(iter.endKeyExclusive != nil &&
-				bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
-			heap.Pop(iter)
+
+		if next.ssIndex < 0 && next.pos < 0 {
+			var err error
+
+			next.k, next.v, err = iter.lowerLevelIter.Current()
+			if err != nil {
+				iter.lowerLevelIter.Close()
+				iter.lowerLevelIter = nil
+
+				heap.Pop(iter)
+			} else {
+				heap.Fix(iter, 0)
+			}
 		} else {
-			heap.Fix(iter, 0)
+			next.pos += 1
+			next.op, next.k, next.v =
+				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
+			if (next.op == 0 && next.k == nil && next.v == nil) ||
+				(iter.endKeyExclusive != nil &&
+					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
+				heap.Pop(iter)
+			} else {
+				heap.Fix(iter, 0)
+			}
 		}
 
 		if len(iter.cursors) <= 0 {

@@ -45,6 +45,10 @@ type collection struct {
 	// When ExecuteBatch() has pushed a new segment onto stackOpen, it
 	// notifies the merger via awakeMergerCh (if non-nil).
 	awakeMergerCh chan struct{}
+
+	// lowerLevelSnapshot provides an optional, lower-level storage
+	// implementation for the Collection.
+	lowerLevelSnapshot *snapshotWrapper
 }
 
 // A segmentStack is a stack of segments, where higher (later) entries
@@ -102,6 +106,8 @@ type iterator struct {
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
 	includeDeletions  bool
+
+	lowerLevelIter Iterator // May be nil.
 }
 
 // A cursor rerpresents a logical entry position inside a segment in a

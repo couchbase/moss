@@ -27,6 +27,14 @@ func (m *collection) Close() error {
 	close(m.stopCh)
 	<-m.doneMergerCh
 	<-m.donePersisterCh
+
+	m.m.Lock()
+	if m.lowerLevelSnapshot != nil {
+		m.lowerLevelSnapshot.Close()
+		m.lowerLevelSnapshot = nil
+	}
+	m.m.Unlock()
+
 	return nil
 }
 
@@ -298,6 +306,7 @@ OUTER:
 func (m *collection) runPersister() {
 	defer close(m.donePersisterCh)
 
+OUTER:
 	for {
 		var persistableSS *segmentStack
 
@@ -323,7 +332,21 @@ func (m *collection) runPersister() {
 			}
 		}
 
-		// TODO: actually persist the persistableSS.
+		if m.options.LowerLevelUpdate != nil {
+			llssNext, err := m.options.LowerLevelUpdate(persistableSS)
+			if err != nil {
+				continue OUTER // TODO: error handling.
+			}
+
+			m.m.Lock()
+			llssPrev := m.lowerLevelSnapshot
+			m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
+			m.m.Unlock()
+
+			if llssPrev != nil {
+				llssPrev.Close()
+			}
+		}
 	}
 }
 

@@ -57,6 +57,9 @@ type Collection interface {
 	// Close synchronously stops background tasks and releases resources.
 	Close() error
 
+	// Options returns the options currently being used.
+	Options() CollectionOptions
+
 	// Snapshot returns a stable Snapshot of the key-value entries.
 	Snapshot() (Snapshot, error)
 
@@ -68,9 +71,6 @@ type Collection interface {
 	// the Collection.  The Batch instance should not be reused after
 	// ExecuteBatch() returns.
 	ExecuteBatch(b Batch) error
-
-	// Options returns the options currently being used.
-	Options() CollectionOptions
 }
 
 // CollectionOptions allows applications to specify config settings.
@@ -90,6 +90,16 @@ type CollectionOptions struct {
 	// to-be-merged segments before blocking mutations to allow the
 	// merger to catch up.
 	MaxStackOpenHeight int
+
+	// LowerLevelInit is an optional Snapshot implementation that
+	// initializes the lower-level storage of a Collection.  This
+	// might be used, for example, for having a Collection be a
+	// write-back cache in front of a persistent implementation.
+	LowerLevelInit Snapshot
+
+	// LowerLevelUpdate is an optional func that is invoked when the
+	// lower-level storage should be updated.
+	LowerLevelUpdate LowerLevelUpdate
 
 	Debug int // Higher means more logging, when Log != nil.
 
@@ -209,19 +219,23 @@ type MergeOperator interface {
 	PartialMerge(key, leftOperand, rightOperand []byte) ([]byte, bool)
 }
 
+// LowerLevelUpdate is the func signature used for updating the
+// optional lower-level storage of a Collection.
+type LowerLevelUpdate func(higher Snapshot) (lower Snapshot, err error)
+
 // ------------------------------------------------------------
 
 // NewCollection returns a new, unstarted Collection instance.
 func NewCollection(options CollectionOptions) (
 	Collection, error) {
 	c := &collection{
-		options:         options,
-		stopCh:          make(chan struct{}),
-		pingMergerCh:    make(chan ping, 10),
-		doneMergerCh:    make(chan struct{}),
-		donePersisterCh: make(chan struct{}),
-
-		awakePersisterCh: make(chan *segmentStack, 10),
+		options:            options,
+		stopCh:             make(chan struct{}),
+		pingMergerCh:       make(chan ping, 10),
+		doneMergerCh:       make(chan struct{}),
+		donePersisterCh:    make(chan struct{}),
+		awakePersisterCh:   make(chan *segmentStack, 10),
+		lowerLevelSnapshot: newSnapshotWrapper(options.LowerLevelInit),
 	}
 
 	c.stackOpenCond = sync.NewCond(&c.m)
