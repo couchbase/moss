@@ -276,7 +276,8 @@ OUTER:
 			stackBase = mergedStackBase
 		}
 
-		m.Log("prev stackBase height: %d,"+
+		m.Log("collection: runMerger,"+
+			" prev stackBase height: %d,"+
 			" prev stackOpen height: %d"+
 			" stackBase height: %d,"+
 			" stackBase top size: %d",
@@ -337,7 +338,9 @@ OUTER:
 		if m.options.LowerLevelUpdate != nil {
 			llssNext, err := m.options.LowerLevelUpdate(persistableSS)
 			if err != nil {
-				continue OUTER // TODO: error handling.
+				m.Log("collection: runPersister, err: %v", err)
+
+				continue OUTER
 			}
 
 			m.m.Lock()
