@@ -267,8 +267,6 @@ OUTER:
 
 			mergedStackBase, err := stackBase.merge(newTopLevel)
 			if err != nil {
-				// TODO: err handling.
-
 				m.Log("collection: runMerger stackBase.merge,"+
 					" newTopLevel: %d, err: %v",
 					newTopLevel, err)
