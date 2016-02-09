@@ -14,6 +14,7 @@ package moss
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -201,7 +202,9 @@ func TestBatchSort(t *testing.T) {
 		t.Errorf("wrong okv")
 	}
 
-	b2 := b.sort()
+	sort.Sort(b)
+
+	b2 := b
 
 	o, k, v = b2.getOperationKeyVal(0)
 	if o != OperationSet || string(k) != "b" || string(v) != "B" {

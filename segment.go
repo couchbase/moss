@@ -27,8 +27,6 @@ func newSegment(totalOps, totalKeyValBytes int) (
 
 // Close releases resources associated with the segment.
 func (a *segment) Close() error {
-	a.kvs = nil
-	a.buf = nil
 	return nil
 }
 
@@ -147,18 +145,6 @@ func (a *segment) mutateEx(operation uint64,
 }
 
 // ------------------------------------------------------
-
-// sort() returns a new, sorted segment from a given segment, where
-// the underlying buf bytes might be shared.
-func (b *segment) sort() *segment {
-	rv := *b // Copy fields.
-
-	rv.kvs = append([]uint64(nil), b.kvs...)
-
-	sort.Sort(&rv)
-
-	return &rv
-}
 
 func (a *segment) Len() int {
 	return len(a.kvs) / 2

@@ -13,6 +13,7 @@ package moss
 
 import (
 	"fmt"
+	"sort"
 )
 
 // Start kicks off required background gouroutines.
@@ -77,7 +78,7 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 		maxStackOpenHeight = DefaultCollectionOptions.MaxStackOpenHeight
 	}
 
-	bsorted := b.sort()
+	sort.Sort(b)
 
 	stackOpen := &segmentStack{collection: m}
 
@@ -98,7 +99,7 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 		stackOpen.a = append(stackOpen.a, m.stackOpen.a...)
 	}
 
-	stackOpen.a = append(stackOpen.a, bsorted)
+	stackOpen.a = append(stackOpen.a, b)
 
 	m.stackOpen = stackOpen
 
@@ -111,7 +112,7 @@ func (m *collection) ExecuteBatch(bIn Batch) error {
 		close(awakeMergerCh)
 	}
 
-	return b.Close()
+	return nil
 }
 
 // ------------------------------------------------------
