@@ -282,21 +282,27 @@ OUTER:
 			stackBase = mergedStackBase
 		}
 
-		m.Log("collection: runMerger,"+
-			" prev stackBase height: %d,"+
-			" prev stackOpen height: %d"+
-			" stackBase height: %d,"+
-			" stackBase top size: %d",
-			numWasBase, numWasOpen,
-			len(stackBase.a),
-			len(stackBase.a[len(stackBase.a)-1].kvs)/2)
-
 		// ---------------------------------------------
 		// Optionally notify persister.
 
-		if m.awakePersisterCh != nil && numWasOpen > 0 {
-			m.awakePersisterCh <- stackBase
+		persisterQueueLen := 0
+		if m.awakePersisterCh != nil {
+			persisterQueueLen = len(m.awakePersisterCh)
+			if numWasOpen > 0 {
+				m.awakePersisterCh <- stackBase
+			}
 		}
+
+		m.Log("collection: runMerger,"+
+			" persisterQueueLen: %d,"+
+			" prev stackBase height: %d,"+
+			" prev stackOpen height: %d,"+
+			" stackBase height: %d,"+
+			" stackBase top size: %d",
+			persisterQueueLen,
+			numWasBase, numWasOpen,
+			len(stackBase.a),
+			len(stackBase.a[len(stackBase.a)-1].kvs)/2)
 	}
 
 	// TODO: Concurrent merging goroutines of disjoint slices of the

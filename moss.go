@@ -234,11 +234,14 @@ func NewCollection(options CollectionOptions) (
 		pingMergerCh:       make(chan ping, 10),
 		doneMergerCh:       make(chan struct{}),
 		donePersisterCh:    make(chan struct{}),
-		awakePersisterCh:   make(chan *segmentStack, 10),
 		lowerLevelSnapshot: newSnapshotWrapper(options.LowerLevelInit),
 	}
 
 	c.stackOpenCond = sync.NewCond(&c.m)
+
+	if options.LowerLevelUpdate != nil {
+		c.awakePersisterCh = make(chan *segmentStack, 10)
+	}
 
 	return c, nil
 }
