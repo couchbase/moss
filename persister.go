@@ -13,42 +13,44 @@ package moss
 
 // runPersister() implements the persister task.
 func (m *collection) runPersister() {
+	ssCh := make(chan *segmentStack)
+
+	defer close(ssCh)
+
+	go m.runPersisterInner(ssCh)
+
+	var ssLast *segmentStack
+
+	for {
+		select {
+		case <-m.stopCh:
+			return
+
+		case ssIn := <-m.awakePersisterCh:
+			if ssLast != nil {
+				ssLast.Close()
+			}
+			ssLast = ssIn
+
+		case ssCh <- ssLast:
+			ssLast = nil
+		}
+	}
+}
+
+func (m *collection) runPersisterInner(ssCh chan *segmentStack) {
 	defer close(m.donePersisterCh)
 
-OUTER:
-	for {
-		var persistableSS *segmentStack
-
-		// Consume until we have the last, persistable segment stack.
-	CONSUME_LOOP:
-		for {
-			select {
-			case <-m.stopCh:
-				return
-			case persistableSS = <-m.awakePersisterCh:
-				// NO-OP.
-			default:
-				break CONSUME_LOOP
-			}
-		}
-
-		if persistableSS == nil { // Need to wait.
-			select {
-			case <-m.stopCh:
-				return
-			case persistableSS = <-m.awakePersisterCh:
-				// NO-OP.
-			}
-		}
-
+LOOP:
+	for ss := range ssCh {
 		if m.options.LowerLevelUpdate != nil {
-			llssNext, err := m.options.LowerLevelUpdate(persistableSS)
+			llssNext, err := m.options.LowerLevelUpdate(ss)
 			if err != nil {
-				persistableSS.Close()
+				ss.Close()
 
-				m.Log("collection: runPersister, err: %v", err)
+				m.Log("collection: runPersisterInner, err: %v", err)
 
-				continue OUTER
+				continue LOOP
 			}
 
 			m.m.Lock()
@@ -61,6 +63,6 @@ OUTER:
 			}
 		}
 
-		persistableSS.Close()
+		ss.Close()
 	}
 }
