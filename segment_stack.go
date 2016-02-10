@@ -178,7 +178,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 
 OUTER:
 	for {
-		op, key, val, err := iter.CurrentEx()
+		entryEx, key, val, err := iter.CurrentEx()
 		if err == ErrIteratorDone {
 			break
 		}
@@ -207,6 +207,7 @@ OUTER:
 			break OUTER
 		}
 
+		op := entryEx.Operation
 		if op == OperationMerge {
 			// TODO: the merge operator implementation is currently
 			// inefficient and not lazy enough right now.
@@ -357,8 +358,8 @@ func (ss *segmentStack) startIterator(
 	heap.Init(iter)
 
 	if !iteratorOptions.IncludeDeletions {
-		op, _, _, _ := iter.CurrentEx()
-		if op == OperationDel {
+		entryEx, _, _, _ := iter.CurrentEx()
+		if entryEx.Operation == OperationDel {
 			iter.Next()
 		}
 	}
@@ -476,16 +477,17 @@ func (iter *iterator) Next() error {
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
 func (iter *iterator) Current() ([]byte, []byte, error) {
-	operation, key, val, err := iter.CurrentEx()
+	entryEx, key, val, err := iter.CurrentEx()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if operation == OperationDel {
+	op := entryEx.Operation
+	if op == OperationDel {
 		return nil, nil, nil
 	}
 
-	if operation == OperationMerge {
+	if op == OperationMerge {
 		valMerged, err :=
 			iter.ss.getMerged(key, val, iter.cursors[0].ssIndex-1)
 		if err != nil {
@@ -503,14 +505,14 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 // true.  It returns ErrIteratorDone if the iterator is done.
 // Otherwise, the current operation, key, val are returned.
 func (iter *iterator) CurrentEx() (
-	op uint64, key, val []byte, err error) {
+	entryEx EntryEx, key, val []byte, err error) {
 	if len(iter.cursors) <= 0 {
-		return 0, nil, nil, ErrIteratorDone
+		return EntryEx{}, nil, nil, ErrIteratorDone
 	}
 
 	cursor := &iter.cursors[0]
 
-	return cursor.op, cursor.k, cursor.v, nil
+	return EntryEx{Operation: cursor.op}, cursor.k, cursor.v, nil
 }
 
 func (iter *iterator) Len() int {

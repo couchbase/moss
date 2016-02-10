@@ -199,11 +199,11 @@ type Iterator interface {
 	Current() (key, val []byte, err error)
 
 	// CurrentEx is a more advanced form of Current() that returns
-	// more metadata.  It is used when
-	// IteratorOptions.IncludeDeletions is true.  It returns
+	// more metadata for each entry.  It is more useful when used with
+	// IteratorOptions.IncludeDeletions of true.  It returns
 	// ErrIteratorDone if the iterator is done.  Otherwise, the
-	// current operation, key, val are returned.
-	CurrentEx() (op uint64, key, val []byte, err error)
+	// current EntryEx, key, val are returned.
+	CurrentEx() (entryEx EntryEx, key, val []byte, err error)
 }
 
 type WriteOptions struct {
@@ -227,6 +227,10 @@ type IteratorOptions struct {
 	// MinSegmentLevel is an advanced parameter that specifies that an
 	// Iterator should skip segments lower than MinSegmentLevel.
 	MinSegmentLevel int
+}
+
+type EntryEx struct {
+	Operation uint64
 }
 
 // A MergeOperator may be implemented by applications that wish to
