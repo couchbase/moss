@@ -16,11 +16,32 @@ import (
 	"container/heap"
 )
 
+func (ss *segmentStack) addRef() {
+	ss.m.Lock()
+	ss.refs += 1
+	ss.m.Unlock()
+}
+
+func (ss *segmentStack) decRef() {
+	ss.m.Lock()
+
+	ss.refs -= 1
+	if ss.refs <= 0 {
+		if ss.lowerLevelSnapshot != nil {
+			ss.lowerLevelSnapshot.Close()
+			ss.lowerLevelSnapshot = nil
+		}
+	}
+
+	ss.m.Unlock()
+}
+
+// ------------------------------------------------------
+
 // Close releases associated resources.
 func (ss *segmentStack) Close() error {
-	if ss.lowerLevelSnapshot != nil {
-		ss.lowerLevelSnapshot.Close()
-		ss.lowerLevelSnapshot = nil
+	if ss != nil {
+		ss.decRef()
 	}
 
 	return nil
@@ -242,7 +263,7 @@ OUTER:
 	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
 
-	return &segmentStack{collection: ss.collection, a: a}, nil
+	return &segmentStack{collection: ss.collection, a: a, refs: 1}, nil
 }
 
 // ------------------------------------------------------

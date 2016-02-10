@@ -46,9 +46,7 @@ func (m *collection) Options() CollectionOptions {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
-	rv, _, _ := m.snapshot(func(ss *segmentStack) {
-		ss.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
-	})
+	rv, _, _ := m.snapshot(nil)
 
 	return rv, nil
 }
@@ -81,7 +79,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	sort.Sort(b)
 
-	stackOpen := &segmentStack{collection: m}
+	stackOpen := &segmentStack{collection: m, refs: 1}
 
 	m.m.Lock()
 
@@ -102,12 +100,15 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	stackOpen.a = append(stackOpen.a, b)
 
+	prevStackOpen := m.stackOpen
 	m.stackOpen = stackOpen
 
 	awakeMergerCh := m.awakeMergerCh
 	m.awakeMergerCh = nil
 
 	m.m.Unlock()
+
+	prevStackOpen.Close()
 
 	if awakeMergerCh != nil {
 		close(awakeMergerCh)
@@ -153,12 +154,14 @@ func (m *collection) Log(format string, a ...interface{}) {
 // the collection lock.
 func (m *collection) snapshot(cb func(*segmentStack)) (
 	*segmentStack, int, int) {
-	rv := &segmentStack{collection: m}
+	rv := &segmentStack{collection: m, refs: 1}
 
 	numBase := 0
 	numOpen := 0
 
 	m.m.Lock()
+
+	rv.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
 
 	if m.stackBase != nil {
 		numBase = len(m.stackBase.a)
@@ -246,14 +249,26 @@ OUTER:
 		// ---------------------------------------------
 		// Atomically ingest stackOpen into m.stackBase.
 
+		var stackOpenPrev *segmentStack
+		var stackBasePrev *segmentStack
+
 		stackBase, numWasBase, numWasOpen :=
 			m.snapshot(func(ss *segmentStack) {
+				// m.stackBase to take 1 refs, stackBase to take 1 refs.
+				ss.refs += 1
+
+				stackOpenPrev = m.stackOpen
 				m.stackOpen = nil
+
+				stackBasePrev = m.stackBase
 				m.stackBase = ss
 
 				// Awake any writers waiting for more stackOpen space.
 				m.stackOpenCond.Signal()
 			})
+
+		stackOpenPrev.Close()
+		stackBasePrev.Close()
 
 		// ---------------------------------------------
 		// Merge multiple stackBase layers.
@@ -276,34 +291,39 @@ OUTER:
 				continue OUTER
 			}
 
+			stackBase.Close()
+
+			mergedStackBase.addRef()
+			stackBase = mergedStackBase
+
 			m.m.Lock()
+			stackBasePrev = m.stackBase
 			m.stackBase = mergedStackBase
 			m.m.Unlock()
 
-			stackBase = mergedStackBase
-		}
-
-		// ---------------------------------------------
-		// Optionally notify persister.
-
-		persisterQueueLen := 0
-		if m.awakePersisterCh != nil {
-			persisterQueueLen = len(m.awakePersisterCh)
-			if numWasOpen > 0 {
-				m.awakePersisterCh <- stackBase
-			}
+			stackBasePrev.Close()
 		}
 
 		m.Log("collection: runMerger,"+
-			" persisterQueueLen: %d,"+
 			" prev stackBase height: %d,"+
 			" prev stackOpen height: %d,"+
 			" stackBase height: %d,"+
 			" stackBase top size: %d",
-			persisterQueueLen,
 			numWasBase, numWasOpen,
 			len(stackBase.a),
 			len(stackBase.a[len(stackBase.a)-1].kvs)/2)
+
+		// ---------------------------------------------
+		// Optionally notify persister.
+
+		if m.awakePersisterCh != nil {
+			m.awakePersisterCh <- stackBase
+			stackBase = nil
+		}
+
+		if stackBase != nil {
+			stackBase.Close()
+		}
 	}
 
 	// TODO: Concurrent merging goroutines of disjoint slices of the
@@ -351,6 +371,8 @@ OUTER:
 		if m.options.LowerLevelUpdate != nil {
 			llssNext, err := m.options.LowerLevelUpdate(persistableSS)
 			if err != nil {
+				persistableSS.Close()
+
 				m.Log("collection: runPersister, err: %v", err)
 
 				continue OUTER
@@ -365,6 +387,8 @@ OUTER:
 				llssPrev.Close()
 			}
 		}
+
+		persistableSS.Close()
 	}
 }
 

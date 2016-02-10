@@ -60,6 +60,10 @@ type segmentStack struct {
 
 	a []*segment
 
+	m sync.Mutex // Protects the fields the follow.
+
+	refs int
+
 	lowerLevelSnapshot *snapshotWrapper
 }
 
