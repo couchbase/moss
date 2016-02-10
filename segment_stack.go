@@ -62,25 +62,6 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 	return nil, nil
 }
 
-// StartIterator returns a new iterator instance based on the
-// segmentStack.
-//
-// On success, the returned Iterator will be positioned so that
-// Iterator.Current() will either provide the first entry in the
-// iteration range or ErrIteratorDone.
-//
-// A startKeyInclusive of nil means the logical "bottom-most" possible
-// key and an endKeyExclusive of nil means the logical "top-most"
-// possible key.
-func (ss *segmentStack) StartIterator(
-	startKeyInclusive []byte,
-	endKeyExclusive []byte,
-	iteratorOptions IteratorOptions,
-) (Iterator, error) {
-	return ss.startIterator(startKeyInclusive, endKeyExclusive,
-		false, true, 0)
-}
-
 // ------------------------------------------------------
 
 // getMerged() retrieves a lower level val for a given key and returns
@@ -142,8 +123,11 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	totOps := len(ss.a[newTopLevel].kvs) / 2
 	totBytes := len(ss.a[newTopLevel].buf)
 
-	iterPrealloc, err :=
-		ss.startIterator(nil, nil, true, false, newTopLevel+1)
+	iterPrealloc, err := ss.StartIterator(nil, nil, IteratorOptions{
+		IncludeDeletions:  true,
+		IncludeLowerLevel: false,
+		MinLevel:          newTopLevel + 1,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +135,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	defer iterPrealloc.Close()
 
 	for {
-		_, key, val, err := iterPrealloc.current()
+		_, key, val, err := iterPrealloc.CurrentEx()
 		if err == ErrIteratorDone {
 			break
 		}
@@ -179,8 +163,11 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		return nil, err
 	}
 
-	iter, err :=
-		ss.startIterator(nil, nil, true, false, newTopLevel)
+	iter, err := ss.startIterator(nil, nil, IteratorOptions{
+		IncludeDeletions:  true,
+		IncludeLowerLevel: false,
+		MinLevel:          newTopLevel,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +178,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 
 OUTER:
 	for {
-		op, key, val, err := iter.current()
+		op, key, val, err := iter.CurrentEx()
 		if err == ErrIteratorDone {
 			break
 		}
@@ -259,6 +246,28 @@ OUTER:
 
 // ------------------------------------------------------
 
+// StartIterator returns a new iterator on the given segmentStack.
+//
+// On success, the returned Iterator will be positioned so that
+// Iterator.Current() will either provide the first entry in the
+// iteration range or ErrIteratorDone.
+//
+// A startKeyInclusive of nil means the logical "bottom-most" possible
+// key and an endKeyExclusive of nil means the logical "top-most"
+// possible key.
+//
+// StartIterator can optionally include deletion operations in the
+// enumeration via the IteratorOptions.IncludeDeletions flag.
+//
+// StartIterator can ignore lower segments, via the
+// IteratorOptions.MinLevel parameter.  For example, to ignore the
+// lowest, 0th segment, use minLevel of 1.
+func (ss *segmentStack) StartIterator(
+	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions) (Iterator, error) {
+	return ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
+}
+
 // startIterator() returns a new iterator on the given segmentStack.
 //
 // On success, the returned Iterator will be positioned so that
@@ -269,27 +278,26 @@ OUTER:
 // key and an endKeyExclusive of nil means the logical "top-most"
 // possible key.
 //
-// startIterator can optionally include deletion operations in the
-// enumeration via the includeDeletions flag.
+// startIterator() can optionally include deletion operations in the
+// enumeration via the IteratorOptions.IncludeDeletions flag.
 //
-// startIterator can ignore lower segments, via the minLevel
-// parameter.  For example, to ignore the lowest, 0th segment, use
-// minLevel of 1.
+// startIterator() can ignore lower segments, via the
+// IteratorOptions.MinLevel parameter.  For example, to ignore the
+// lowest, 0th segment, use minLevel of 1.
 func (ss *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
-	includeDeletions bool, includeLowerLevel bool,
-	minLevel int,
-) (*iterator, error) {
+	iteratorOptions IteratorOptions) (*iterator, error) {
 	iter := &iterator{
 		ss:      ss,
 		cursors: make([]cursor, 0, len(ss.a)+1),
 
 		startKeyInclusive: startKeyInclusive,
 		endKeyExclusive:   endKeyExclusive,
-		includeDeletions:  includeDeletions,
+
+		iteratorOptions: iteratorOptions,
 	}
 
-	for ssIndex := minLevel; ssIndex < len(ss.a); ssIndex++ {
+	for ssIndex := iteratorOptions.MinLevel; ssIndex < len(ss.a); ssIndex++ {
 		b := ss.a[ssIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)
@@ -313,12 +321,11 @@ func (ss *segmentStack) startIterator(
 		})
 	}
 
-	if includeLowerLevel {
+	if iteratorOptions.IncludeLowerLevel {
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
-			lowerLevelIter, err :=
-				llss.StartIterator(startKeyInclusive, endKeyExclusive,
-					IteratorOptions{})
+			lowerLevelIter, err := llss.StartIterator(
+				startKeyInclusive, endKeyExclusive, iteratorOptions)
 
 			llss.decRef()
 
@@ -349,8 +356,8 @@ func (ss *segmentStack) startIterator(
 
 	heap.Init(iter)
 
-	if !iter.includeDeletions {
-		op, _, _, _ := iter.current()
+	if !iteratorOptions.IncludeDeletions {
+		op, _, _, _ := iter.CurrentEx()
 		if op == OperationDel {
 			iter.Next()
 		}
@@ -407,7 +414,7 @@ func (iter *iterator) Next() error {
 				return ErrIteratorDone
 			}
 
-			if !iter.includeDeletions &&
+			if !iter.iteratorOptions.IncludeDeletions &&
 				iter.cursors[0].op == OperationDel {
 				continue
 			}
@@ -454,7 +461,7 @@ func (iter *iterator) Next() error {
 		}
 
 		if !bytes.Equal(iter.cursors[0].k, lastK) {
-			if !iter.includeDeletions &&
+			if !iter.iteratorOptions.IncludeDeletions &&
 				iter.cursors[0].op == OperationDel {
 				return iter.Next()
 			}
@@ -469,7 +476,7 @@ func (iter *iterator) Next() error {
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
 func (iter *iterator) Current() ([]byte, []byte, error) {
-	operation, key, val, err := iter.current()
+	operation, key, val, err := iter.CurrentEx()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -491,9 +498,11 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 	return key, val, err
 }
 
-// current() returns the ErrIteratorDone if the iterator is done.
-// Otherwise, the current operation, key, val are turned.
-func (iter *iterator) current() (
+// CurrentEx is a more advanced form of Current() that returns more
+// metadata.  It is used when IteratorOptions.IncludeDeletions is
+// true.  It returns ErrIteratorDone if the iterator is done.
+// Otherwise, the current operation, key, val are returned.
+func (iter *iterator) CurrentEx() (
 	op uint64, key, val []byte, err error) {
 	if len(iter.cursors) <= 0 {
 		return 0, nil, nil, ErrIteratorDone

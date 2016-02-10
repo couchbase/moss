@@ -191,12 +191,19 @@ type Iterator interface {
 	// return ErrIteratorDone if the Iterator is done.
 	Next() error
 
-	// Current returns ErrIteratorDone when the Iterator is done.
+	// Current returns ErrIteratorDone if the iterator is done.
 	// Otherwise, Current() returns the current key and val, which
-	// should be treated as immutable and as "owned" by the Iterator.
-	// The key and val bytes will remain available until the next call
-	// to Next() or Close().
+	// should be treated as immutable or read-only.  The key and val
+	// bytes will remain available until the next call to Next() or
+	// Close().
 	Current() (key, val []byte, err error)
+
+	// CurrentEx is a more advanced form of Current() that returns
+	// more metadata.  It is used when
+	// IteratorOptions.IncludeDeletions is true.  It returns
+	// ErrIteratorDone if the iterator is done.  Otherwise, the
+	// current operation, key, val are returned.
+	CurrentEx() (op uint64, key, val []byte, err error)
 }
 
 type WriteOptions struct {
@@ -206,6 +213,9 @@ type ReadOptions struct {
 }
 
 type IteratorOptions struct {
+	IncludeDeletions  bool
+	IncludeLowerLevel bool
+	MinLevel          int
 }
 
 // A MergeOperator may be implemented by applications that wish to

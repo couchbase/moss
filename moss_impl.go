@@ -107,7 +107,8 @@ type iterator struct {
 
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
-	includeDeletions  bool
+
+	iteratorOptions IteratorOptions
 
 	lowerLevelIter Iterator // May be nil.
 }

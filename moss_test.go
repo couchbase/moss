@@ -524,7 +524,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 			var gotEntries []string
 
 			for {
-				gotOp, gotK, gotV, gotErr := itr.current()
+				gotOp, gotK, gotV, gotErr := itr.CurrentEx()
 
 				// fmt.Printf("    curr: %x %s %s %v\n",
 				//     gotOp, gotK, gotV, gotErr)
@@ -1049,7 +1049,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 
 			if test.op == "itr" {
 				for {
-					gotOp, gotK, gotV, gotErr := itr.current()
+					gotOp, gotK, gotV, gotErr := itr.CurrentEx()
 
 					// fmt.Printf("    curr: %x %s %s %v\n",
 					//     gotOp, gotK, gotV, gotErr)
