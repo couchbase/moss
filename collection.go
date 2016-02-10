@@ -63,7 +63,8 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 // ExecuteBatch atomically incorporates the provided Batch into the
 // collection.  The Batch instance should not be reused after
 // ExecuteBatch() returns.
-func (m *collection) ExecuteBatch(bIn Batch) error {
+func (m *collection) ExecuteBatch(bIn Batch,
+	writeOptions WriteOptions) error {
 	b, ok := bIn.(*segment)
 	if !ok {
 		return fmt.Errorf("wrong Batch implementation type")

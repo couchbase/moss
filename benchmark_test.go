@@ -143,6 +143,8 @@ func makeArr(n int, kind string) (arr [][]byte, arrTotBytes int) {
 func benchmarkSets(b *testing.B, fillKind string, batchSize int, batchKind string) {
 	arr, arrTotBytes := makeArr(batchSize, batchKind)
 
+	writeOptions := WriteOptions{}
+
 	b.ResetTimer()
 
 	if fillKind == "empty" {
@@ -154,7 +156,7 @@ func benchmarkSets(b *testing.B, fillKind string, batchSize int, batchKind strin
 			for _, buf := range arr {
 				batch.Set(buf, buf)
 			}
-			m.ExecuteBatch(batch)
+			m.ExecuteBatch(batch, writeOptions)
 			batch.Close()
 
 			m.Close()
@@ -168,7 +170,7 @@ func benchmarkSets(b *testing.B, fillKind string, batchSize int, batchKind strin
 			for _, buf := range arr {
 				batch.Set(buf, buf)
 			}
-			m.ExecuteBatch(batch)
+			m.ExecuteBatch(batch, writeOptions)
 			batch.Close()
 		}
 
@@ -181,6 +183,8 @@ func benchmarkSets(b *testing.B, fillKind string, batchSize int, batchKind strin
 func benchmarkSetsParallel(b *testing.B, batchSize int, batchKind string) {
 	arr, arrTotBytes := makeArr(batchSize, batchKind)
 
+	writeOptions := WriteOptions{}
+
 	m, _ := NewCollection(CollectionOptions{})
 	m.Start()
 
@@ -192,7 +196,7 @@ func benchmarkSetsParallel(b *testing.B, batchSize int, batchKind string) {
 			for _, buf := range arr {
 				batch.Set(buf, buf)
 			}
-			m.ExecuteBatch(batch)
+			m.ExecuteBatch(batch, writeOptions)
 			batch.Close()
 		}
 	})

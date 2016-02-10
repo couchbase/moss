@@ -70,7 +70,7 @@ type Collection interface {
 	// ExecuteBatch atomically incorporates the provided Batch into
 	// the Collection.  The Batch instance should not be reused after
 	// ExecuteBatch() returns.
-	ExecuteBatch(b Batch) error
+	ExecuteBatch(b Batch, writeOptions WriteOptions) error
 }
 
 // CollectionOptions allows applications to specify config settings.
@@ -167,7 +167,7 @@ type Snapshot interface {
 
 	// Get retrieves a val from the Snapshot, and will return nil val
 	// if the entry does not exist in the Snapshot.
-	Get(key []byte) ([]byte, error)
+	Get(key []byte, readOptions ReadOptions) ([]byte, error)
 
 	// StartIterator returns a new Iterator instance on this Snapshot.
 	//
@@ -178,7 +178,8 @@ type Snapshot interface {
 	// A startKeyInclusive of nil means the logical "bottom-most"
 	// possible key and an endKeyExclusive of nil means the logical
 	// "top-most" possible key.
-	StartIterator(startKeyInclusive, endKeyExclusive []byte) (Iterator, error)
+	StartIterator(startKeyInclusive, endKeyExclusive []byte,
+		iteratorOptions IteratorOptions) (Iterator, error)
 }
 
 // An Iterator allows enumeration of key-val entries from a Snapshot.
@@ -196,6 +197,15 @@ type Iterator interface {
 	// The key and val bytes will remain available until the next call
 	// to Next() or Close().
 	Current() (key, val []byte, err error)
+}
+
+type WriteOptions struct {
+}
+
+type ReadOptions struct {
+}
+
+type IteratorOptions struct {
 }
 
 // A MergeOperator may be implemented by applications that wish to

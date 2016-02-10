@@ -59,12 +59,15 @@ func (w *snapshotWrapper) Close() (err error) {
 	return w.decRef()
 }
 
-func (w *snapshotWrapper) Get(key []byte) ([]byte, error) {
-	return w.obj.Get(key)
+func (w *snapshotWrapper) Get(key []byte, readOptions ReadOptions) (
+	[]byte, error) {
+	return w.obj.Get(key, readOptions)
 }
 
 func (w *snapshotWrapper) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions,
 ) (Iterator, error) {
-	return w.obj.StartIterator(startKeyInclusive, endKeyExclusive)
+	return w.obj.StartIterator(startKeyInclusive, endKeyExclusive,
+		iteratorOptions)
 }

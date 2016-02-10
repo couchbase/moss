@@ -33,12 +33,12 @@ Example
     batch, c := c.NewBatch(0, 0)
     batch.Set([]byte("car-0"), []byte("tesla"))
     batch.Set([]byte("car-1"), []byte("honda"))
-    err = c.ExecuteBatch(batch)
+    err = c.ExecuteBatch(batch, moss.WriteOptions{})
     batch.Close()
 
     ss, err := c.Snapshot()
-    val0, err := ss.Get([]byte("car-0")) // val0 == []byte("tesla").
-    valX, err := ss.Get([]byte("car-not-there")) // valX == nil.
+    val0, err := ss.Get([]byte("car-0"), moss.ReadOptions{}) // val0 == []byte("tesla").
+    valX, err := ss.Get([]byte("car-not-there"), moss.ReadOptions{}) // valX == nil.
     ss.Close()
 
     c.Close()

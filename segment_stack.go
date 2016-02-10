@@ -27,7 +27,8 @@ func (ss *segmentStack) Close() error {
 }
 
 // Get retrieves a val from a segmentStack.
-func (ss *segmentStack) Get(key []byte) ([]byte, error) {
+func (ss *segmentStack) Get(key []byte,
+	readOptions ReadOptions) ([]byte, error) {
 	return ss.get(key, len(ss.a)-1)
 }
 
@@ -55,7 +56,7 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 	}
 
 	if ss.lowerLevelSnapshot != nil {
-		return ss.lowerLevelSnapshot.Get(key)
+		return ss.lowerLevelSnapshot.Get(key, ReadOptions{})
 	}
 
 	return nil, nil
@@ -72,7 +73,9 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 // key and an endKeyExclusive of nil means the logical "top-most"
 // possible key.
 func (ss *segmentStack) StartIterator(
-	startKeyInclusive, endKeyExclusive []byte,
+	startKeyInclusive []byte,
+	endKeyExclusive []byte,
+	iteratorOptions IteratorOptions,
 ) (Iterator, error) {
 	return ss.startIterator(startKeyInclusive, endKeyExclusive,
 		false, true, 0)
@@ -184,6 +187,8 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 
 	defer iter.Close()
 
+	var readOptions ReadOptions
+
 OUTER:
 	for {
 		op, key, val, err := iter.current()
@@ -218,7 +223,7 @@ OUTER:
 		if op == OperationMerge {
 			// TODO: the merge operator implementation is currently
 			// inefficient and not lazy enough right now.
-			val, err = iter.ss.Get(key)
+			val, err = iter.ss.Get(key, readOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -312,7 +317,8 @@ func (ss *segmentStack) startIterator(
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
 			lowerLevelIter, err :=
-				llss.StartIterator(startKeyInclusive, endKeyExclusive)
+				llss.StartIterator(startKeyInclusive, endKeyExclusive,
+					IteratorOptions{})
 
 			llss.decRef()
 

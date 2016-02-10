@@ -89,12 +89,12 @@ func TestEmpty(t *testing.T) {
 		t.Errorf("expected ss")
 	}
 
-	v, err := ss.Get([]byte("a"))
+	v, err := ss.Get([]byte("a"), ReadOptions{})
 	if err != nil || v != nil {
 		t.Errorf("expected no a")
 	}
 
-	iter, err := ss.StartIterator(nil, nil)
+	iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
 	if err != nil || iter == nil {
 		t.Errorf("expected iter")
 	}
@@ -124,7 +124,7 @@ func TestEmpty(t *testing.T) {
 		t.Errorf("expected b")
 	}
 
-	err = m.ExecuteBatch(b)
+	err = m.ExecuteBatch(b, WriteOptions{})
 	if err != nil {
 		t.Errorf("expected ok")
 	}
@@ -139,12 +139,12 @@ func TestEmpty(t *testing.T) {
 		t.Errorf("expected ss")
 	}
 
-	v, err = ss.Get([]byte("a"))
+	v, err = ss.Get([]byte("a"), ReadOptions{})
 	if err != nil || v != nil {
 		t.Errorf("expected no a")
 	}
 
-	iter, err = ss.StartIterator(nil, nil)
+	iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 	if err != nil || iter == nil {
 		t.Errorf("expected iter")
 	}
@@ -410,7 +410,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 					testi, test)
 			}
 
-			vGot, err := ss.Get(toBytes(test.k))
+			vGot, err := ss.Get(toBytes(test.k), ReadOptions{})
 			if err != test.expErr {
 				t.Errorf("get, testi: %d, test: %#v, expErr: %s, err: %s",
 					testi, test, test.expErr, err)
@@ -445,7 +445,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 					testi, test, test.expErr, err)
 			}
 
-			err = m.ExecuteBatch(b)
+			err = m.ExecuteBatch(b, WriteOptions{})
 			if err != nil {
 				t.Errorf("set, testi: %d, test: %#v, err: %v,"+
 					" expected execute batch ok",
@@ -473,7 +473,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 					testi, test, test.expErr, err)
 			}
 
-			err = m.ExecuteBatch(b)
+			err = m.ExecuteBatch(b, WriteOptions{})
 			if err != nil {
 				t.Errorf("det, testi: %d, test: %#v, err: %v,"+
 					" expected execute batch ok",
@@ -498,7 +498,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 			startKey := toBytes(startEndKeys[0])
 			endKey := toBytes(startEndKeys[1])
 
-			itrObj, err := ss.StartIterator(startKey, endKey)
+			itrObj, err := ss.StartIterator(startKey, endKey, IteratorOptions{})
 			if err != test.expErr {
 				t.Errorf("itr, testi: %d, test: %#v, expErr: %s, err: %s",
 					testi, test, test.expErr, err)
@@ -933,7 +933,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 			if b == nil {
 				t.Errorf("bb!, batch %s missing", test.sb)
 			}
-			err := m.ExecuteBatch(b)
+			err := m.ExecuteBatch(b, WriteOptions{})
 			if err != nil {
 				t.Errorf("bb!, testi: %d, test: %#v, err: %v,"+
 					" expected execute batch ok",
@@ -954,7 +954,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 					testi, test)
 			}
 
-			vGot, err := ss.Get(toBytes(test.k))
+			vGot, err := ss.Get(toBytes(test.k), ReadOptions{})
 			if err != test.expErr {
 				t.Errorf("get, testi: %d, test: %#v, expErr: %s, err: %s",
 					testi, test, test.expErr, err)
@@ -1022,7 +1022,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 			startKey := toBytes(startEndKeys[0])
 			endKey := toBytes(startEndKeys[1])
 
-			itrObj, err := ss.StartIterator(startKey, endKey)
+			itrObj, err := ss.StartIterator(startKey, endKey, IteratorOptions{})
 			if err != test.expErr {
 				t.Errorf("itr, testi: %d, test: %#v, expErr: %s, err: %s",
 					testi, test, test.expErr, err)
