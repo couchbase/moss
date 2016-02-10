@@ -21,6 +21,8 @@ func (m *collection) runPersister() {
 
 	var ssLast *segmentStack
 
+	// Keep only the last segmentStack, which will happen when the
+	// runPersisterInner is busy.
 	for {
 		select {
 		case <-m.stopCh:
