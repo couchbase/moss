@@ -24,18 +24,28 @@ func (m *collection) runPersister() {
 	// Keep only the last segmentStack, which will happen when the
 	// runPersisterInner is busy.
 	for {
-		select {
-		case <-m.stopCh:
-			return
+		if ssLast != nil {
+			select {
+			case <-m.stopCh:
+				return
 
-		case ssIn := <-m.awakePersisterCh:
-			if ssLast != nil {
-				ssLast.Close()
+			case ssIn := <-m.awakePersisterCh:
+				if ssLast != nil {
+					ssLast.Close()
+				}
+				ssLast = ssIn
+
+			case ssCh <- ssLast:
+				ssLast = nil
 			}
-			ssLast = ssIn
+		} else {
+			select {
+			case <-m.stopCh:
+				return
 
-		case ssCh <- ssLast:
-			ssLast = nil
+			case ssLast = <-m.awakePersisterCh:
+				// NO-OP.
+			}
 		}
 	}
 }
