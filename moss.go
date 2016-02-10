@@ -213,9 +213,20 @@ type ReadOptions struct {
 }
 
 type IteratorOptions struct {
-	IncludeDeletions  bool
-	IncludeLowerLevel bool
-	MinLevel          int
+	// IncludeDeletions is an advanced flag that specifies that an
+	// Iterator should include deletion operations in its enuemration.
+	// See also the Iterator.CurrentEx() method.
+	IncludeDeletions bool
+
+	// SkipLowerLevel is an advanced flag that specifies that an
+	// Iterator should not enumerate key-val entries from the
+	// optional, chained, lower-level iterator.  See
+	// CollectionOptions.LowerLevelInit/LowerLevelUpdate.
+	SkipLowerLevel bool
+
+	// MinSegmentLevel is an advanced parameter that specifies that an
+	// Iterator should skip segments lower than MinSegmentLevel.
+	MinSegmentLevel int
 }
 
 // A MergeOperator may be implemented by applications that wish to

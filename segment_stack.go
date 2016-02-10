@@ -124,9 +124,9 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	totBytes := len(ss.a[newTopLevel].buf)
 
 	iterPrealloc, err := ss.StartIterator(nil, nil, IteratorOptions{
-		IncludeDeletions:  true,
-		IncludeLowerLevel: false,
-		MinLevel:          newTopLevel + 1,
+		IncludeDeletions: true,
+		SkipLowerLevel:   true,
+		MinSegmentLevel:  newTopLevel + 1,
 	})
 	if err != nil {
 		return nil, err
@@ -164,9 +164,9 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	}
 
 	iter, err := ss.startIterator(nil, nil, IteratorOptions{
-		IncludeDeletions:  true,
-		IncludeLowerLevel: false,
-		MinLevel:          newTopLevel,
+		IncludeDeletions: true,
+		SkipLowerLevel:   true,
+		MinSegmentLevel:  newTopLevel,
 	})
 	if err != nil {
 		return nil, err
@@ -259,9 +259,9 @@ OUTER:
 // StartIterator can optionally include deletion operations in the
 // enumeration via the IteratorOptions.IncludeDeletions flag.
 //
-// StartIterator can ignore lower segments, via the
-// IteratorOptions.MinLevel parameter.  For example, to ignore the
-// lowest, 0th segment, use minLevel of 1.
+// StartIterator can skip lower segments, via the
+// IteratorOptions.MinSegmentLevel parameter.  For example, to ignore
+// the lowest, 0th segment, use MinSegmentLevel of 1.
 func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
@@ -281,9 +281,9 @@ func (ss *segmentStack) StartIterator(
 // startIterator() can optionally include deletion operations in the
 // enumeration via the IteratorOptions.IncludeDeletions flag.
 //
-// startIterator() can ignore lower segments, via the
-// IteratorOptions.MinLevel parameter.  For example, to ignore the
-// lowest, 0th segment, use minLevel of 1.
+// startIterator() can skip lower segments, via the
+// IteratorOptions.MinSegmentLevel parameter.  For example, to ignore
+// the lowest, 0th segment, use MinSegmentLevel of 1.
 func (ss *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (*iterator, error) {
@@ -297,7 +297,7 @@ func (ss *segmentStack) startIterator(
 		iteratorOptions: iteratorOptions,
 	}
 
-	for ssIndex := iteratorOptions.MinLevel; ssIndex < len(ss.a); ssIndex++ {
+	for ssIndex := iteratorOptions.MinSegmentLevel; ssIndex < len(ss.a); ssIndex++ {
 		b := ss.a[ssIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)
@@ -321,7 +321,7 @@ func (ss *segmentStack) startIterator(
 		})
 	}
 
-	if iteratorOptions.IncludeLowerLevel {
+	if !iteratorOptions.SkipLowerLevel {
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
 			lowerLevelIter, err := llss.StartIterator(
