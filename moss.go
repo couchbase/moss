@@ -206,12 +206,15 @@ type Iterator interface {
 	CurrentEx() (entryEx EntryEx, key, val []byte, err error)
 }
 
+// WriteOptions are provided to Collection.ExecuteBatch().
 type WriteOptions struct {
 }
 
+// ReadOptions are provided to Snapshot.Get().
 type ReadOptions struct {
 }
 
+// IteratorOptions are provided to Collection.StartIterator().
 type IteratorOptions struct {
 	// IncludeDeletions is an advanced flag that specifies that an
 	// Iterator should include deletion operations in its enuemration.
@@ -229,6 +232,8 @@ type IteratorOptions struct {
 	MinSegmentLevel int
 }
 
+// EntryEx provides extra, advanced information about an entry from
+// the Iterator.CurrentEx() method.
 type EntryEx struct {
 	Operation uint64
 }
