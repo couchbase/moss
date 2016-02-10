@@ -216,10 +216,10 @@ OUTER:
 			}
 
 			if val == nil {
-				continue OUTER
+				op = OperationDel
+			} else {
+				op = OperationSet
 			}
-
-			op = OperationSet
 		}
 
 		err = mergedSegment.mutate(op, key, val)
