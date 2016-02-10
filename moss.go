@@ -235,8 +235,13 @@ type IteratorOptions struct {
 // EntryEx provides extra, advanced information about an entry from
 // the Iterator.CurrentEx() method.
 type EntryEx struct {
+	// Operation is an OperationXxx const.
 	Operation uint64
 }
+
+const OperationSet = uint64(0x0100000000000000)
+const OperationDel = uint64(0x0200000000000000)
+const OperationMerge = uint64(0x0300000000000000)
 
 // A MergeOperator may be implemented by applications that wish to
 // optimize their read-compute-write use cases.  Write-heavy counters,

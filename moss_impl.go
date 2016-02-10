@@ -84,18 +84,19 @@ type segment struct {
 	totValByte        uint64
 }
 
+// See the OperationXxx consts.
 const maskOperation = uint64(0x0F00000000000000)
-const maskKeyLength = uint64(0x00FFFFFF00000000) // 24 bits key length.
-const maskValLength = uint64(0x000000000FFFFFFF) // 28 bits val length.
+
+// Max key length is 2^24, from 24 bits key length.
+const maskKeyLength = uint64(0x00FFFFFF00000000)
+
+// Max val length is 2^28, from 28 bits val length.
+const maskValLength = uint64(0x000000000FFFFFFF)
 
 // TODO: Consider using some bits from reserved, perhaps for LRU,
 // perhaps to track whether an item was persisted?
 
 const maskRESERVED = uint64(0xF0000000F0000000)
-
-const OperationSet = uint64(0x0100000000000000)
-const OperationDel = uint64(0x0200000000000000)
-const OperationMerge = uint64(0x0300000000000000)
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
 // segmentStack.  Iterator also implements the sort.Interface and
