@@ -322,7 +322,8 @@ func (ss *segmentStack) startIterator(
 		})
 	}
 
-	if !iteratorOptions.SkipLowerLevel {
+	if !iteratorOptions.SkipLowerLevel &&
+		ss.lowerLevelSnapshot != nil {
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
 			lowerLevelIter, err := llss.StartIterator(
