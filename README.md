@@ -11,12 +11,14 @@ Features
 
 * ordered key-val collection API.
 * range iteration.
-* snapshots provide for reader isolation.
-* all mutations are performed via atomic batches.
+* snapshots provide for isolated reads.
+* all mutations are performed via atomic batch API.
 * merge operations allow for read-compute-write optimizations
-  for write-heavy use cases (e.g., counters).
+  for write-heavy use cases (e.g., updating counters).
 * concurrent readers and writers don't block each other.
 * optional, advanced API's to avoid extra memory copying.
+* optional persistence callbacks to allow write-back caching
+* 100% go implementation.
 
 License
 =======
@@ -29,29 +31,32 @@ Example
     import github.com/couchbaselabs/moss
 
     c, err := moss.NewCollection(CollectionOptions{})
+    defer c.Close()
 
     batch, c := c.NewBatch(0, 0)
+    defer batch.Close()
+
     batch.Set([]byte("car-0"), []byte("tesla"))
     batch.Set([]byte("car-1"), []byte("honda"))
     err = c.ExecuteBatch(batch, moss.WriteOptions{})
-    batch.Close()
+
+    ropts := moss.ReadOptions{}
 
     ss, err := c.Snapshot()
-    val0, err := ss.Get([]byte("car-0"), moss.ReadOptions{}) // val0 == []byte("tesla").
-    valX, err := ss.Get([]byte("car-not-there"), moss.ReadOptions{}) // valX == nil.
-    ss.Close()
+    defer ss.Close()
 
-    c.Close()
+    val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
+    valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
 
 Design
 ======
 
 The design is similar to a (much) simplified LSM tree, with a stack of
-sorted key-val arrays or "segments".
+sorted, immutable key-val arrays or "segments".
 
 To incorporate the next Batch of key-val mutations, the incoming
-key-val entries are first sorted into a "segment", which is then
-atomically pushed onto the top of the stack of segments.
+key-val entries are first sorted into an immutable "segment", which is
+then atomically pushed onto the top of the stack of segments.
 
 For readers, a higher segment in the stack will shadow entries of the
 same key from lower segments.
@@ -63,13 +68,13 @@ In the best case, a remaining, single, large sorted segment will be
 efficient in memory usage and efficient for binary search and range
 iteration.
 
-Iterations when the stack height is > 1 are implementing using a
-simple N-way heap merge.
+Iterations when the stack height is > 1 are implementing using a N-way
+ heap merge.
 
 In this design, the stack of segments is treated as immutable via a
 copy-on-write approach whenever the stack needs to be "modified".  So,
 multiple readers and writers won't block each other, and taking a
-Snapshot is also a similarly cheap operation by cloning a stack.
+Snapshot is also a similarly cheap operation by cloning the stack.
 
 Limitations
 ===========
