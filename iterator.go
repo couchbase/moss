@@ -173,66 +173,25 @@ func (iter *iterator) Next() error {
 		return ErrIteratorDone
 	}
 
-	// ---------------------------------------------
-	// Special case when only have 1 cursor left.
-
-	if len(iter.cursors) == 1 {
-		for {
-			next := &iter.cursors[0]
-
-			if next.ssIndex < 0 && next.pos < 0 {
-				err := iter.lowerLevelIter.Next()
-				if err != nil {
-					iter.lowerLevelIter.Close()
-					iter.lowerLevelIter = nil
-
-					heap.Pop(iter)
-
-					return err
-				}
-
-				return nil
-			}
-
-			next.pos += 1
-			next.op, next.k, next.v =
-				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
-			if (next.op == 0 && next.k == nil && next.v == nil) ||
-				(iter.endKeyExclusive != nil &&
-					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
-				heap.Pop(iter)
-
-				return ErrIteratorDone
-			}
-
-			if !iter.iteratorOptions.IncludeDeletions &&
-				iter.cursors[0].op == OperationDel {
-				continue
-			}
-
-			return nil
-		}
-	}
-
-	// ---------------------------------------------
-	// Otherwise use heap to find the next entry.
-
 	lastK := iter.cursors[0].k
 
-	for {
+	for len(iter.cursors) > 0 {
 		next := &iter.cursors[0]
 
 		if next.ssIndex < 0 && next.pos < 0 {
-			var err error
+			err := iter.lowerLevelIter.Next()
+			if err == nil {
+				next.k, next.v, err = iter.lowerLevelIter.Current()
+				if err == nil {
+					heap.Fix(iter, 0)
+				}
+			}
 
-			next.k, next.v, err = iter.lowerLevelIter.Current()
 			if err != nil {
 				iter.lowerLevelIter.Close()
 				iter.lowerLevelIter = nil
 
 				heap.Pop(iter)
-			} else {
-				heap.Fix(iter, 0)
 			}
 		} else {
 			next.pos += 1
@@ -260,6 +219,8 @@ func (iter *iterator) Next() error {
 			return nil
 		}
 	}
+
+	return ErrIteratorDone
 }
 
 // Current returns ErrIteratorDone if the iterator is done.
