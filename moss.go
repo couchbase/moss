@@ -228,8 +228,16 @@ type IteratorOptions struct {
 	SkipLowerLevel bool
 
 	// MinSegmentLevel is an advanced parameter that specifies that an
-	// Iterator should skip segments lower than MinSegmentLevel.
+	// Iterator should skip segments at a level less than
+	// MinSegmentLevel.  MinSegmentLevel is 0-based level, like an
+	// array index.
 	MinSegmentLevel int
+
+	// MaxSegmentHeight is an advanced parameter that specifies that
+	// an Iterator should skip segments at a level >= than
+	// MaxSegmentHeight.  MaxSegmentHeight is 1-based height, like an
+	// array length.
+	MaxSegmentHeight int
 }
 
 // EntryEx provides extra, advanced information about an entry from

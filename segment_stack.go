@@ -148,6 +148,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		IncludeDeletions: true,
 		SkipLowerLevel:   true,
 		MinSegmentLevel:  newTopLevel + 1,
+		MaxSegmentHeight: len(ss.a),
 	})
 	if err != nil {
 		return nil, err
@@ -188,6 +189,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		IncludeDeletions: true,
 		SkipLowerLevel:   true,
 		MinSegmentLevel:  newTopLevel,
+		MaxSegmentHeight: len(ss.a),
 	})
 	if err != nil {
 		return nil, err
@@ -287,6 +289,10 @@ OUTER:
 func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
+	if iteratorOptions.MaxSegmentHeight <= 0 {
+		iteratorOptions.MaxSegmentHeight = len(ss.a)
+	}
+
 	return ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 }
 
@@ -319,7 +325,10 @@ func (ss *segmentStack) startIterator(
 		iteratorOptions: iteratorOptions,
 	}
 
-	for ssIndex := iteratorOptions.MinSegmentLevel; ssIndex < len(ss.a); ssIndex++ {
+	minSegmentLevel := iteratorOptions.MinSegmentLevel
+	maxSegmentLevel := iteratorOptions.MaxSegmentHeight
+
+	for ssIndex := minSegmentLevel; ssIndex < maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)
@@ -347,8 +356,12 @@ func (ss *segmentStack) startIterator(
 		ss.lowerLevelSnapshot != nil {
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
+			llOptions := iteratorOptions
+			llOptions.MinSegmentLevel = 0
+			llOptions.MaxSegmentHeight = 0
+
 			lowerLevelIter, err := llss.StartIterator(
-				startKeyInclusive, endKeyExclusive, iteratorOptions)
+				startKeyInclusive, endKeyExclusive, llOptions)
 
 			llss.decRef()
 
