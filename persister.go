@@ -62,6 +62,8 @@ LOOP:
 
 				m.Log("collection: runPersisterInner, err: %v", err)
 
+				m.OnError(err)
+
 				continue LOOP
 			}
 

@@ -103,7 +103,13 @@ type CollectionOptions struct {
 
 	Debug int // Higher means more logging, when Log != nil.
 
-	Log func(format string, a ...interface{}) // Optional, may be nil.
+	// Log is a callback invoked when the Collection needs to log a
+	// debug message.  Optional, may be nil.
+	Log func(format string, a ...interface{})
+
+	// OnError is a callback invoked when the Collection encounters a
+	// background error.  Optional, may be nil.
+	OnError func(error)
 }
 
 // DefaultCollectionOptions are the default config settings.

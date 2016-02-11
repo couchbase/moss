@@ -147,6 +147,16 @@ func (m *collection) Log(format string, a ...interface{}) {
 	}
 }
 
+// OnError invokes the user's configured OnError callback, in which
+// the application might take further action, for example, such as
+// Close()'ing the Collection in order to fix underlying
+// storage/resource issues.
+func (m *collection) OnError(err error) {
+	if m.options.OnError != nil {
+		m.options.OnError(err)
+	}
+}
+
 // ------------------------------------------------------
 
 // snapshot() atomically clones the stackBase and stackOpen into a new
@@ -287,6 +297,8 @@ OUTER:
 				m.Log("collection: runMerger stackBase.merge,"+
 					" newTopLevel: %d, err: %v",
 					newTopLevel, err)
+
+				m.OnError(err)
 
 				continue OUTER
 			}
