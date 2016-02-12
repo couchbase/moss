@@ -429,4 +429,8 @@ OUTER:
 	// TODO: The base layer is likely the largest, so instead of heap
 	// merging the base layer entries, treat the base layer with
 	// special case to binary search to find better start points?
+	//
+	// TODO: Dynamically calc'ed soft max dirty top height, for
+	// read-heavy (favor lower) versus write-heavy (favor higher)
+	// situations?
 }
