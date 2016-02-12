@@ -41,9 +41,8 @@ type collection struct {
 	// ExecuteBatch() will push new segments onto stackDirtyTop.
 	stackDirtyTop *segmentStack
 
-	// The merger asynchronously moves all segments from stackDirtyTop
-	// into stackDirtyMid and also merges segments in stackDirtyMid to
-	// keep stackDirtyMid's height low.
+	// The merger asynchronously grabs all segments from stackDirtyTop
+	// and atomically moves them into stackDirtyMid.
 	stackDirtyMid *segmentStack
 
 	// stackDirtyBase represents the segments currently being

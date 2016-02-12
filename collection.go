@@ -46,7 +46,7 @@ func (m *collection) Options() CollectionOptions {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
-	rv, _, _ := m.snapshot(nil)
+	rv, _, _, _, _ := m.snapshot(0, nil)
 
 	return rv, nil
 }
@@ -89,12 +89,12 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		m.stackDirtyTopCond.Wait()
 	}
 
-	numOpen := 0
+	numDirtyTop := 0
 	if m.stackDirtyTop != nil {
-		numOpen = len(m.stackDirtyTop.a)
+		numDirtyTop = len(m.stackDirtyTop.a)
 	}
 
-	stackDirtyTop.a = make([]*segment, 0, numOpen+1)
+	stackDirtyTop.a = make([]*segment, 0, numDirtyTop+1)
 
 	if m.stackDirtyTop != nil {
 		stackDirtyTop.a = append(stackDirtyTop.a, m.stackDirtyTop.a...)
@@ -161,35 +161,59 @@ func (m *collection) OnError(err error) {
 
 // ------------------------------------------------------
 
-// snapshot() atomically clones the stackDirtyMid and stackDirtyTop
-// into a new segmentStack, and also invokes the optional callback
-// while holding the collection lock.
-func (m *collection) snapshot(cb func(*segmentStack)) (
-	*segmentStack, int, int) {
+const snapshotSkipDirtyTop = uint32(0x00000001)
+const snapshotSkipDirtyMid = uint32(0x00000002)
+const snapshotSkipDirtyBase = uint32(0x00000004)
+const snapshotSkipClean = uint32(0x00000008)
+
+// snapshot() atomically clones the various stacks into a new, single
+// segmentStack, controllable by skip flags, and also invokes the
+// optional callback while holding the collection lock.
+func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
+	*segmentStack, int, int, int, int) {
 	rv := &segmentStack{collection: m, refs: 1}
 
-	numBase := 0
-	numOpen := 0
+	heightDirtyTop := 0
+	heightDirtyMid := 0
+	heightDirtyBase := 0
+	heightClean := 0
 
 	m.m.Lock()
 
 	rv.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
 
-	if m.stackDirtyMid != nil {
-		numBase = len(m.stackDirtyMid.a)
+	if m.stackDirtyTop != nil && (skip&snapshotSkipDirtyTop == 0) {
+		heightDirtyTop = len(m.stackDirtyTop.a)
 	}
 
-	if m.stackDirtyTop != nil {
-		numOpen = len(m.stackDirtyTop.a)
+	if m.stackDirtyMid != nil && (skip&snapshotSkipDirtyMid == 0) {
+		heightDirtyMid = len(m.stackDirtyMid.a)
 	}
 
-	rv.a = make([]*segment, 0, numBase+numOpen)
+	if m.stackDirtyBase != nil && (skip&snapshotSkipDirtyBase == 0) {
+		heightDirtyBase = len(m.stackDirtyBase.a)
+	}
 
-	if m.stackDirtyMid != nil {
+	if m.stackClean != nil && (skip&snapshotSkipClean == 0) {
+		heightClean = len(m.stackClean.a)
+	}
+
+	rv.a = make([]*segment, 0,
+		heightDirtyTop+heightDirtyMid+heightDirtyBase+heightClean)
+
+	if m.stackClean != nil && (skip&snapshotSkipClean == 0) {
+		rv.a = append(rv.a, m.stackClean.a...)
+	}
+
+	if m.stackDirtyBase != nil && (skip&snapshotSkipDirtyBase == 0) {
+		rv.a = append(rv.a, m.stackDirtyBase.a...)
+	}
+
+	if m.stackDirtyMid != nil && (skip&snapshotSkipDirtyMid == 0) {
 		rv.a = append(rv.a, m.stackDirtyMid.a...)
 	}
 
-	if m.stackDirtyTop != nil {
+	if m.stackDirtyTop != nil && (skip&snapshotSkipDirtyTop == 0) {
 		rv.a = append(rv.a, m.stackDirtyTop.a...)
 	}
 
@@ -199,7 +223,7 @@ func (m *collection) snapshot(cb func(*segmentStack)) (
 
 	m.m.Unlock()
 
-	return rv, numBase, numOpen
+	return rv, heightClean, heightDirtyBase, heightDirtyMid, heightDirtyTop
 }
 
 // ------------------------------------------------------
@@ -259,13 +283,14 @@ OUTER:
 			receivePings(m.pingMergerCh, pings, "mergeAll", mergeAll)
 
 		// ---------------------------------------------
-		// Atomically ingest stackDirtyTop into m.stackDirtyMid.
+		// Atomically ingest stackDirtyTop into stackDirtyMid.
 
 		var stackDirtyTopPrev *segmentStack
 		var stackDirtyMidPrev *segmentStack
 
-		stackDirtyMid, numWasBase, numWasOpen :=
-			m.snapshot(func(ss *segmentStack) {
+		stackDirtyMid, htWasClean, htWasDirtyBase, htWasDirtyMid, htWasDirtyTop :=
+			m.snapshot(snapshotSkipDirtyBase | snapshotSkipClean,
+			func(ss *segmentStack) {
 				// m.stackDirtyMid takes 1 refs, and
 				// stackDirtyMid takes 1 refs.
 				ss.refs += 1
@@ -321,11 +346,16 @@ OUTER:
 		}
 
 		m.Log("collection: runMerger,"+
-			" prev stackDirtyMid height: %d,"+
-			" prev stackDirtyTop height: %d,"+
-			" stackDirtyMid height: %d,"+
-			" stackDirtyMid top size: %d",
-			numWasBase, numWasOpen,
+			" prev clean ht: %d,"+
+			" prev dirtyBase ht: %d,"+
+			" prev dirtyMid ht: %d,"+
+			" prev dirtyTop ht: %d,"+
+			" dirtyMid ht: %d,"+
+			" dirtyMid top size: %d",
+			htWasClean,
+			htWasDirtyBase,
+			htWasDirtyMid,
+			htWasDirtyTop,
 			len(stackDirtyMid.a),
 			len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2)
 
