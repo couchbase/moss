@@ -28,7 +28,7 @@
 // iteration.
 //
 // Iterations when the stack height is > 1 are implementing using a
-// simple N-way heap merge.
+// N-way heap merge.
 //
 // In this design, stacks are treated as immutable via a copy-on-write
 // approach whenever a stack is "modified".  So, readers and writers
@@ -54,7 +54,8 @@ type Collection interface {
 	// Start kicks off required background tasks.
 	Start() error
 
-	// Close synchronously stops background tasks and releases resources.
+	// Close synchronously stops background tasks and releases
+	// resources.
 	Close() error
 
 	// Options returns the options currently being used.
@@ -68,22 +69,21 @@ type Collection interface {
 	NewBatch(totalOps, totalKeyValBytes int) (Batch, error)
 
 	// ExecuteBatch atomically incorporates the provided Batch into
-	// the Collection.  The Batch instance should not be reused after
-	// ExecuteBatch() returns.
+	// the Collection.  The Batch instance should be Close()'ed and
+	// not reused after ExecuteBatch() returns.
 	ExecuteBatch(b Batch, writeOptions WriteOptions) error
 }
 
 // CollectionOptions allows applications to specify config settings.
 type CollectionOptions struct {
 	// MergeOperator is an optional func provided by an application
-	// that wants to use the Merge()'ing feature.
+	// that wants to use Batch.Merge()'ing.
 	MergeOperator MergeOperator
 
 	// MinMergePercentage allows the merger to avoid premature merging
 	// of segments that are too small, where a segment X has to reach
 	// a certain size percentage compared to the next lower segment
-	// before segment X (and all segments above X) will be N-way
-	// merged downards.
+	// before segment X (and all segments above X) will be merged.
 	MinMergePercentage float64
 
 	// MaxStackDirtyTopHeight is the max height of the stack of
@@ -112,7 +112,7 @@ type CollectionOptions struct {
 	OnError func(error)
 }
 
-// DefaultCollectionOptions are the default config settings.
+// DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
 	MergeOperator:          nil,
 	MinMergePercentage:     0.8,
@@ -128,22 +128,23 @@ type Batch interface {
 	Close() error
 
 	// Set creates or updates an key-val entry in the Collection.  The
-	// key must be unique (not repeated) within the Batch.  Set copies
-	// the key and val bytes into the Batch, so the key-val memory may
-	// be reused by the caller.
+	// key must be unique (not repeated) within the Batch.  Set()
+	// copies the key and val bytes into the Batch, so the memory
+	// bytes of the key and val may be reused by the caller.
 	Set(key, val []byte) error
 
 	// Del deletes a key-val entry from the Collection.  The key must
 	// be unique (not repeated) within the Batch.  Del copies the key
-	// bytes into the Batch, so the key bytes may be memory by the
-	// caller.  Del() on a non-existent key results in a nil error.
+	// bytes into the Batch, so the memory bytes of the key may be
+	// reused by the caller.  Del() on a non-existent key results in a
+	// nil error.
 	Del(key []byte) error
 
 	// Merge creates or updates a key-val entry in the Collection via
 	// the MergeOperator defined in the CollectionOptions.  The key
-	// must be unique (not repeated) within the Batch.  Set copies the
-	// key and val bytes into the Batch, so the key-val memory may be
-	// reused by the caller.
+	// must be unique (not repeated) within the Batch.  Merge() copies
+	// the key and val bytes into the Batch, so the memory bytes of
+	// the key and val may be reused by the caller.
 	Merge(key, val []byte) error
 
 	// ----------------------------------------------------
@@ -188,7 +189,7 @@ type Snapshot interface {
 		iteratorOptions IteratorOptions) (Iterator, error)
 }
 
-// An Iterator allows enumeration of key-val entries from a Snapshot.
+// An Iterator allows enumeration of key-val entries.
 type Iterator interface {
 	// Close must be invoked to release resources.
 	Close() error
@@ -208,7 +209,8 @@ type Iterator interface {
 	// more metadata for each entry.  It is more useful when used with
 	// IteratorOptions.IncludeDeletions of true.  It returns
 	// ErrIteratorDone if the iterator is done.  Otherwise, the
-	// current EntryEx, key, val are returned.
+	// current EntryEx, key, val are returned, which should be treated
+	// as immutable or read-only.
 	CurrentEx() (entryEx EntryEx, key, val []byte, err error)
 }
 
@@ -220,7 +222,7 @@ type WriteOptions struct {
 type ReadOptions struct {
 }
 
-// IteratorOptions are provided to Collection.StartIterator().
+// IteratorOptions are provided to StartIterator().
 type IteratorOptions struct {
 	// IncludeDeletions is an advanced flag that specifies that an
 	// Iterator should include deletion operations in its enuemration.
@@ -278,8 +280,8 @@ type MergeOperator interface {
 	PartialMerge(key, leftOperand, rightOperand []byte) ([]byte, bool)
 }
 
-// LowerLevelUpdate is the func signature used for updating the
-// optional lower-level storage of a Collection.
+// LowerLevelUpdate is the func callback signature used when a
+// Collection wants to update its optional, lower-level storage.
 type LowerLevelUpdate func(higher Snapshot) (lower Snapshot, err error)
 
 // ------------------------------------------------------------
@@ -298,10 +300,6 @@ func NewCollection(options CollectionOptions) (
 
 	c.stackDirtyTopCond = sync.NewCond(&c.m)
 	c.stackDirtyBaseCond = sync.NewCond(&c.m)
-
-	if options.LowerLevelUpdate != nil {
-		c.awakePersisterCh = make(chan *segmentStack, 10)
-	}
 
 	return c, nil
 }

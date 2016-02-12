@@ -24,10 +24,6 @@ type collection struct {
 	doneMergerCh    chan struct{}
 	donePersisterCh chan struct{}
 
-	// When a newly merged stackDirtyMid is ready, the merger will
-	// notify the persister via the awakePersisterCh.
-	awakePersisterCh chan *segmentStack
-
 	m sync.Mutex // Protects the fields that follow.
 
 	// When ExecuteBatch() has pushed a new segment onto
