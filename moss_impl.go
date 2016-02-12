@@ -105,13 +105,10 @@ const maskKeyLength = uint64(0x00FFFFFF00000000)
 // Max val length is 2^28, from 28 bits val length.
 const maskValLength = uint64(0x000000000FFFFFFF)
 
-// TODO: Consider using some bits from reserved, perhaps for LRU,
-// perhaps to track whether an item was persisted?
-
 const maskRESERVED = uint64(0xF0000000F0000000)
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
-// segmentStack.  Iterator also implements the sort.Interface and
+// segmentStack.  Iterator implements the sort.Interface and
 // heap.Interface on its cursors.
 type iterator struct {
 	ss *segmentStack
@@ -127,7 +124,8 @@ type iterator struct {
 }
 
 // A cursor rerpresents a logical entry position inside a segment in a
-// segmentStack.
+// segmentStack.  An ssIndex < 0 and pos < 0 mean that the op/k/v came
+// from the lowerLevelIter.
 type cursor struct {
 	ssIndex int // Index into Iterator.ss.a.
 	pos     int // Logical entry position into Iterator.ss.a[ssIndex].kvs.
