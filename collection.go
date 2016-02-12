@@ -419,8 +419,10 @@ OUTER:
 		}
 	}
 
-	// TODO: Concurrent merging goroutines of disjoint slices of the
-	// stackDirtyMid instead of the current, single-threaded merger.
+	// TODO: Concurrent merging of disjoint slices of stackDirtyMid
+	// instead of the current, single-threaded merger?
+	//
+	// TODO: A busy merger means no feeding of the persister?
 	//
 	// TODO: Delay merger until lots of deletion tombstones?
 	//

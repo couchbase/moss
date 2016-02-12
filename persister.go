@@ -66,12 +66,19 @@ OUTER:
 
 		m.m.Unlock()
 
-		// TODO: More advanced eviction of stackClean.
-
 		stackCleanPrev.Close()
 
 		if llssPrev != nil {
 			llssPrev.Close()
 		}
 	}
+
+	// TODO: More advanced eviction of stackClean.
+	// TODO: Timer based eviction of stackClean?
+	// TODO: Randomized eviction?
+	// TODO: Merging of stackClean to 1 level?
+	// TODO: WaitForMerger() also considers stackClean?
+	// TODO: Track popular Get() keys?
+	// TODO: Track shadowing during merges for writes.
+	// TODO: Consider our own simple storage format?
 }

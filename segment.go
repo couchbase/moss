@@ -228,6 +228,9 @@ func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 
 		return bytes.Compare(k, startKeyInclusive) >= 0
 	})
+
+	// TODO: Do better than binary search?
+	// TODO: Consider a perfectly balanced btree?
 }
 
 // getOperationKeyVal() returns the operation, key, val for a given
