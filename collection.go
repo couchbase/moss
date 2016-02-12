@@ -143,11 +143,8 @@ func (m *collection) WaitForMerger(kind string) error {
 // Log invokes the user's configured Log callback, if any, if the
 // debug levels are met.
 func (m *collection) Log(format string, a ...interface{}) {
-	if m.options.Log == nil {
-		return
-	}
-
-	if m.options.Debug > 0 {
+	if m.options.Debug > 0 &&
+		m.options.Log != nil {
 		m.options.Log(format, a...)
 	}
 }
