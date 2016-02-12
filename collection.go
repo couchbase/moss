@@ -14,7 +14,54 @@ package moss
 import (
 	"fmt"
 	"sort"
+	"sync"
 )
+
+// A collection implements the Collection interface.
+type collection struct {
+	options CollectionOptions
+
+	stopCh          chan struct{}
+	pingMergerCh    chan ping
+	doneMergerCh    chan struct{}
+	donePersisterCh chan struct{}
+
+	m sync.Mutex // Protects the fields that follow.
+
+	// When ExecuteBatch() has pushed a new segment onto
+	// stackDirtyTop, it notifies the merger via awakeMergerCh (if
+	// non-nil).
+	awakeMergerCh chan struct{}
+
+	// stackDirtyTopCond is used to wait for space in stackDirtyTop.
+	stackDirtyTopCond *sync.Cond
+
+	// stackDirtyBaseCond is used to wait for non-nil stackDirtyBase.
+	stackDirtyBaseCond *sync.Cond
+
+	// ExecuteBatch() will push new segments onto stackDirtyTop.
+	stackDirtyTop *segmentStack
+
+	// The merger asynchronously grabs all segments from stackDirtyTop
+	// and atomically moves them into stackDirtyMid.
+	stackDirtyMid *segmentStack
+
+	// stackDirtyBase represents the segments currently being
+	// optionally persisted.  Will be nil when persistence is not
+	// being used.
+	stackDirtyBase *segmentStack
+
+	// stackClean represents the segments that have been persisted,
+	// and can be safely evicted, as the lowerLevelSnapshot will have
+	// those entries.  Will be nil when persistence is not being used.
+	stackClean *segmentStack
+
+	// lowerLevelSnapshot provides an optional, lower-level storage
+	// implementation, when using the Collection as a cache.
+	lowerLevelSnapshot *snapshotWrapper
+}
+
+// ------------------------------------------------------
 
 // Start kicks off required background gouroutines.
 func (m *collection) Start() error {
@@ -380,34 +427,4 @@ OUTER:
 	// TODO: The base layer is likely the largest, so instead of heap
 	// merging the base layer entries, treat the base layer with
 	// special case to binary search to find better start points?
-}
-
-// ------------------------------------------------------
-
-// replyToPings() is a helper funciton to respond to ping requests.
-func replyToPings(pings []ping) {
-	for _, ping := range pings {
-		if ping.pongCh != nil {
-			close(ping.pongCh)
-			ping.pongCh = nil
-		}
-	}
-}
-
-// receivePings() collects any available ping requests, but will not
-// block if there are no incoming ping requests.
-func receivePings(pingCh chan ping, pings []ping,
-	kindMatch string, kindSeen bool) ([]ping, bool) {
-	for {
-		select {
-		case ping := <-pingCh:
-			pings = append(pings, ping)
-			if ping.kind == kindMatch {
-				kindSeen = true
-			}
-
-		default:
-			return pings, kindSeen
-		}
-	}
 }

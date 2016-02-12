@@ -16,6 +16,34 @@ import (
 	"container/heap"
 )
 
+// An iterator tracks a min-heap "scan-line" of cursors through a
+// segmentStack.  Iterator implements the sort.Interface and
+// heap.Interface on its cursors.
+type iterator struct {
+	ss *segmentStack
+
+	cursors []cursor // The len(cursors) <= len(ss.a).
+
+	startKeyInclusive []byte
+	endKeyExclusive   []byte
+
+	iteratorOptions IteratorOptions
+
+	lowerLevelIter Iterator // May be nil.
+}
+
+// A cursor rerpresents a logical entry position inside a segment in a
+// segmentStack.  An ssIndex < 0 and pos < 0 mean that the op/k/v came
+// from the lowerLevelIter.
+type cursor struct {
+	ssIndex int // Index into Iterator.ss.a.
+	pos     int // Logical entry position into Iterator.ss.a[ssIndex].kvs.
+
+	op uint64
+	k  []byte
+	v  []byte
+}
+
 // StartIterator returns a new iterator on the given segmentStack.
 //
 // On success, the returned Iterator will be positioned so that

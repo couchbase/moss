@@ -16,6 +16,38 @@ import (
 	"sort"
 )
 
+// A segment is a sequence of key-val entries or operations.  A
+// segment's kvs will be sorted by key when the segment is pushed into
+// the collection.  A segment implements the Batch interface.
+type segment struct {
+	// Each key-val operation is encoded as 2 uint64's...
+	// - operation (see: maskOperation) |
+	//       key length (see: maskKeyLength) |
+	//       val length (see: maskValLength).
+	// - start index into buf for key-val bytes.
+	kvs []uint64
+
+	// Contiguous backing memory for the keys and vals of the segment.
+	buf []byte
+
+	totOperationSet   uint64
+	totOperationDel   uint64
+	totOperationMerge uint64
+	totKeyByte        uint64
+	totValByte        uint64
+}
+
+// See the OperationXxx consts.
+const maskOperation = uint64(0x0F00000000000000)
+
+// Max key length is 2^24, from 24 bits key length.
+const maskKeyLength = uint64(0x00FFFFFF00000000)
+
+// Max val length is 2^28, from 28 bits val length.
+const maskValLength = uint64(0x000000000FFFFFFF)
+
+const maskRESERVED = uint64(0xF0000000F0000000)
+
 // newSegment() allocates a segment with hinted amount of resources.
 func newSegment(totalOps, totalKeyValBytes int) (
 	*segment, error) {

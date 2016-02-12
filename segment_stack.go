@@ -13,7 +13,24 @@ package moss
 
 import (
 	"bytes"
+	"sync"
 )
+
+// A segmentStack is a stack of segments, where higher (later) entries
+// in the stack have higher precedence, and should "shadow" any
+// entries of the same key from lower in the stack.  A segmentStack
+// implements the Snapshot interface.
+type segmentStack struct {
+	collection *collection
+
+	a []*segment
+
+	m sync.Mutex // Protects the fields the follow.
+
+	refs int
+
+	lowerLevelSnapshot *snapshotWrapper
+}
 
 func (ss *segmentStack) addRef() {
 	ss.m.Lock()
