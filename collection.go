@@ -72,43 +72,45 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		return nil
 	}
 
-	maxStackOpenHeight := m.options.MaxStackOpenHeight
-	if maxStackOpenHeight <= 0 {
-		maxStackOpenHeight = DefaultCollectionOptions.MaxStackOpenHeight
+	maxStackDirtyTopHeight := m.options.MaxStackDirtyTopHeight
+	if maxStackDirtyTopHeight <= 0 {
+		maxStackDirtyTopHeight =
+			DefaultCollectionOptions.MaxStackDirtyTopHeight
 	}
 
 	sort.Sort(b)
 
-	stackOpen := &segmentStack{collection: m, refs: 1}
+	stackDirtyTop := &segmentStack{collection: m, refs: 1}
 
 	m.m.Lock()
 
-	for m.stackOpen != nil && len(m.stackOpen.a) >= maxStackOpenHeight {
-		m.stackOpenCond.Wait()
+	for m.stackDirtyTop != nil &&
+		len(m.stackDirtyTop.a) >= maxStackDirtyTopHeight {
+		m.stackDirtyTopCond.Wait()
 	}
 
 	numOpen := 0
-	if m.stackOpen != nil {
-		numOpen = len(m.stackOpen.a)
+	if m.stackDirtyTop != nil {
+		numOpen = len(m.stackDirtyTop.a)
 	}
 
-	stackOpen.a = make([]*segment, 0, numOpen+1)
+	stackDirtyTop.a = make([]*segment, 0, numOpen+1)
 
-	if m.stackOpen != nil {
-		stackOpen.a = append(stackOpen.a, m.stackOpen.a...)
+	if m.stackDirtyTop != nil {
+		stackDirtyTop.a = append(stackDirtyTop.a, m.stackDirtyTop.a...)
 	}
 
-	stackOpen.a = append(stackOpen.a, b)
+	stackDirtyTop.a = append(stackDirtyTop.a, b)
 
-	prevStackOpen := m.stackOpen
-	m.stackOpen = stackOpen
+	prevStackDirtyTop := m.stackDirtyTop
+	m.stackDirtyTop = stackDirtyTop
 
 	awakeMergerCh := m.awakeMergerCh
 	m.awakeMergerCh = nil
 
 	m.m.Unlock()
 
-	prevStackOpen.Close()
+	prevStackDirtyTop.Close()
 
 	if awakeMergerCh != nil {
 		close(awakeMergerCh)
@@ -159,9 +161,9 @@ func (m *collection) OnError(err error) {
 
 // ------------------------------------------------------
 
-// snapshot() atomically clones the stackBase and stackOpen into a new
-// segmentStack, and also invokes the optional callback while holding
-// the collection lock.
+// snapshot() atomically clones the stackDirtyMid and stackDirtyTop
+// into a new segmentStack, and also invokes the optional callback
+// while holding the collection lock.
 func (m *collection) snapshot(cb func(*segmentStack)) (
 	*segmentStack, int, int) {
 	rv := &segmentStack{collection: m, refs: 1}
@@ -173,22 +175,22 @@ func (m *collection) snapshot(cb func(*segmentStack)) (
 
 	rv.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
 
-	if m.stackBase != nil {
-		numBase = len(m.stackBase.a)
+	if m.stackDirtyMid != nil {
+		numBase = len(m.stackDirtyMid.a)
 	}
 
-	if m.stackOpen != nil {
-		numOpen = len(m.stackOpen.a)
+	if m.stackDirtyTop != nil {
+		numOpen = len(m.stackDirtyTop.a)
 	}
 
 	rv.a = make([]*segment, 0, numBase+numOpen)
 
-	if m.stackBase != nil {
-		rv.a = append(rv.a, m.stackBase.a...)
+	if m.stackDirtyMid != nil {
+		rv.a = append(rv.a, m.stackDirtyMid.a...)
 	}
 
-	if m.stackOpen != nil {
-		rv.a = append(rv.a, m.stackOpen.a...)
+	if m.stackDirtyTop != nil {
+		rv.a = append(rv.a, m.stackDirtyTop.a...)
 	}
 
 	if cb != nil {
@@ -222,13 +224,13 @@ OUTER:
 		pings = pings[0:0]
 
 		// ---------------------------------------------
-		// Wait for new stackOpen entries and/or pings.
+		// Wait for new stackDirtyTop entries and/or pings.
 
 		var awakeMergerCh chan struct{}
 
 		m.m.Lock()
 
-		if m.stackOpen == nil || len(m.stackOpen.a) <= 0 {
+		if m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0 {
 			m.awakeMergerCh = make(chan struct{})
 			awakeMergerCh = m.awakeMergerCh
 		}
@@ -257,44 +259,46 @@ OUTER:
 			receivePings(m.pingMergerCh, pings, "mergeAll", mergeAll)
 
 		// ---------------------------------------------
-		// Atomically ingest stackOpen into m.stackBase.
+		// Atomically ingest stackDirtyTop into m.stackDirtyMid.
 
-		var stackOpenPrev *segmentStack
-		var stackBasePrev *segmentStack
+		var stackDirtyTopPrev *segmentStack
+		var stackDirtyMidPrev *segmentStack
 
-		stackBase, numWasBase, numWasOpen :=
+		stackDirtyMid, numWasBase, numWasOpen :=
 			m.snapshot(func(ss *segmentStack) {
-				// m.stackBase to take 1 refs, stackBase to take 1 refs.
+				// m.stackDirtyMid takes 1 refs, and
+				// stackDirtyMid takes 1 refs.
 				ss.refs += 1
 
-				stackOpenPrev = m.stackOpen
-				m.stackOpen = nil
+				stackDirtyTopPrev = m.stackDirtyTop
+				m.stackDirtyTop = nil
 
-				stackBasePrev = m.stackBase
-				m.stackBase = ss
+				stackDirtyMidPrev = m.stackDirtyMid
+				m.stackDirtyMid = ss
 
-				// Awake any writers waiting for more stackOpen space.
-				m.stackOpenCond.Signal()
+				// Awake any writers that are waiting for more space
+				// in stackDirtyTop.
+				m.stackDirtyTopCond.Signal()
 			})
 
-		stackOpenPrev.Close()
-		stackBasePrev.Close()
+		stackDirtyTopPrev.Close()
+		stackDirtyMidPrev.Close()
 
 		// ---------------------------------------------
-		// Merge multiple stackBase layers.
+		// Merge multiple stackDirtyMid layers.
 
-		if len(stackBase.a) > 1 {
+		if len(stackDirtyMid.a) > 1 {
 			newTopLevel := 0
 
 			if !mergeAll {
 				// If we have not been asked to merge all segments,
 				// then heuristically calc a newTopLevel.
-				newTopLevel = stackBase.calcTargetTopLevel()
+				newTopLevel = stackDirtyMid.calcTargetTopLevel()
 			}
 
-			mergedStackBase, err := stackBase.merge(newTopLevel)
+			mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel)
 			if err != nil {
-				m.Log("collection: runMerger stackBase.merge,"+
+				m.Log("collection: runMerger stackDirtyMid.merge,"+
 					" newTopLevel: %d, err: %v",
 					newTopLevel, err)
 
@@ -303,43 +307,43 @@ OUTER:
 				continue OUTER
 			}
 
-			stackBase.Close()
+			stackDirtyMid.Close()
 
-			mergedStackBase.addRef()
-			stackBase = mergedStackBase
+			mergedStackDirtyMid.addRef()
+			stackDirtyMid = mergedStackDirtyMid
 
 			m.m.Lock()
-			stackBasePrev = m.stackBase
-			m.stackBase = mergedStackBase
+			stackDirtyMidPrev = m.stackDirtyMid
+			m.stackDirtyMid = mergedStackDirtyMid
 			m.m.Unlock()
 
-			stackBasePrev.Close()
+			stackDirtyMidPrev.Close()
 		}
 
 		m.Log("collection: runMerger,"+
-			" prev stackBase height: %d,"+
-			" prev stackOpen height: %d,"+
-			" stackBase height: %d,"+
-			" stackBase top size: %d",
+			" prev stackDirtyMid height: %d,"+
+			" prev stackDirtyTop height: %d,"+
+			" stackDirtyMid height: %d,"+
+			" stackDirtyMid top size: %d",
 			numWasBase, numWasOpen,
-			len(stackBase.a),
-			len(stackBase.a[len(stackBase.a)-1].kvs)/2)
+			len(stackDirtyMid.a),
+			len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2)
 
 		// ---------------------------------------------
 		// Optionally notify persister.
 
 		if m.awakePersisterCh != nil {
-			m.awakePersisterCh <- stackBase
-			stackBase = nil
+			m.awakePersisterCh <- stackDirtyMid
+			stackDirtyMid = nil
 		}
 
-		if stackBase != nil {
-			stackBase.Close()
+		if stackDirtyMid != nil {
+			stackDirtyMid.Close()
 		}
 	}
 
 	// TODO: Concurrent merging goroutines of disjoint slices of the
-	// stackBase instead of the current, single-threaded merger.
+	// stackDirtyMid instead of the current, single-threaded merger.
 	//
 	// TODO: Delay merger until lots of deletion tombstones?
 	//

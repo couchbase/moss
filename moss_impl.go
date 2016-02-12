@@ -24,30 +24,40 @@ type collection struct {
 	doneMergerCh    chan struct{}
 	donePersisterCh chan struct{}
 
-	// When a newly merged stackBase is ready, the merger will notify
-	// the persister via the awakePersisterCh.
+	// When a newly merged stackDirtyMid is ready, the merger will
+	// notify the persister via the awakePersisterCh.
 	awakePersisterCh chan *segmentStack
 
 	m sync.Mutex // Protects the fields that follow.
 
-	stackOpenCond *sync.Cond // For waiting for stackOpen availability.
-
-	// New segments will be pushed onto stackOpen by ExecuteBatch().
-	stackOpen *segmentStack
-
-	// The merger asynchronously incorporates stackOpen entries into
-	// the stackBase and also merges stackBase down to height of 1.
-	//
-	// The segments from both stackOpen + stackBase together represent
-	// the entries of the collection.
-	stackBase *segmentStack
-
-	// When ExecuteBatch() has pushed a new segment onto stackOpen, it
-	// notifies the merger via awakeMergerCh (if non-nil).
+	// When ExecuteBatch() has pushed a new segment onto
+	// stackDirtyTop, it notifies the merger via awakeMergerCh (if
+	// non-nil).
 	awakeMergerCh chan struct{}
 
+	// stackDirtyTopCond is used to wait for space in stackDirtyTop.
+	stackDirtyTopCond *sync.Cond
+
+	// ExecuteBatch() will push new segments onto stackDirtyTop.
+	stackDirtyTop *segmentStack
+
+	// The merger asynchronously moves all segments from stackDirtyTop
+	// into stackDirtyMid and also merges segments in stackDirtyMid to
+	// keep stackDirtyMid's height low.
+	stackDirtyMid *segmentStack
+
+	// stackDirtyBase represents the segments currently being
+	// optionally persisted.  Will be nil when persistence is not
+	// being used.
+	stackDirtyBase *segmentStack
+
+	// stackClean represents the segments that have been persisted,
+	// and can be safely evicted, as the lowerLevelSnapshot will have
+	// those entries.  Will be nil when persistence is not being used.
+	stackClean *segmentStack
+
 	// lowerLevelSnapshot provides an optional, lower-level storage
-	// implementation for the Collection.
+	// implementation, when using the Collection as a cache.
 	lowerLevelSnapshot *snapshotWrapper
 }
 

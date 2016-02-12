@@ -86,10 +86,10 @@ type CollectionOptions struct {
 	// merged downards.
 	MinMergePercentage float64
 
-	// MaxStackOpenHeight is the max height of the stack of
+	// MaxStackDirtyTopHeight is the max height of the stack of
 	// to-be-merged segments before blocking mutations to allow the
 	// merger to catch up.
-	MaxStackOpenHeight int
+	MaxStackDirtyTopHeight int
 
 	// LowerLevelInit is an optional Snapshot implementation that
 	// initializes the lower-level storage of a Collection.  This
@@ -114,11 +114,11 @@ type CollectionOptions struct {
 
 // DefaultCollectionOptions are the default config settings.
 var DefaultCollectionOptions = CollectionOptions{
-	MergeOperator:      nil,
-	MinMergePercentage: 0.8,
-	MaxStackOpenHeight: 10,
-	Debug:              0,
-	Log:                nil,
+	MergeOperator:          nil,
+	MinMergePercentage:     0.8,
+	MaxStackDirtyTopHeight: 10,
+	Debug: 0,
+	Log:   nil,
 }
 
 // A Batch is a set of mutations that will be incorporated atomically
@@ -296,7 +296,7 @@ func NewCollection(options CollectionOptions) (
 		lowerLevelSnapshot: newSnapshotWrapper(options.LowerLevelInit),
 	}
 
-	c.stackOpenCond = sync.NewCond(&c.m)
+	c.stackDirtyTopCond = sync.NewCond(&c.m)
 
 	if options.LowerLevelUpdate != nil {
 		c.awakePersisterCh = make(chan *segmentStack, 10)
