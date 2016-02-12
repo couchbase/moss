@@ -38,6 +38,9 @@ type collection struct {
 	// stackDirtyTopCond is used to wait for space in stackDirtyTop.
 	stackDirtyTopCond *sync.Cond
 
+	// stackDirtyBaseCond is used to wait for non-nil stackDirtyBase.
+	stackDirtyBaseCond *sync.Cond
+
 	// ExecuteBatch() will push new segments onto stackDirtyTop.
 	stackDirtyTop *segmentStack
 

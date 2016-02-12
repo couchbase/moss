@@ -26,6 +26,9 @@ func (m *collection) Start() error {
 // Close synchronously stops background goroutines.
 func (m *collection) Close() error {
 	close(m.stopCh)
+
+	m.stackDirtyBaseCond.Signal() // Awake persister.
+
 	<-m.doneMergerCh
 	<-m.donePersisterCh
 
@@ -288,23 +291,23 @@ OUTER:
 		var stackDirtyTopPrev *segmentStack
 		var stackDirtyMidPrev *segmentStack
 
-		stackDirtyMid, htWasClean, htWasDirtyBase, htWasDirtyMid, htWasDirtyTop :=
-			m.snapshot(snapshotSkipDirtyBase | snapshotSkipClean,
-			func(ss *segmentStack) {
-				// m.stackDirtyMid takes 1 refs, and
-				// stackDirtyMid takes 1 refs.
-				ss.refs += 1
+		stackDirtyMid, _, _, htWasDirtyMid, htWasDirtyTop :=
+			m.snapshot(snapshotSkipClean|snapshotSkipDirtyBase,
+				func(ss *segmentStack) {
+					// m.stackDirtyMid takes 1 refs, and
+					// stackDirtyMid takes 1 refs.
+					ss.refs += 1
 
-				stackDirtyTopPrev = m.stackDirtyTop
-				m.stackDirtyTop = nil
+					stackDirtyTopPrev = m.stackDirtyTop
+					m.stackDirtyTop = nil
 
-				stackDirtyMidPrev = m.stackDirtyMid
-				m.stackDirtyMid = ss
+					stackDirtyMidPrev = m.stackDirtyMid
+					m.stackDirtyMid = ss
 
-				// Awake any writers that are waiting for more space
-				// in stackDirtyTop.
-				m.stackDirtyTopCond.Signal()
-			})
+					// Awake any writers that are waiting for more space
+					// in stackDirtyTop.
+					m.stackDirtyTopCond.Signal()
+				})
 
 		stackDirtyTopPrev.Close()
 		stackDirtyMidPrev.Close()
@@ -324,8 +327,7 @@ OUTER:
 			mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel)
 			if err != nil {
 				m.Log("collection: runMerger stackDirtyMid.merge,"+
-					" newTopLevel: %d, err: %v",
-					newTopLevel, err)
+					" newTopLevel: %d, err: %v", newTopLevel, err)
 
 				m.OnError(err)
 
@@ -346,29 +348,30 @@ OUTER:
 		}
 
 		m.Log("collection: runMerger,"+
-			" prev clean ht: %d,"+
-			" prev dirtyBase ht: %d,"+
-			" prev dirtyMid ht: %d,"+
-			" prev dirtyTop ht: %d,"+
-			" dirtyMid ht: %d,"+
+			" prev dirtyMid height: %d,"+
+			" prev dirtyTop height: %d,"+
+			" dirtyMid height: %d,"+
 			" dirtyMid top size: %d",
-			htWasClean,
-			htWasDirtyBase,
 			htWasDirtyMid,
 			htWasDirtyTop,
 			len(stackDirtyMid.a),
 			len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2)
 
+		stackDirtyMid.Close()
+
 		// ---------------------------------------------
-		// Optionally notify persister.
+		// Notify persister.
 
-		if m.awakePersisterCh != nil {
-			m.awakePersisterCh <- stackDirtyMid
-			stackDirtyMid = nil
-		}
+		if m.options.LowerLevelUpdate != nil {
+			m.m.Lock()
+			if m.stackDirtyBase == nil &&
+				m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
+				m.stackDirtyBase = m.stackDirtyMid
+				m.stackDirtyMid = nil
 
-		if stackDirtyMid != nil {
-			stackDirtyMid.Close()
+				m.stackDirtyBaseCond.Signal()
+			}
+			m.m.Unlock()
 		}
 	}
 

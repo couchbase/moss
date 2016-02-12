@@ -297,6 +297,7 @@ func NewCollection(options CollectionOptions) (
 	}
 
 	c.stackDirtyTopCond = sync.NewCond(&c.m)
+	c.stackDirtyBaseCond = sync.NewCond(&c.m)
 
 	if options.LowerLevelUpdate != nil {
 		c.awakePersisterCh = make(chan *segmentStack, 10)

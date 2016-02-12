@@ -13,70 +13,65 @@ package moss
 
 // runPersister() implements the persister task.
 func (m *collection) runPersister() {
-	ssCh := make(chan *segmentStack)
-
-	defer close(ssCh)
-
-	go m.runPersisterInner(ssCh)
-
-	var ssLast *segmentStack
-
-	// Keep only the last segmentStack, which will happen when the
-	// runPersisterInner is busy.
-	for {
-		if ssLast != nil {
-			select {
-			case <-m.stopCh:
-				return
-
-			case ssIn := <-m.awakePersisterCh:
-				if ssLast != nil {
-					ssLast.Close()
-				}
-				ssLast = ssIn
-
-			case ssCh <- ssLast:
-				ssLast = nil
-			}
-		} else {
-			select {
-			case <-m.stopCh:
-				return
-
-			case ssLast = <-m.awakePersisterCh:
-				// NO-OP.
-			}
-		}
-	}
-}
-
-func (m *collection) runPersisterInner(ssCh chan *segmentStack) {
 	defer close(m.donePersisterCh)
 
-LOOP:
-	for ss := range ssCh {
-		if m.options.LowerLevelUpdate != nil {
-			llssNext, err := m.options.LowerLevelUpdate(ss)
-			if err != nil {
-				ss.Close()
+	if m.options.LowerLevelUpdate == nil {
+		return
+	}
 
-				m.Log("collection: runPersisterInner, err: %v", err)
+	checkStop := func() bool {
+		select {
+		case <-m.stopCh:
+			return true
 
-				m.OnError(err)
-
-				continue LOOP
-			}
-
-			m.m.Lock()
-			llssPrev := m.lowerLevelSnapshot
-			m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
-			m.m.Unlock()
-
-			if llssPrev != nil {
-				llssPrev.Close()
-			}
+		default:
+			// NO-OP.
 		}
 
-		ss.Close()
+		return false
+	}
+
+OUTER:
+	for {
+		m.m.Lock()
+
+		for m.stackDirtyBase == nil && !checkStop() {
+			m.stackDirtyBaseCond.Wait()
+		}
+
+		stackDirtyBase := m.stackDirtyBase
+
+		m.m.Unlock()
+
+		if checkStop() {
+			return
+		}
+
+		llssNext, err := m.options.LowerLevelUpdate(stackDirtyBase)
+		if err != nil {
+			m.Log("collection: runPersister, LowerLevelUpdate, err: %v", err)
+
+			m.OnError(err)
+
+			continue OUTER
+		}
+
+		m.m.Lock()
+
+		stackCleanPrev := m.stackClean
+		m.stackClean, m.stackDirtyBase = m.stackDirtyBase, nil
+
+		llssPrev := m.lowerLevelSnapshot
+		m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
+
+		m.m.Unlock()
+
+		// TODO: More advanced eviction of stackClean.
+
+		stackCleanPrev.Close()
+
+		if llssPrev != nil {
+			llssPrev.Close()
+		}
 	}
 }
