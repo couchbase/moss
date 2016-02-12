@@ -23,7 +23,6 @@ func (ss *segmentStack) addRef() {
 
 func (ss *segmentStack) decRef() {
 	ss.m.Lock()
-
 	ss.refs -= 1
 	if ss.refs <= 0 {
 		if ss.lowerLevelSnapshot != nil {
@@ -31,7 +30,6 @@ func (ss *segmentStack) decRef() {
 			ss.lowerLevelSnapshot = nil
 		}
 	}
-
 	ss.m.Unlock()
 }
 

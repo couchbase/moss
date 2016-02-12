@@ -26,10 +26,7 @@ func newSnapshotWrapper(obj Snapshot) *snapshotWrapper {
 		return nil
 	}
 
-	return &snapshotWrapper{
-		refCount: 1,
-		obj:      obj,
-	}
+	return &snapshotWrapper{refCount: 1, obj: obj}
 }
 
 func (w *snapshotWrapper) addRef() *snapshotWrapper {
