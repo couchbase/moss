@@ -171,7 +171,7 @@ func (ss *segmentStack) startIterator(
 	}
 
 	// ----------------------------------------------
-	// Heap-fiy the cursors.
+	// Heap-ify the cursors.
 
 	heap.Init(iter)
 
