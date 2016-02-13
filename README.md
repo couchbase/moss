@@ -9,16 +9,18 @@ moss stands for "memory-oriented sorted segments".
 Features
 ========
 
-* ordered key-val collection API.
-* range iteration.
-* snapshots provide for isolated reads.
-* all mutations are performed via atomic batch API.
+* ordered key-val collection API
+* key range iterators
+* snapshots provide for isolated reads
+* atomic mutations via a batch API
 * merge operations allow for read-compute-write optimizations
-  for write-heavy use cases (e.g., updating counters).
-* concurrent readers and writers don't block each other.
-* optional, advanced API's to avoid extra memory copying.
-* optional persistence callbacks to allow write-back caching
-* 100% go implementation.
+  for write-heavy use cases (e.g., updating counters)
+* concurrent readers and writers don't block each other
+* optional, advanced API's to avoid extra memory copying
+* optional persistence hooks to allow write-back caching to a
+  lower-level storage implementation
+* 100% go implementation
+* unit tests
 
 License
 =======
@@ -40,10 +42,10 @@ Example
     batch.Set([]byte("car-1"), []byte("honda"))
     err = c.ExecuteBatch(batch, moss.WriteOptions{})
 
-    ropts := moss.ReadOptions{}
-
     ss, err := c.Snapshot()
     defer ss.Close()
+
+    ropts := moss.ReadOptions{}
 
     val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
     valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
@@ -76,18 +78,29 @@ copy-on-write approach whenever the stack needs to be "modified".  So,
 multiple readers and writers won't block each other, and taking a
 Snapshot is also a similarly cheap operation by cloning the stack.
 
-Limitations
-===========
+Limitations and considerations
+==============================
 
 Max key length is 2^24 (24 bits used to track key length).
 
 Max val length is 2^28 (28 bits used to track val length).
 
-Read performance is roughly O(log N) for key-val retrieval.
+Read performance characterization is roughly O(log N) for key-val
+retrieval.
 
-Write performance is roughly O(M log M), where M is the number of
-mutations in a batch when invoking ExecuteBatch().
+Write performance characterization is roughly O(M log M), where M is
+the number of mutations in a batch when invoking ExecuteBatch().
 
 Those performance characterizations, however, don't account for
-background, asynchronous processing for merging of segments and data
-structure maintenance.
+background, asynchronous processing for the merging of segments and
+data structure maintenance.
+
+A background merger task, for example, that is too slow can eventually
+stall ingest of new batches.  (See the CollectionOptions settings that
+limit segment stack height.)
+
+As another example, one slow reader that holds onto a Snapshot or onto
+an Iterator for a long time can hold onto a lot of resources.  Worst
+case is the reader's Snapshot or Iterator may delay the reclaimation
+of large, old segments, where incoming mutations have obsoleted the
+immutable segments that the reader is still holding onto.
