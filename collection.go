@@ -395,11 +395,15 @@ OUTER:
 			" prev dirtyMid height: %d,"+
 			" prev dirtyTop height: %d,"+
 			" dirtyMid height: %d,"+
-			" dirtyMid top size: %d",
+			" dirtyMid top # entries: %d (%0.2f kvs cap, %0.2f buf cap)",
 			htWasDirtyMid,
 			htWasDirtyTop,
 			len(stackDirtyMid.a),
-			len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2)
+			len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2,
+			float64(len(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2) /
+				float64(cap(stackDirtyMid.a[len(stackDirtyMid.a)-1].kvs)/2),
+			float64(len(stackDirtyMid.a[len(stackDirtyMid.a)-1].buf)) /
+				float64(cap(stackDirtyMid.a[len(stackDirtyMid.a)-1].buf)))
 
 		stackDirtyMid.Close()
 
