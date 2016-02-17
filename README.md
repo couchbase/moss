@@ -6,6 +6,8 @@ moss provides a simple, ordered key-val collection data structure as a
 
 moss stands for "memory-oriented sorted segments".
 
+[![Build Status](https://travis-ci.org/couchbase/moss.svg?branch=master)](https://travis-ci.org/couchbase/moss) [![Coverage Status](https://coveralls.io/repos/github/couchbase/moss/badge.svg?branch=master)](https://coveralls.io/github/couchbase/moss?branch=master)
+
 Features
 ========
 
