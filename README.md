@@ -32,7 +32,7 @@ Apache 2.0
 Example
 =======
 
-    import github.com/couchbaselabs/moss
+    import github.com/couchbase/moss
 
     c, err := moss.NewCollection(CollectionOptions{})
     defer c.Close()
