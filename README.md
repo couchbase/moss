@@ -6,7 +6,7 @@ moss provides a simple, ordered key-val collection data structure as a
 
 moss stands for "memory-oriented sorted segments".
 
-[![Build Status](https://travis-ci.org/couchbase/moss.svg?branch=master)](https://travis-ci.org/couchbase/moss) [![Coverage Status](https://coveralls.io/repos/github/couchbase/moss/badge.svg?branch=master)](https://coveralls.io/github/couchbase/moss?branch=master) [![GoDoc](https://godoc.org/github.com/couchbase/moss?status.svg)](https://godoc.org/github.com/couchbase/moss)
+[![Build Status](https://travis-ci.org/couchbase/moss.svg?branch=master)](https://travis-ci.org/couchbase/moss) [![Coverage Status](https://coveralls.io/repos/github/couchbase/moss/badge.svg?branch=master)](https://coveralls.io/github/couchbase/moss?branch=master) [![GoDoc](https://godoc.org/github.com/couchbase/moss?status.svg)](https://godoc.org/github.com/couchbase/moss) [![Go Report Card](https://goreportcard.com/badge/github.com/couchbase/moss)](https://goreportcard.com/report/github.com/couchbase/moss)
 
 Features
 ========
