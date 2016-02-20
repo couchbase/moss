@@ -392,16 +392,18 @@ OUTER:
 		}
 
 		lenDirtyMid := len(stackDirtyMid.a)
-		topDirtyMid := stackDirtyMid.a[lenDirtyMid-1]
+		if lenDirtyMid > 0 {
+			topDirtyMid := stackDirtyMid.a[lenDirtyMid-1]
 
-		m.Log("collection: runMerger,"+
-			" dirtyTop prev height: %2d,"+
-			" dirtyMid height: %2d (%2d),"+
-			" dirtyMid top (%0.2f kvs cap, %0.2f buf cap) # entries: %d",
-			prevLenDirtyTop, lenDirtyMid, lenDirtyMid-prevLenDirtyMid,
-			float64(len(topDirtyMid.kvs))/float64(cap(topDirtyMid.kvs)),
-			float64(len(topDirtyMid.buf))/float64(cap(topDirtyMid.buf)),
-			len(topDirtyMid.kvs)/2)
+			m.Log("collection: runMerger,"+
+				" dirtyTop prev height: %2d,"+
+				" dirtyMid height: %2d (%2d),"+
+				" dirtyMid top (%0.2f kvs cap, %0.2f buf cap) # entries: %d",
+				prevLenDirtyTop, lenDirtyMid, lenDirtyMid-prevLenDirtyMid,
+				float64(len(topDirtyMid.kvs))/float64(cap(topDirtyMid.kvs)),
+				float64(len(topDirtyMid.buf))/float64(cap(topDirtyMid.buf)),
+				len(topDirtyMid.kvs)/2)
+		}
 
 		stackDirtyMid.Close()
 
