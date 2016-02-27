@@ -37,7 +37,7 @@ type iterator struct {
 // from the lowerLevelIter.
 type cursor struct {
 	ssIndex int // Index into Iterator.ss.a.
-	pos     int // Logical entry position into Iterator.ss.a[ssIndex].kvs.
+	pos     int // Logical entry position into Iterator.ss.a[ssIndex].
 
 	op uint64
 	k  []byte

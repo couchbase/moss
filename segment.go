@@ -178,6 +178,14 @@ func (a *segment) mutateEx(operation uint64,
 
 // ------------------------------------------------------
 
+// NumKeyValBytes returns the number of bytes used for key-val data.
+func (a *segment) NumKeyValBytes() int {
+	return len(a.buf)
+}
+
+// ------------------------------------------------------
+
+// Len returns the count of key-val entries.
 func (a *segment) Len() int {
 	return len(a.kvs) / 2
 }

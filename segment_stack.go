@@ -135,8 +135,8 @@ func (ss *segmentStack) calcTargetTopLevel() int {
 	maxTopLevel := len(ss.a) - 2
 
 	for newTopLevel < maxTopLevel {
-		numX0 := len(ss.a[newTopLevel].kvs)
-		numX1 := len(ss.a[newTopLevel+1].kvs)
+		numX0 := ss.a[newTopLevel].Len()
+		numX1 := ss.a[newTopLevel+1].Len()
 		if (float64(numX1) / float64(numX0)) > minMergePercentage {
 			break
 		}
@@ -155,8 +155,8 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
 
-	totOps := len(ss.a[newTopLevel].kvs) / 2
-	totBytes := len(ss.a[newTopLevel].buf)
+	totOps := ss.a[newTopLevel].Len()
+	totBytes := ss.a[newTopLevel].NumKeyValBytes()
 
 	iterPrealloc, err := ss.StartIterator(nil, nil, IteratorOptions{
 		IncludeDeletions: true,
@@ -230,7 +230,7 @@ OUTER:
 			cursor := &iter.cursors[0]
 
 			segment := iter.ss.a[cursor.ssIndex]
-			segmentOps := len(segment.kvs) / 2
+			segmentOps := segment.Len()
 
 			for pos := cursor.pos; pos < segmentOps; pos++ {
 				op, k, v := segment.getOperationKeyVal(pos)

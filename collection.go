@@ -118,7 +118,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		return fmt.Errorf("wrong Batch implementation type")
 	}
 
-	if b == nil || len(b.kvs) <= 0 {
+	if b == nil || b.Len() <= 0 {
 		return nil
 	}
 
@@ -402,7 +402,7 @@ OUTER:
 				prevLenDirtyTop, lenDirtyMid, lenDirtyMid-prevLenDirtyMid,
 				float64(len(topDirtyMid.kvs))/float64(cap(topDirtyMid.kvs)),
 				float64(len(topDirtyMid.buf))/float64(cap(topDirtyMid.buf)),
-				len(topDirtyMid.kvs)/2)
+				topDirtyMid.Len())
 		}
 
 		stackDirtyMid.Close()
