@@ -49,7 +49,7 @@ OUTER:
 
 		llssNext, err := m.options.LowerLevelUpdate(stackDirtyBase)
 		if err != nil {
-			m.Log("collection: runPersister, LowerLevelUpdate, err: %v", err)
+			m.Logf("collection: runPersister, LowerLevelUpdate, err: %v", err)
 
 			m.OnError(err)
 

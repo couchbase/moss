@@ -189,7 +189,7 @@ func (m *collection) WaitForMerger(kind string) error {
 
 // Log invokes the user's configured Log callback, if any, if the
 // debug levels are met.
-func (m *collection) Log(format string, a ...interface{}) {
+func (m *collection) Logf(format string, a ...interface{}) {
 	if m.options.Debug > 0 &&
 		m.options.Log != nil {
 		m.options.Log(format, a...)
@@ -370,7 +370,7 @@ OUTER:
 
 			mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel)
 			if err != nil {
-				m.Log("collection: runMerger stackDirtyMid.merge,"+
+				m.Logf("collection: runMerger stackDirtyMid.merge,"+
 					" newTopLevel: %d, err: %v", newTopLevel, err)
 
 				m.OnError(err)
@@ -395,7 +395,7 @@ OUTER:
 		if lenDirtyMid > 0 {
 			topDirtyMid := stackDirtyMid.a[lenDirtyMid-1]
 
-			m.Log("collection: runMerger,"+
+			m.Logf("collection: runMerger,"+
 				" dirtyTop prev height: %2d,"+
 				" dirtyMid height: %2d (%2d),"+
 				" dirtyMid top (%0.2f kvs cap, %0.2f buf cap) # entries: %d",
