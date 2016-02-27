@@ -1131,3 +1131,80 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 		}
 	}
 }
+
+func TestAllocCollection(t *testing.T) {
+	m, err := NewCollection(CollectionOptions{})
+	if err != nil || m == nil {
+		t.Errorf("expected moss")
+	}
+
+	err = m.Start()
+	if err != nil {
+		t.Errorf("expected Start ok")
+	}
+
+	b, err := m.NewBatch(4, 5)
+	if err != nil {
+		t.Errorf("expected NewBatch with preallocs ok")
+	}
+
+	a, err := b.Alloc(100)
+	if err == nil || a != nil {
+		t.Errorf("expected over-Alloc() to fail")
+	}
+
+	a, err = b.Alloc(2)
+	if err != nil || len(a) != 2 {
+		t.Errorf("expected Alloc to work")
+	}
+	a[0] = 'a'
+	a[1] = 'A'
+
+	err = b.AllocSet(a[0:1], a[1:2])
+	if err != nil {
+		t.Errorf("expected AllocSet to work")
+	}
+
+	a, err = b.Alloc(1)
+	if err != nil || len(a) != 1 {
+		t.Errorf("expected Alloc to work")
+	}
+	a[0] = 'b'
+
+	err = b.AllocSet(a[0:1], nil)
+	if err != nil {
+		t.Errorf("expected AllocSet to work")
+	}
+
+	a, err = b.Alloc(1)
+	if err != nil || len(a) != 1 {
+		t.Errorf("expected Alloc to work")
+	}
+	a[0] = 'c'
+
+	err = b.AllocDel(a[0:1])
+	if err != nil {
+		t.Errorf("expected AllocDel to work")
+	}
+
+	a, err = b.Alloc(1)
+	if err != nil || len(a) != 1 {
+		t.Errorf("expected Alloc to work")
+	}
+	a[0] = 'd'
+
+	err = b.AllocMerge(a[0:1], nil)
+	if err != nil {
+		t.Errorf("expected AllocMerge to work")
+	}
+
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected ExecuteBatch to work")
+	}
+
+	err = m.Close()
+	if err != nil {
+		t.Errorf("expected Close ok")
+	}
+}
