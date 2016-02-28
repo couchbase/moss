@@ -39,21 +39,26 @@ type collection struct {
 	// stackDirtyBaseCond is used to wait for non-nil stackDirtyBase.
 	stackDirtyBaseCond *sync.Cond
 
-	// ExecuteBatch() will push new segments onto stackDirtyTop.
+	// ExecuteBatch() will push new segments onto stackDirtyTop if
+	// there is space.
 	stackDirtyTop *segmentStack
 
-	// The merger asynchronously grabs all segments from stackDirtyTop
-	// and atomically moves them into stackDirtyMid.
+	// The merger goroutine asynchronously, atomically grabs all
+	// segments from stackDirtyTop and atomically moves them into
+	// stackDirtyMid.  The merger will also merge segments in
+	// stackDirtyMid to keep its height low.
 	stackDirtyMid *segmentStack
 
 	// stackDirtyBase represents the segments currently being
-	// optionally persisted.  Will be nil when persistence is not
-	// being used.
+	// persisted.  It is optionally populated by the merger when there
+	// are merged segments ready for persistence.  Will be nil when
+	// persistence is not being used.
 	stackDirtyBase *segmentStack
 
-	// stackClean represents the segments that have been persisted,
-	// and can be safely evicted, as the lowerLevelSnapshot will have
-	// those entries.  Will be nil when persistence is not being used.
+	// stackClean represents the segments that have been optionally
+	// persisted by the persister, and can now be safely evicted, as
+	// the lowerLevelSnapshot will contain the entries from
+	// stackClean.  Will be nil when persistence is not being used.
 	stackClean *segmentStack
 
 	// lowerLevelSnapshot provides an optional, lower-level storage

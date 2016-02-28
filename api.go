@@ -83,7 +83,7 @@ type CollectionOptions struct {
 	// DeferredSort allows ExecuteBatch() to operate more quickly by
 	// deferring the sorting of an incoming batch until it is needed
 	// by a reader.  The tradeoff is that later read operations can
-	// take longer as the sorting is finally required.
+	// take longer as the sorting is finally performed.
 	DeferredSort bool
 
 	// MinMergePercentage allows the merger to avoid premature merging
