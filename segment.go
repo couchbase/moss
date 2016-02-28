@@ -30,6 +30,19 @@ type segment struct {
 	// Contiguous backing memory for the keys and vals of the segment.
 	buf []byte
 
+	// If this segment needs sorting, then needSorterCh will be
+	// non-nil and also the first goroutine that reads successfully
+	// from needSorterCh becomes the sorter of this segment.  All
+	// other goroutines must instead wait on the waitSortedCh.
+	needSorterCh chan bool
+
+	// Once the sorter of this segment is done sorting the kvs, it
+	// close()'s the waitSortedCh, treating waitSortedCh like a
+	// one-way latch.  The needSorterCh and waitSortedCh will either
+	// be nil or non-nil together.  A segment that was "born
+	// sorted" will have needSorterCh and waitSortedCh as both nil.
+	waitSortedCh chan struct{}
+
 	totOperationSet   uint64
 	totOperationDel   uint64
 	totOperationMerge uint64
@@ -225,7 +238,7 @@ func (a *segment) Less(i, j int) bool {
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
 func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
-	n := len(b.kvs) / 2
+	n := b.Len()
 
 	return sort.Search(n, func(pos int) bool {
 		x := pos * 2
@@ -264,4 +277,31 @@ func (b *segment) getOperationKeyVal(pos int) (
 	operation := maskOperation & opklvl
 
 	return operation, k, v
+}
+
+// ------------------------------------------------------
+
+// requestSort() will either perform the previously deferred sorting,
+// if the goroutine can acquire the 1 ticket from the needSorterCh.
+// Or, requestSort() will ensure that a sorter is working on this
+// segment.  Returns true if the segment is sorted, and returns false
+// if the sorting is only asynchronously scheduled.
+func (b *segment) requestSort(synchronous bool) bool {
+	if b.needSorterCh == nil {
+		return true
+	}
+
+	iAmTheSorter := <-b.needSorterCh
+	if iAmTheSorter {
+		sort.Sort(b)
+		close(b.waitSortedCh) // Signal any waiters.
+		return true
+	}
+
+	if synchronous {
+		<-b.waitSortedCh // Wait for the sorter to be done.
+		return true
+	}
+
+	return false
 }

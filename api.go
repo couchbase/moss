@@ -80,6 +80,12 @@ type CollectionOptions struct {
 	// that wants to use Batch.Merge()'ing.
 	MergeOperator MergeOperator
 
+	// DeferredSort allows ExecuteBatch() to operate more quickly by
+	// deferring the sorting of an incoming batch until it is needed
+	// by a reader.  The tradeoff is that later read operations can
+	// take longer as the sorting is finally required.
+	DeferredSort bool
+
 	// MinMergePercentage allows the merger to avoid premature merging
 	// of segments that are too small, where a segment X has to reach
 	// a certain size percentage compared to the next lower segment

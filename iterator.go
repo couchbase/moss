@@ -103,9 +103,11 @@ func (ss *segmentStack) startIterator(
 	// Add cursors for our allowed segments.
 
 	minSegmentLevel := iteratorOptions.MinSegmentLevel
-	maxSegmentLevel := iteratorOptions.MaxSegmentHeight
+	maxSegmentLevel := iteratorOptions.MaxSegmentHeight - 1
 
-	for ssIndex := minSegmentLevel; ssIndex < maxSegmentLevel; ssIndex++ {
+	ss.ensureSorted(minSegmentLevel, maxSegmentLevel)
+
+	for ssIndex := minSegmentLevel; ssIndex <= maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
 		pos := b.findStartKeyInclusivePos(startKeyInclusive)

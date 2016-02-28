@@ -128,7 +128,15 @@ func (m *collection) ExecuteBatch(bIn Batch,
 			DefaultCollectionOptions.MaxStackDirtyTopHeight
 	}
 
-	sort.Sort(b)
+	if m.options.DeferredSort {
+		b.needSorterCh = make(chan bool, 1)
+		b.needSorterCh <- true // A ticket for the future sorter.
+		close(b.needSorterCh)
+
+		b.waitSortedCh = make(chan struct{})
+	} else {
+		sort.Sort(b)
+	}
 
 	stackDirtyTop := &segmentStack{collection: m, refs: 1}
 
@@ -136,6 +144,10 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	for m.stackDirtyTop != nil &&
 		len(m.stackDirtyTop.a) >= maxStackDirtyTopHeight {
+		if m.options.DeferredSort {
+			go b.requestSort(false) // While waiting, might as well sort.
+		}
+
 		m.stackDirtyTopCond.Wait()
 	}
 

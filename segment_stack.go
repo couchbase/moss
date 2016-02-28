@@ -71,6 +71,8 @@ func (ss *segmentStack) Get(key []byte,
 // segments at or below the segStart level.
 func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 	if segStart >= 0 {
+		ss.ensureSorted(0, segStart)
+
 		for seg := segStart; seg >= 0; seg-- {
 			b := ss.a[seg]
 
@@ -280,4 +282,23 @@ OUTER:
 	a = append(a, mergedSegment)
 
 	return &segmentStack{collection: ss.collection, a: a, refs: 1}, nil
+}
+
+// ------------------------------------------------------
+
+func (ss *segmentStack) ensureSorted(minSeg, maxSeg int) {
+	if !ss.collection.options.DeferredSort {
+		return
+	}
+
+	sorted := true // Two phases allows for more concurrent sorting.
+	for seg := maxSeg; seg >= minSeg; seg-- {
+		sorted = sorted && ss.a[seg].requestSort(false)
+	}
+
+	if !sorted {
+		for seg := maxSeg; seg >= minSeg; seg-- {
+			ss.a[seg].requestSort(true)
+		}
+	}
 }
