@@ -67,7 +67,7 @@ func (ss *segmentStack) Get(key []byte,
 	return ss.get(key, len(ss.a)-1)
 }
 
-// get() retreives a val from a segmentStack, but only considers
+// get() retrieves a val from a segmentStack, but only considers
 // segments at or below the segStart level.
 func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 	if segStart >= 0 {
