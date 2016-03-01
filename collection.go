@@ -357,7 +357,7 @@ OUTER:
 				func(ss *segmentStack) {
 					// m.stackDirtyMid takes 1 refs, and
 					// stackDirtyMid takes 1 refs.
-					ss.refs += 1
+					ss.refs++
 
 					stackDirtyTopPrev = m.stackDirtyTop
 					m.stackDirtyTop = nil

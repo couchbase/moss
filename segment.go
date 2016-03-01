@@ -175,11 +175,11 @@ func (a *segment) mutateEx(operation uint64,
 
 	switch operation {
 	case OperationSet:
-		a.totOperationSet += 1
+		a.totOperationSet++
 	case OperationDel:
-		a.totOperationDel += 1
+		a.totOperationDel++
 	case OperationMerge:
-		a.totOperationMerge += 1
+		a.totOperationMerge++
 	default:
 	}
 
@@ -237,15 +237,15 @@ func (a *segment) Less(i, j int) bool {
 // the given (inclusive) start key.  With segment keys of [b, d, f],
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
-func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
-	n := b.Len()
+func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
+	n := a.Len()
 
 	return sort.Search(n, func(pos int) bool {
 		x := pos * 2
 
-		kLength := int((maskKeyLength & b.kvs[x]) >> 32)
-		kStart := int(b.kvs[x+1])
-		k := b.buf[kStart : kStart+kLength]
+		klength := int((maskKeyLength & a.kvs[x]) >> 32)
+		kstart := int(a.kvs[x+1])
+		k := a.buf[kstart : kstart+klength]
 
 		return bytes.Compare(k, startKeyInclusive) >= 0
 	})
@@ -256,23 +256,23 @@ func (b *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 
 // getOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
-func (b *segment) getOperationKeyVal(pos int) (
+func (a *segment) getOperationKeyVal(pos int) (
 	uint64, []byte, []byte) {
 	x := pos * 2
-	if x < 0 || x >= len(b.kvs) {
+	if x < 0 || x >= len(a.kvs) {
 		return 0, nil, nil
 	}
 
-	opklvl := b.kvs[x]
+	opklvl := a.kvs[x]
 
-	kLength := int((maskKeyLength & opklvl) >> 32)
-	vLength := int(maskValLength & opklvl)
+	klength := int((maskKeyLength & opklvl) >> 32)
+	vlength := int(maskValLength & opklvl)
 
-	kStart := int(b.kvs[x+1])
-	vStart := kStart + kLength
+	kstart := int(a.kvs[x+1])
+	vstart := kstart + klength
 
-	k := b.buf[kStart : kStart+kLength]
-	v := b.buf[vStart : vStart+vLength]
+	k := a.buf[kstart : kstart+klength]
+	v := a.buf[vstart : vstart+vlength]
 
 	operation := maskOperation & opklvl
 
@@ -286,20 +286,20 @@ func (b *segment) getOperationKeyVal(pos int) (
 // Or, requestSort() will ensure that a sorter is working on this
 // segment.  Returns true if the segment is sorted, and returns false
 // if the sorting is only asynchronously scheduled.
-func (b *segment) requestSort(synchronous bool) bool {
-	if b.needSorterCh == nil {
+func (a *segment) requestSort(synchronous bool) bool {
+	if a.needSorterCh == nil {
 		return true
 	}
 
-	iAmTheSorter := <-b.needSorterCh
+	iAmTheSorter := <-a.needSorterCh
 	if iAmTheSorter {
-		sort.Sort(b)
-		close(b.waitSortedCh) // Signal any waiters.
+		sort.Sort(a)
+		close(a.waitSortedCh) // Signal any waiters.
 		return true
 	}
 
 	if synchronous {
-		<-b.waitSortedCh // Wait for the sorter to be done.
+		<-a.waitSortedCh // Wait for the sorter to be done.
 		return true
 	}
 

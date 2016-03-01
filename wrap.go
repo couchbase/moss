@@ -32,7 +32,7 @@ func newSnapshotWrapper(obj Snapshot) *snapshotWrapper {
 func (w *snapshotWrapper) addRef() *snapshotWrapper {
 	if w != nil {
 		w.m.Lock()
-		w.refCount += 1
+		w.refCount++
 		w.m.Unlock()
 	}
 
@@ -41,7 +41,7 @@ func (w *snapshotWrapper) addRef() *snapshotWrapper {
 
 func (w *snapshotWrapper) decRef() (err error) {
 	w.m.Lock()
-	w.refCount -= 1
+	w.refCount--
 	if w.refCount <= 0 {
 		if w.obj != nil {
 			err = w.obj.Close()

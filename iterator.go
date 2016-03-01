@@ -224,7 +224,7 @@ func (iter *iterator) Next() error {
 				heap.Pop(iter)
 			}
 		} else {
-			next.pos += 1
+			next.pos++
 			next.op, next.k, next.v =
 				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
 			if (next.op == 0 && next.k == nil && next.v == nil) ||

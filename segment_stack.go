@@ -34,13 +34,13 @@ type segmentStack struct {
 
 func (ss *segmentStack) addRef() {
 	ss.m.Lock()
-	ss.refs += 1
+	ss.refs++
 	ss.m.Unlock()
 }
 
 func (ss *segmentStack) decRef() {
 	ss.m.Lock()
-	ss.refs -= 1
+	ss.refs--
 	if ss.refs <= 0 {
 		if ss.lowerLevelSnapshot != nil {
 			ss.lowerLevelSnapshot.Close()
@@ -143,7 +143,7 @@ func (ss *segmentStack) calcTargetTopLevel() int {
 			break
 		}
 
-		newTopLevel += 1
+		newTopLevel++
 	}
 
 	return newTopLevel
@@ -181,7 +181,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 			return nil, err
 		}
 
-		totOps += 1
+		totOps++
 		totBytes += len(key) + len(val)
 
 		err = iterPrealloc.Next()

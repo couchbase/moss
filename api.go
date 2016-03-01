@@ -34,7 +34,6 @@
 // approach whenever a stack is "modified".  So, readers and writers
 // essentially don't block each other, and taking a Snapshot is also a
 // similarly cheap operation by cloning a stack.
-
 package moss
 
 import (
@@ -42,10 +41,23 @@ import (
 	"sync"
 )
 
+// ErrAllocTooLarge is returned when the requested allocation cannot be
+// satisfied by the pre-allocated buffer
 var ErrAllocTooLarge = errors.New("alloc-too-large")
+
+// ErrIteratorDone is returned when the iterator has reached the end range
+// of the iterator or the end of the collection
 var ErrIteratorDone = errors.New("iterator-done")
+
+// ErrMergeOperatorNil is returned if a merge operation is performed
+// without specifying a MergeOperator in the CollectionOptions
 var ErrMergeOperatorNil = errors.New("merge-operator-nil")
+
+// ErrMergeOperatorFullMergeFailed is returned when the provided MergeOperator
+// fails during the FullMerge operations
 var ErrMergeOperatorFullMergeFailed = errors.New("merge-operator-full-merge-failed")
+
+// ErrUnimplemented is returned when an unimplemented feature has been used
 var ErrUnimplemented = errors.New("unimplemented")
 
 // A Collection represents an ordered mapping of key-val entries,
@@ -261,8 +273,14 @@ type EntryEx struct {
 	Operation uint64
 }
 
+// OperationSet replaces the value associated with the key
 const OperationSet = uint64(0x0100000000000000)
+
+// OperationDel removes the value associated with the key
 const OperationDel = uint64(0x0200000000000000)
+
+// OperationMerge merges the new value with the existing value associated with
+// the key, as described by the configured MergeOperator
 const OperationMerge = uint64(0x0300000000000000)
 
 // A MergeOperator may be implemented by applications that wish to
