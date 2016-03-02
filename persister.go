@@ -59,14 +59,17 @@ OUTER:
 		m.m.Lock()
 
 		stackCleanPrev := m.stackClean
-		m.stackClean, m.stackDirtyBase = m.stackDirtyBase, nil
+		m.stackClean = m.stackDirtyBase
+		m.stackDirtyBase = nil
 
 		llssPrev := m.lowerLevelSnapshot
 		m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
 
 		m.m.Unlock()
 
-		stackCleanPrev.Close()
+		if stackCleanPrev != nil {
+			stackCleanPrev.Close()
+		}
 
 		if llssPrev != nil {
 			llssPrev.Close()

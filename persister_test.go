@@ -12,6 +12,7 @@
 package moss
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"strings"
@@ -24,16 +25,28 @@ import (
 // expected.  It currently has some unsightly time.Sleep() calls
 // since there doesn't seem to be a good way to know when the
 // persister has run.
-func TestPersister(t *testing.T) {
+func Test1Persister(t *testing.T) {
+	runTestPersister(t, 1)
+}
 
+func Test10Persister(t *testing.T) {
+	runTestPersister(t, 10)
+}
+
+func Test1000Persister(t *testing.T) {
+	runTestPersister(t, 1000)
+}
+
+func runTestPersister(t *testing.T, numItems int) {
 	// create a new instance of our mock lower-level persister
-	lowerLevelPersister := newOrderedMapPersister()
+	lowerLevelPersister := newTestPersister()
 	lowerLevelUpdater := func(higher Snapshot) (Snapshot, error) {
-		err := lowerLevelPersister.Update(higher)
+		p, err := lowerLevelPersister.Update(higher)
 		if err != nil {
 			return nil, err
 		}
-		return lowerLevelPersister, nil
+		lowerLevelPersister = p
+		return p, nil
 	}
 
 	// create new collection configured to use lower level persister
@@ -59,8 +72,8 @@ func TestPersister(t *testing.T) {
 		t.Fatalf("error creating new batch: %v", err)
 	}
 
-	// put 100 values in
-	for i := 0; i < 1000; i++ {
+	// put numItems in
+	for i := 0; i < numItems; i++ {
 		k := fmt.Sprintf("%d", i)
 		b.Set([]byte(k), []byte(k))
 	}
@@ -70,20 +83,95 @@ func TestPersister(t *testing.T) {
 		t.Fatalf("error executing batch: %v", err)
 	}
 
+	ss0, err := m.Snapshot()
+	if err != nil || ss0 == nil {
+		t.Fatalf("error snapshoting: %v", err)
+	}
+
+	// cleanup that batch
+	err = b.Close()
+	if err != nil {
+		t.Fatalf("error closing batch: %v", err)
+	}
+
+	ss1, err := m.Snapshot()
+	if err != nil || ss1 == nil {
+		t.Fatalf("error snapshoting: %v", err)
+	}
+
 	// wait for persister to run
 	time.Sleep(1 * time.Second)
 
-	// check that keys are in our lower-level persister
-	for i := 1; i < 1000; i++ {
-		k := fmt.Sprintf("%d", i)
-		v, err := lowerLevelPersister.Get([]byte(k), ReadOptions{})
-		if err != nil {
-			t.Fatalf("error getting key: %s, %v", k, err)
-		}
-		if string(v) != k {
-			t.Errorf("expected value for key: %s to be %s, got %s", k, k, v)
-		}
+	ss2, err := m.Snapshot()
+	if err != nil || ss2 == nil {
+		t.Fatalf("error snapshoting: %v", err)
 	}
+
+	checkSnapshot := func(msg string, ss Snapshot, expectedNum int) {
+		for i := 0; i < numItems; i++ {
+			k := fmt.Sprintf("%d", i)
+			v, err := ss.Get([]byte(k), ReadOptions{})
+			if err != nil {
+				t.Fatalf("error %s getting key: %s, %v", msg, k, err)
+			}
+			if string(v) != k {
+				t.Errorf("expected %s value for key: %s to be %s, got %s", msg, k, k, v)
+			}
+		}
+
+		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		if err != nil {
+			t.Fatalf("error %s checkSnapshot iter, err: %v", msg, err)
+		}
+
+		n := 0
+		var lastKey []byte
+		for {
+			ex, key, val, err := iter.CurrentEx()
+			if err == ErrIteratorDone {
+				break
+			}
+			if err != nil {
+				t.Fatalf("error %s iter currentEx, err: %v", msg, err)
+			}
+
+			n++
+
+			if ex.Operation != OperationSet {
+				t.Fatalf("error %s iter op, ex: %v, err: %v", msg, ex, err)
+			}
+
+			cmp := bytes.Compare(lastKey, key)
+			if cmp >= 0 {
+				t.Fatalf("error %s iter cmp: %v, err: %v", msg, cmp, err)
+			}
+
+			if bytes.Compare(key, val) != 0 {
+				t.Fatalf("error %s iter key != val: %v, %v", msg, key, val)
+			}
+
+			lastKey = key
+
+			err = iter.Next()
+			if err == ErrIteratorDone {
+				break
+			}
+			if err != nil {
+				t.Fatalf("error %s iter next, err: %v", msg, err)
+			}
+		}
+
+		if n != expectedNum {
+			t.Fatalf("error %s iter expectedNum: %d, got: %d", msg, expectedNum, n)
+		}
+
+		iter.Close()
+	}
+
+	checkSnapshot("lowerLevelPersister", lowerLevelPersister, numItems)
+	checkSnapshot("ss0", ss0, numItems)
+	checkSnapshot("ss1", ss1, numItems)
+	checkSnapshot("ss2", ss2, numItems)
 
 	// cleanup that batch
 	err = b.Close()
@@ -98,7 +186,7 @@ func TestPersister(t *testing.T) {
 	}
 
 	// delete the values we just set
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < numItems; i++ {
 		k := fmt.Sprintf("%d", i)
 		b.Del([]byte(k))
 	}
@@ -108,18 +196,9 @@ func TestPersister(t *testing.T) {
 		t.Fatalf("error executing batch: %v", err)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	// check that values are now gone
-	for i := 1; i < 1000; i++ {
-		k := fmt.Sprintf("%d", i)
-		v, err := lowerLevelPersister.Get([]byte(k), ReadOptions{})
-		if err != nil {
-			t.Fatalf("error getting key: %s, %v", k, err)
-		}
-		if v != nil {
-			t.Errorf("expected no value for key: %s, got %s", k, v)
-		}
+	ssd0, err := m.Snapshot()
+	if err != nil || ssd0 == nil {
+		t.Fatalf("error snapshoting: %v", err)
 	}
 
 	// cleanup that batch
@@ -127,6 +206,42 @@ func TestPersister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error closing batch: %v", err)
 	}
+
+	ssd1, err := m.Snapshot()
+	if err != nil || ssd1 == nil {
+		t.Fatalf("error snapshoting: %v", err)
+	}
+
+	time.Sleep(1 * time.Second)
+
+	ssd2, err := m.Snapshot()
+	if err != nil || ssd2 == nil {
+		t.Fatalf("error snapshoting: %v", err)
+	}
+
+	// check that values are now gone
+	checkGetsGone := func(ss Snapshot) {
+		for i := 0; i < numItems; i++ {
+			k := fmt.Sprintf("%d", i)
+			v, err := ss.Get([]byte(k), ReadOptions{})
+			if err != nil {
+				t.Fatalf("error getting key: %s, %v", k, err)
+			}
+			if v != nil {
+				t.Errorf("expected no value for key: %s, got %s", k, v)
+			}
+		}
+	}
+
+	checkGetsGone(lowerLevelPersister)
+	checkGetsGone(ssd0)
+	checkGetsGone(ssd1)
+	checkGetsGone(ssd2)
+
+	// Check that our old snapshots are still stable.
+	checkSnapshot("ss0", ss0, numItems)
+	checkSnapshot("ss1", ss1, numItems)
+	checkSnapshot("ss2", ss2, numItems)
 
 	// cleanup moss
 	err = m.Close()
@@ -139,14 +254,13 @@ func TestPersister(t *testing.T) {
 // method returns an error, the configured OnError callback is
 // invoked
 func TestPersisterError(t *testing.T) {
-
 	errCallbackInvoked := false
 	customOnError := func(err error) {
 		errCallbackInvoked = true
 	}
 
 	// create a new instance of our mock lower-level persister
-	lowerLevelPersister := newOrderedMapPersister()
+	lowerLevelPersister := newTestPersister()
 	lowerLevelUpdater := func(higher Snapshot) (Snapshot, error) {
 		return nil, fmt.Errorf("test error")
 	}
@@ -192,130 +306,118 @@ func TestPersisterError(t *testing.T) {
 	if !errCallbackInvoked {
 		t.Errorf("expected error callback to be invoked")
 	}
-
 }
 
 // -----------------------------------------------------------------------------
-// implementation of mock lower-level persister
-// does not attempt COW, reads block writes and writes block reads
-// uses a map and sorted string slice to back data structure
+// implementation of mock lower-level test persister and iterator,
+// with COW, using map that's cloned on updates and with key sorting
+// whenever an iterator is needed.
 
-// this iterator implementation was added for completeness
-// but is not actually used in current tests
-// future tests could verify that iteration correctly passes
-// through down to this lowest layer, at which point correct
-// functionality would be required
-type orderedMapPersisterIterator struct {
-	pos    int
-	parent *orderedMapPersister
-	endkey string
+type testPersisterIterator struct {
+	pos     int
+	kvpairs map[string][]byte // immutable.
+	keys    []string          // immutable, sorted.
+	endkey  string
 }
 
-func newOrderedMapPersisterIterator(p *orderedMapPersister,
-	startkey, endkey string) *orderedMapPersisterIterator {
-	rv := orderedMapPersisterIterator{
-		parent: p,
-		endkey: endkey,
+func newTestPersisterIterator(kvpairs map[string][]byte,
+	startkey, endkey string) *testPersisterIterator {
+	rv := &testPersisterIterator{
+		kvpairs: kvpairs,
+		endkey:  endkey,
 	}
-	rv.pos = sort.SearchStrings(p.keys, string(startkey))
-	return &rv
+	for k := range rv.kvpairs {
+		rv.keys = append(rv.keys, k)
+	}
+	sort.Strings(rv.keys)
+	rv.pos = sort.SearchStrings(rv.keys, string(startkey))
+	return rv
 }
 
-func (i *orderedMapPersisterIterator) Close() error {
-	i.parent.mutex.RUnlock()
+func (i *testPersisterIterator) Close() error {
+	i.kvpairs = nil
+	i.keys = nil
 	return nil
 }
 
-func (i *orderedMapPersisterIterator) Next() error {
+func (i *testPersisterIterator) Next() error {
 	i.pos++
+	if i.pos >= len(i.keys) {
+		return ErrIteratorDone
+	}
 	return nil
 }
 
-func (i *orderedMapPersisterIterator) Current() ([]byte, []byte, error) {
-	if i.pos < len(i.parent.keys) {
-		k := i.parent.keys[i.pos]
-		if strings.Compare(k, i.endkey) > 1 {
-			return nil, nil, ErrIteratorDone
-		}
-		return []byte(k), i.parent.kvpairs[k], nil
+func (i *testPersisterIterator) Current() ([]byte, []byte, error) {
+	if i.pos >= len(i.keys) {
+		return nil, nil, ErrIteratorDone
 	}
-	return nil, nil, ErrIteratorDone
+	k := i.keys[i.pos]
+	if i.endkey != "" && strings.Compare(k, i.endkey) >= 0 {
+		return nil, nil, ErrIteratorDone
+	}
+	return []byte(k), i.kvpairs[k], nil
 }
 
-func (i *orderedMapPersisterIterator) CurrentEx() (entryEx EntryEx,
+func (i *testPersisterIterator) CurrentEx() (entryEx EntryEx,
 	key, val []byte, err error) {
 	k, v, err := i.Current()
-	if err == ErrIteratorDone {
-		return EntryEx{OperationSet}, k, v, err
+	if err != nil {
+		return EntryEx{OperationSet}, nil, nil, err
 	}
-	return EntryEx{OperationSet}, k, v, nil
+	return EntryEx{OperationSet}, k, v, err
 }
 
-type orderedMapPersister struct {
+type testPersister struct {
 	// stable snapshots through writes blocking reads
 	mutex sync.RWMutex
 
 	kvpairs map[string][]byte
-	keys    sort.StringSlice
 }
 
-func newOrderedMapPersister() *orderedMapPersister {
-	return &orderedMapPersister{
-		kvpairs: make(map[string][]byte),
-		keys:    make([]string, 0),
+func newTestPersister() *testPersister {
+	return &testPersister{
+		kvpairs: map[string][]byte{},
 	}
 }
 
-func (p *orderedMapPersister) Close() error {
+func (p *testPersister) cloneLOCKED() *testPersister {
+	c := newTestPersister()
+	for k, v := range p.kvpairs {
+		c.kvpairs[k] = v
+	}
+	return c
+}
+
+func (p *testPersister) Close() error {
 	// ensure any writes in progress finish
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+	p.kvpairs = nil
 	return nil
 }
 
-func (p *orderedMapPersister) Get(key []byte,
+func (p *testPersister) Get(key []byte,
 	readOptions ReadOptions) ([]byte, error) {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
 	return p.kvpairs[string(key)], nil
 }
 
-func (p *orderedMapPersister) StartIterator(
+func (p *testPersister) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
 	p.mutex.RLock() // closing iterator unlocks
-	return newOrderedMapPersisterIterator(p,
+	defer p.mutex.RUnlock()
+	return newTestPersisterIterator(p.cloneLOCKED().kvpairs,
 		string(startKeyInclusive), string(endKeyExclusive)), nil
 }
 
-// must already be locked
-func (p *orderedMapPersister) delete(key []byte) {
-	i := sort.SearchStrings(p.keys, string(key))
-	if i < len(p.keys) && p.keys[i] == string(key) {
-		// found it, delete it
-		p.keys = append(p.keys[:i], p.keys[i+1:]...)
-		delete(p.kvpairs, string(key))
-	}
-}
-
-// must already be locked
-func (p *orderedMapPersister) set(key, val []byte) {
-	i := sort.SearchStrings(p.keys, string(key))
-	if i < len(p.keys) && p.keys[i] == string(key) {
-		// key exists, overwrite it
-		p.kvpairs[string(key)] = val
-	} else {
-		// new, need to insert
-		p.keys = append(p.keys, "")
-		copy(p.keys[i+1:], p.keys[i:])
-		p.keys[i] = string(key)
-		p.kvpairs[string(key)] = val
-	}
-}
-
-func (p *orderedMapPersister) Update(higher Snapshot) error {
+func (p *testPersister) Update(higher Snapshot) (*testPersister, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+
+	c := p.cloneLOCKED()
 
 	if higher != nil {
 		iter, err := higher.StartIterator(nil, nil, IteratorOptions{
@@ -323,7 +425,7 @@ func (p *orderedMapPersister) Update(higher Snapshot) error {
 			SkipLowerLevel:   true,
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		defer iter.Close()
@@ -331,47 +433,47 @@ func (p *orderedMapPersister) Update(higher Snapshot) error {
 		var readOptions ReadOptions
 
 		for {
-			err = iter.Next()
-			if err == ErrIteratorDone {
-				break
-			}
-			if err != nil {
-				return err
-			}
-
 			ex, key, val, err := iter.CurrentEx()
 			if err == ErrIteratorDone {
 				break
 			}
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			switch ex.Operation {
 			case OperationSet:
-				p.set(key, val)
+				c.kvpairs[string(key)] = val
 
 			case OperationDel:
-				p.delete(key)
+				delete(c.kvpairs, string(key))
 
 			case OperationMerge:
 				val, err = higher.Get(key, readOptions)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				if val != nil {
-					p.set(key, val)
+					c.kvpairs[string(key)] = val
 				} else {
-					p.delete(key)
+					delete(c.kvpairs, string(key))
 				}
 
 			default:
-				return fmt.Errorf("moss store, update,"+
+				return nil, fmt.Errorf("moss testPersister, update,"+
 					" unexpected operation, ex: %v", ex)
+			}
+
+			err = iter.Next()
+			if err == ErrIteratorDone {
+				break
+			}
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	return c, nil
 }
