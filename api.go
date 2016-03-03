@@ -323,7 +323,7 @@ type MergeOperator interface {
 type LowerLevelUpdate func(higher Snapshot) (lower Snapshot, err error)
 
 // CollectionStats fields that are prefixed like CurXxxx are gauges
-// (can go up and down), and fields that are prefixed like TotXxxx and
+// (can go up and down), and fields that are prefixed like TotXxxx are
 // monotonically increasing counters.
 type CollectionStats struct {
 	TotOnError uint64
