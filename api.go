@@ -122,6 +122,10 @@ type CollectionOptions struct {
 	// lower-level storage should be updated.
 	LowerLevelUpdate LowerLevelUpdate
 
+	// CachePersisted allows the collection to cache clean, persisted
+	// key-val's, and is considered when LowerLevelUpdate is used.
+	CachePersisted bool
+
 	Debug int // Higher means more logging, when Log != nil.
 
 	// Log is a callback invoked when the Collection needs to log a
@@ -142,8 +146,8 @@ var DefaultCollectionOptions = CollectionOptions{
 	MergeOperator:       nil,
 	MinMergePercentage:  0.8,
 	MaxPreMergerBatches: 10,
-	Debug: 0,
-	Log:   nil,
+	Debug:               0,
+	Log:                 nil,
 }
 
 // A Batch is a set of mutations that will be incorporated atomically

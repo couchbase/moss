@@ -56,16 +56,29 @@ OUTER:
 			continue OUTER
 		}
 
+		var stackDirtyBasePrev *segmentStack
+		var stackCleanPrev *segmentStack
+
 		m.m.Lock()
 
-		stackCleanPrev := m.stackClean
-		m.stackClean = m.stackDirtyBase
+		stackCleanPrev = m.stackClean
+		if m.options.CachePersisted {
+			m.stackClean = m.stackDirtyBase
+		} else {
+			m.stackClean = nil
+
+			stackDirtyBasePrev = m.stackDirtyBase
+		}
 		m.stackDirtyBase = nil
 
 		llssPrev := m.lowerLevelSnapshot
 		m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
 
 		m.m.Unlock()
+
+		if stackDirtyBasePrev != nil {
+			stackDirtyBasePrev.Close()
+		}
 
 		if stackCleanPrev != nil {
 			stackCleanPrev.Close()
