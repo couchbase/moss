@@ -104,10 +104,13 @@ type CollectionOptions struct {
 	// before segment X (and all segments above X) will be merged.
 	MinMergePercentage float64
 
-	// MaxStackDirtyTopHeight is the max height of the stack of
-	// to-be-merged segments before blocking mutations to allow the
-	// merger to catch up.
-	MaxStackDirtyTopHeight int
+	// MaxPreMergerBatches is the max number of batches that can be
+	// accepted into the collection through ExecuteBatch() and held
+	// for merging but that have not been actually processed by the
+	// merger yet.  When the number of held but unprocessed batches
+	// reaches MaxPreMergerBatches, then ExecuteBatch() will block to
+	// allow the merger to catch up.
+	MaxPreMergerBatches int
 
 	// LowerLevelInit is an optional Snapshot implementation that
 	// initializes the lower-level storage of a Collection.  This
@@ -128,13 +131,17 @@ type CollectionOptions struct {
 	// OnError is a callback invoked when the Collection encounters a
 	// background error.  Optional, may be nil.
 	OnError func(error)
+
+	// MaxStackDirtyTopHeight is DEPRECATED.  Please see
+	// MaxPreMergerBatches instead.
+	MaxStackDirtyTopHeight int
 }
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
-	MergeOperator:          nil,
-	MinMergePercentage:     0.8,
-	MaxStackDirtyTopHeight: 10,
+	MergeOperator:       nil,
+	MinMergePercentage:  0.8,
+	MaxPreMergerBatches: 10,
 	Debug: 0,
 	Log:   nil,
 }

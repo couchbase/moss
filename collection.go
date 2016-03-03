@@ -127,10 +127,10 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		return nil
 	}
 
-	maxStackDirtyTopHeight := m.options.MaxStackDirtyTopHeight
-	if maxStackDirtyTopHeight <= 0 {
-		maxStackDirtyTopHeight =
-			DefaultCollectionOptions.MaxStackDirtyTopHeight
+	maxPreMergerBatches := m.options.MaxPreMergerBatches
+	if maxPreMergerBatches <= 0 {
+		maxPreMergerBatches =
+			DefaultCollectionOptions.MaxPreMergerBatches
 	}
 
 	if m.options.DeferredSort {
@@ -148,7 +148,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	m.m.Lock()
 
 	for m.stackDirtyTop != nil &&
-		len(m.stackDirtyTop.a) >= maxStackDirtyTopHeight {
+		len(m.stackDirtyTop.a) >= maxPreMergerBatches {
 		if m.options.DeferredSort {
 			go b.requestSort(false) // While waiting, might as well sort.
 		}
