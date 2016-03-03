@@ -11,9 +11,17 @@
 
 package moss
 
+import (
+	"sync/atomic"
+)
+
 // runPersister() implements the persister task.
 func (m *collection) runPersister() {
-	defer close(m.donePersisterCh)
+	defer func() {
+		close(m.donePersisterCh)
+
+		atomic.AddUint64(&m.stats.TotPersisterEnd, 1)
+	}()
 
 	if m.options.LowerLevelUpdate == nil {
 		return
@@ -33,10 +41,14 @@ func (m *collection) runPersister() {
 
 OUTER:
 	for {
+		atomic.AddUint64(&m.stats.TotPersisterLoop, 1)
+
 		m.m.Lock()
 
 		for m.stackDirtyBase == nil && !checkStop() {
+			atomic.AddUint64(&m.stats.TotPersisterWaitBeg, 1)
 			m.stackDirtyBaseCond.Wait()
+			atomic.AddUint64(&m.stats.TotPersisterWaitEnd, 1)
 		}
 
 		stackDirtyBase := m.stackDirtyBase
@@ -47,14 +59,20 @@ OUTER:
 			return
 		}
 
+		atomic.AddUint64(&m.stats.TotPersisterLowerLevelUpdateBeg, 1)
+
 		llssNext, err := m.options.LowerLevelUpdate(stackDirtyBase)
 		if err != nil {
+			atomic.AddUint64(&m.stats.TotPersisterLowerLevelUpdateErr, 1)
+
 			m.Logf("collection: runPersister, LowerLevelUpdate, err: %v", err)
 
 			m.OnError(err)
 
 			continue OUTER
 		}
+
+		atomic.AddUint64(&m.stats.TotPersisterLowerLevelUpdateEnd, 1)
 
 		var stackDirtyBasePrev *segmentStack
 		var stackCleanPrev *segmentStack
@@ -87,6 +105,8 @@ OUTER:
 		if llssPrev != nil {
 			llssPrev.Close()
 		}
+
+		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
 	}
 
 	// TODO: More advanced eviction of stackClean.

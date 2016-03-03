@@ -13,8 +13,10 @@ package moss
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 // A collection implements the Collection interface.
@@ -64,6 +66,9 @@ type collection struct {
 	// lowerLevelSnapshot provides an optional, lower-level storage
 	// implementation, when using the Collection as a cache.
 	lowerLevelSnapshot *snapshotWrapper
+
+	// stats leverage sync/atomic counters.
+	stats *CollectionStats
 }
 
 // ------------------------------------------------------
@@ -77,19 +82,28 @@ func (m *collection) Start() error {
 
 // Close synchronously stops background goroutines.
 func (m *collection) Close() error {
+	atomic.AddUint64(&m.stats.TotCloseBeg, 1)
+
 	close(m.stopCh)
 
 	m.stackDirtyBaseCond.Signal() // Awake persister.
 
 	<-m.doneMergerCh
+	atomic.AddUint64(&m.stats.TotCloseMergerDone, 1)
+
 	<-m.donePersisterCh
+	atomic.AddUint64(&m.stats.TotClosePersisterDone, 1)
 
 	m.m.Lock()
 	if m.lowerLevelSnapshot != nil {
+		atomic.AddUint64(&m.stats.TotCloseLowerLevelBeg, 1)
 		m.lowerLevelSnapshot.Close()
 		m.lowerLevelSnapshot = nil
+		atomic.AddUint64(&m.stats.TotCloseLowerLevelEnd, 1)
 	}
 	m.m.Unlock()
+
+	atomic.AddUint64(&m.stats.TotCloseEnd, 1)
 
 	return nil
 }
@@ -101,7 +115,11 @@ func (m *collection) Options() CollectionOptions {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
+	atomic.AddUint64(&m.stats.TotSnapshotBeg, 1)
+
 	rv, _, _, _, _ := m.snapshot(0, nil)
+
+	atomic.AddUint64(&m.stats.TotSnapshotEnd, 1)
 
 	return rv, nil
 }
@@ -110,6 +128,10 @@ func (m *collection) Snapshot() (Snapshot, error) {
 // resources expected to be required.
 func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 	Batch, error) {
+	atomic.AddUint64(&m.stats.TotNewBatch, 1)
+	atomic.AddUint64(&m.stats.TotNewBatchTotalOps, uint64(totalOps))
+	atomic.AddUint64(&m.stats.TotNewBatchTotalKeyValBytes, uint64(totalKeyValBytes))
+
 	return newSegment(totalOps, totalKeyValBytes)
 }
 
@@ -118,12 +140,17 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 // ExecuteBatch() returns.
 func (m *collection) ExecuteBatch(bIn Batch,
 	writeOptions WriteOptions) error {
+	atomic.AddUint64(&m.stats.TotExecuteBatchBeg, 1)
+
 	b, ok := bIn.(*segment)
 	if !ok {
+		atomic.AddUint64(&m.stats.TotExecuteBatchErr, 1)
+
 		return fmt.Errorf("wrong Batch implementation type")
 	}
 
 	if b == nil || b.Len() <= 0 {
+		atomic.AddUint64(&m.stats.TotExecuteBatchEmpty, 1)
 		return nil
 	}
 
@@ -153,7 +180,9 @@ func (m *collection) ExecuteBatch(bIn Batch,
 			go b.requestSort(false) // While waiting, might as well sort.
 		}
 
+		atomic.AddUint64(&m.stats.TotExecuteBatchWaitBeg, 1)
 		m.stackDirtyTopCond.Wait()
+		atomic.AddUint64(&m.stats.TotExecuteBatchWaitEnd, 1)
 	}
 
 	numDirtyTop := 0
@@ -180,8 +209,12 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	prevStackDirtyTop.Close()
 
 	if awakeMergerCh != nil {
+		atomic.AddUint64(&m.stats.TotExecuteBatchAwakeMergerBeg, 1)
 		close(awakeMergerCh)
+		atomic.AddUint64(&m.stats.TotExecuteBatchAwakeMergerEnd, 1)
 	}
+
+	atomic.AddUint64(&m.stats.TotExecuteBatchEnd, 1)
 
 	return nil
 }
@@ -193,12 +226,16 @@ func (m *collection) ExecuteBatch(bIn Batch,
 // useful for applications that are no longer performing mutations and
 // that want to optimize for retrievals.
 func (m *collection) WaitForMerger(kind string) error {
+	atomic.AddUint64(&m.stats.TotWaitForMergerBeg, 1)
+
 	pongCh := make(chan struct{})
 	m.pingMergerCh <- ping{
 		kind:   kind,
 		pongCh: pongCh,
 	}
 	<-pongCh
+
+	atomic.AddUint64(&m.stats.TotWaitForMergerEnd, 1)
 	return nil
 }
 
@@ -218,6 +255,8 @@ func (m *collection) Logf(format string, a ...interface{}) {
 // Close()'ing the Collection in order to fix underlying
 // storage/resource issues.
 func (m *collection) OnError(err error) {
+	atomic.AddUint64(&m.stats.TotOnError, 1)
+
 	if m.options.OnError != nil {
 		m.options.OnError(err)
 	}
@@ -235,6 +274,8 @@ const snapshotSkipClean = uint32(0x00000008)
 // optional callback while holding the collection lock.
 func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	*segmentStack, int, int, int, int) {
+	atomic.AddUint64(&m.stats.TotSnapshotInternalBeg, 1)
+
 	rv := &segmentStack{collection: m, refs: 1}
 
 	heightDirtyTop := 0
@@ -287,6 +328,8 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 
 	m.m.Unlock()
 
+	atomic.AddUint64(&m.stats.TotSnapshotInternalEnd, 1)
+
 	return rv, heightClean, heightDirtyBase, heightDirtyMid, heightDirtyTop
 }
 
@@ -294,7 +337,11 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 
 // runMerger() implements the background merger task.
 func (m *collection) runMerger() {
-	defer close(m.doneMergerCh)
+	defer func() {
+		close(m.doneMergerCh)
+
+		atomic.AddUint64(&m.stats.TotMergerEnd, 1)
+	}()
 
 	pings := []ping{}
 
@@ -305,6 +352,8 @@ func (m *collection) runMerger() {
 
 OUTER:
 	for {
+		atomic.AddUint64(&m.stats.TotMergerLoop, 1)
+
 		// ---------------------------------------------
 		// Notify ping'ers from the previous loop.
 
@@ -328,6 +377,8 @@ OUTER:
 		mergeAll := false
 
 		if awakeMergerCh != nil {
+			atomic.AddUint64(&m.stats.TotMergerWaitBeg, 1)
+
 			select {
 			case <-m.stopCh:
 				return
@@ -341,6 +392,8 @@ OUTER:
 			case <-awakeMergerCh:
 				// NO-OP.
 			}
+
+			atomic.AddUint64(&m.stats.TotMergerWaitEnd, 1)
 		}
 
 		pings, mergeAll =
@@ -385,8 +438,16 @@ OUTER:
 				newTopLevel = stackDirtyMid.calcTargetTopLevel()
 			}
 
+			if newTopLevel <= 0 {
+				atomic.AddUint64(&m.stats.TotMergerAll, 1)
+			}
+
+			atomic.AddUint64(&m.stats.TotMergerInternalBeg, 1)
+
 			mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel)
 			if err != nil {
+				atomic.AddUint64(&m.stats.TotMergerInternalErr, 1)
+
 				m.Logf("collection: runMerger stackDirtyMid.merge,"+
 					" newTopLevel: %d, err: %v", newTopLevel, err)
 
@@ -394,6 +455,8 @@ OUTER:
 
 				continue OUTER
 			}
+
+			atomic.AddUint64(&m.stats.TotMergerInternalEnd, 1)
 
 			stackDirtyMid.Close()
 
@@ -406,6 +469,8 @@ OUTER:
 			m.m.Unlock()
 
 			stackDirtyMidPrev.Close()
+		} else {
+			atomic.AddUint64(&m.stats.TotMergerInternalSkip, 1)
 		}
 
 		lenDirtyMid := len(stackDirtyMid.a)
@@ -431,13 +496,19 @@ OUTER:
 			m.m.Lock()
 			if m.stackDirtyBase == nil &&
 				m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
+				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
+
 				m.stackDirtyBase = m.stackDirtyMid
 				m.stackDirtyMid = nil
 
 				m.stackDirtyBaseCond.Signal()
+			} else {
+				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotifySkip, 1)
 			}
 			m.m.Unlock()
 		}
+
+		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
 	}
 
 	// TODO: Concurrent merging of disjoint slices of stackDirtyMid
@@ -454,4 +525,30 @@ OUTER:
 	// TODO: Dynamically calc'ed soft max dirty top height, for
 	// read-heavy (favor lower) versus write-heavy (favor higher)
 	// situations?
+}
+
+// ------------------------------------------------------
+
+// Stats returns stats for this collection.
+func (m *collection) Stats() (*CollectionStats, error) {
+	rv := &CollectionStats{}
+	m.stats.AtomicCopyTo(rv)
+	return rv, nil
+}
+
+// AtomicCopyTo copies stats from s to r (from source to result).
+func (s *CollectionStats) AtomicCopyTo(r *CollectionStats) {
+	rve := reflect.ValueOf(r).Elem()
+	sve := reflect.ValueOf(s).Elem()
+	svet := sve.Type()
+	for i := 0; i < svet.NumField(); i++ {
+		rvef := rve.Field(i)
+		svef := sve.Field(i)
+		if rvef.CanAddr() && svef.CanAddr() {
+			rvefp := rvef.Addr().Interface()
+			svefp := svef.Addr().Interface()
+			atomic.StoreUint64(rvefp.(*uint64),
+				atomic.LoadUint64(svefp.(*uint64)))
+		}
+	}
 }

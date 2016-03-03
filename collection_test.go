@@ -176,7 +176,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestBatchSort(t *testing.T) {
-	var m *collection
+	m, _ := NewCollection(CollectionOptions{})
 
 	batch, err := m.NewBatch(0, 0)
 	if err != nil {
@@ -1206,5 +1206,36 @@ func TestAllocCollection(t *testing.T) {
 	err = m.Close()
 	if err != nil {
 		t.Errorf("expected Close ok")
+	}
+}
+
+func TestCollectionStats(t *testing.T) {
+	cs0 := &CollectionStats{}
+	cs1 := &CollectionStats{}
+	cs0.AtomicCopyTo(cs1)
+	if !reflect.DeepEqual(cs0, cs1) {
+		t.Errorf("expect empty compare to equal")
+	}
+	cs0.TotOnError = 1234
+	cs0.AtomicCopyTo(cs1)
+	if !reflect.DeepEqual(cs0, cs1) {
+		t.Errorf("expect empty compare to equal")
+	}
+
+	m, _ := NewCollection(CollectionOptions{})
+	m.Start()
+	m.Close()
+
+	s, err := m.Stats()
+	if err != nil || s == nil {
+		t.Errorf("expect some stats")
+	}
+
+	if reflect.DeepEqual(s, &CollectionStats{}) {
+		t.Errorf("expect nonzero stats")
+	}
+
+	if s.TotCloseBeg != 1 || s.TotCloseEnd != 1 {
+		t.Errorf("expect close stat == 1")
 	}
 }

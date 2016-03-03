@@ -84,6 +84,9 @@ type Collection interface {
 	// the Collection.  The Batch instance should be Close()'ed and
 	// not reused after ExecuteBatch() returns.
 	ExecuteBatch(b Batch, writeOptions WriteOptions) error
+
+	// Stats returns stats for this collection.
+	Stats() (*CollectionStats, error)
 }
 
 // CollectionOptions allows applications to specify config settings.
@@ -112,6 +115,10 @@ type CollectionOptions struct {
 	// allow the merger to catch up.
 	MaxPreMergerBatches int
 
+	// CachePersisted allows the collection to cache clean, persisted
+	// key-val's, and is considered when LowerLevelUpdate is used.
+	CachePersisted bool
+
 	// LowerLevelInit is an optional Snapshot implementation that
 	// initializes the lower-level storage of a Collection.  This
 	// might be used, for example, for having a Collection be a
@@ -121,10 +128,6 @@ type CollectionOptions struct {
 	// LowerLevelUpdate is an optional func that is invoked when the
 	// lower-level storage should be updated.
 	LowerLevelUpdate LowerLevelUpdate
-
-	// CachePersisted allows the collection to cache clean, persisted
-	// key-val's, and is considered when LowerLevelUpdate is used.
-	CachePersisted bool
 
 	Debug int // Higher means more logging, when Log != nil.
 
@@ -319,6 +322,63 @@ type MergeOperator interface {
 // Collection wants to update its optional, lower-level storage.
 type LowerLevelUpdate func(higher Snapshot) (lower Snapshot, err error)
 
+// CollectionStats fields that are prefixed like CurXxxx are gauges
+// (can go up and down), and fields that are prefixed like TotXxxx and
+// monotonically increasing counters.
+type CollectionStats struct {
+	TotOnError uint64
+
+	TotCloseBeg           uint64
+	TotCloseMergerDone    uint64
+	TotClosePersisterDone uint64
+	TotCloseLowerLevelBeg uint64
+	TotCloseLowerLevelEnd uint64
+	TotCloseEnd           uint64
+
+	TotSnapshotBeg         uint64
+	TotSnapshotInternalBeg uint64
+	TotSnapshotInternalEnd uint64
+	TotSnapshotEnd         uint64
+
+	TotNewBatch                 uint64
+	TotNewBatchTotalOps         uint64
+	TotNewBatchTotalKeyValBytes uint64
+
+	TotExecuteBatchBeg            uint64
+	TotExecuteBatchErr            uint64
+	TotExecuteBatchEmpty          uint64
+	TotExecuteBatchWaitBeg        uint64
+	TotExecuteBatchWaitEnd        uint64
+	TotExecuteBatchAwakeMergerBeg uint64
+	TotExecuteBatchAwakeMergerEnd uint64
+	TotExecuteBatchEnd            uint64
+
+	TotWaitForMergerBeg uint64
+	TotWaitForMergerEnd uint64
+
+	TotMergerEnd                  uint64
+	TotMergerLoop                 uint64
+	TotMergerLoopRepeat           uint64
+	TotMergerWaitBeg              uint64
+	TotMergerWaitEnd              uint64
+	TotMergerAll                  uint64
+	TotMergerInternalBeg          uint64
+	TotMergerInternalErr          uint64
+	TotMergerInternalEnd          uint64
+	TotMergerInternalSkip         uint64
+	TotMergerLowerLevelNotify     uint64
+	TotMergerLowerLevelNotifySkip uint64
+
+	TotPersisterEnd                 uint64
+	TotPersisterLoop                uint64
+	TotPersisterLoopRepeat          uint64
+	TotPersisterWaitBeg             uint64
+	TotPersisterWaitEnd             uint64
+	TotPersisterLowerLevelUpdateBeg uint64
+	TotPersisterLowerLevelUpdateErr uint64
+	TotPersisterLowerLevelUpdateEnd uint64
+}
+
 // ------------------------------------------------------------
 
 // NewCollection returns a new, unstarted Collection instance.
@@ -331,6 +391,7 @@ func NewCollection(options CollectionOptions) (
 		doneMergerCh:       make(chan struct{}),
 		donePersisterCh:    make(chan struct{}),
 		lowerLevelSnapshot: newSnapshotWrapper(options.LowerLevelInit),
+		stats:              &CollectionStats{},
 	}
 
 	c.stackDirtyTopCond = sync.NewCond(&c.m)
