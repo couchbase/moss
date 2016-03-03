@@ -302,3 +302,34 @@ func (ss *segmentStack) ensureSorted(minSeg, maxSeg int) {
 		}
 	}
 }
+
+// ------------------------------------------------------
+
+// SegmentStackStats represents the stats for a segmentStack.
+type SegmentStackStats struct {
+	CurOps      uint64
+	CurBytes    uint64 // Counts key-val bytes only, not metadata.
+	CurSegments uint64
+}
+
+// AddTo adds the values from this SegmentStackStats to the dest
+// SegmentStackStats.
+func (sss *SegmentStackStats) AddTo(dest *SegmentStackStats) {
+	if sss == nil {
+		return
+	}
+
+	dest.CurOps += sss.CurOps
+	dest.CurBytes += sss.CurBytes
+	dest.CurBytes += sss.CurBytes
+}
+
+// Stats returns the stats for this segment stack.
+func (ss *segmentStack) Stats() *SegmentStackStats {
+	rv := &SegmentStackStats{CurSegments: uint64(len(ss.a))}
+	for _, seg := range ss.a {
+		rv.CurOps += uint64(seg.Len())
+		rv.CurBytes += uint64(seg.NumKeyValBytes())
+	}
+	return rv
+}

@@ -198,7 +198,7 @@ func (a *segment) NumKeyValBytes() int {
 
 // ------------------------------------------------------
 
-// Len returns the count of key-val entries.
+// Len returns the number of ops in the segment.
 func (a *segment) Len() int {
 	return len(a.kvs) / 2
 }

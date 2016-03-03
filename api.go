@@ -377,6 +377,26 @@ type CollectionStats struct {
 	TotPersisterLowerLevelUpdateBeg uint64
 	TotPersisterLowerLevelUpdateErr uint64
 	TotPersisterLowerLevelUpdateEnd uint64
+
+	CurDirtyOps      uint64
+	CurDirtyBytes    uint64
+	CurDirtySegments uint64
+
+	CurDirtyTopOps      uint64
+	CurDirtyTopBytes    uint64
+	CurDirtyTopSegments uint64
+
+	CurDirtyMidOps      uint64
+	CurDirtyMidBytes    uint64
+	CurDirtyMidSegments uint64
+
+	CurDirtyBaseOps      uint64
+	CurDirtyBaseBytes    uint64
+	CurDirtyBaseSegments uint64
+
+	CurCleanOps      uint64
+	CurCleanBytes    uint64
+	CurCleanSegments uint64
 }
 
 // ------------------------------------------------------------

@@ -533,6 +533,65 @@ OUTER:
 func (m *collection) Stats() (*CollectionStats, error) {
 	rv := &CollectionStats{}
 	m.stats.AtomicCopyTo(rv)
+
+	var sssDirtyTop *SegmentStackStats
+	var sssDirtyMid *SegmentStackStats
+	var sssDirtyBase *SegmentStackStats
+	var sssClean *SegmentStackStats
+
+	m.m.Lock()
+
+	if m.stackDirtyTop != nil {
+		sssDirtyTop = m.stackDirtyTop.Stats()
+	}
+
+	if m.stackDirtyMid != nil {
+		sssDirtyMid = m.stackDirtyMid.Stats()
+	}
+
+	if m.stackDirtyBase != nil {
+		sssDirtyBase = m.stackDirtyBase.Stats()
+	}
+
+	if m.stackClean != nil {
+		sssClean = m.stackClean.Stats()
+	}
+
+	m.m.Unlock()
+
+	sssDirty := &SegmentStackStats{}
+	sssDirtyTop.AddTo(sssDirty)
+	sssDirtyMid.AddTo(sssDirty)
+	sssDirtyBase.AddTo(sssDirty)
+
+	rv.CurDirtyOps = sssDirty.CurOps
+	rv.CurDirtyBytes = sssDirty.CurBytes
+	rv.CurDirtySegments = sssDirty.CurSegments
+
+	if sssDirtyTop != nil {
+		rv.CurDirtyTopOps = sssDirtyTop.CurOps
+		rv.CurDirtyTopBytes = sssDirtyTop.CurBytes
+		rv.CurDirtyTopSegments = sssDirtyTop.CurSegments
+	}
+
+	if sssDirtyMid != nil {
+		rv.CurDirtyMidOps = sssDirtyMid.CurOps
+		rv.CurDirtyMidBytes = sssDirtyMid.CurBytes
+		rv.CurDirtyMidSegments = sssDirtyMid.CurSegments
+	}
+
+	if sssDirtyBase != nil {
+		rv.CurDirtyBaseOps = sssDirtyBase.CurOps
+		rv.CurDirtyBaseBytes = sssDirtyBase.CurBytes
+		rv.CurDirtyBaseSegments = sssDirtyBase.CurSegments
+	}
+
+	if sssClean != nil {
+		rv.CurCleanOps = sssClean.CurOps
+		rv.CurCleanBytes = sssClean.CurBytes
+		rv.CurCleanSegments = sssClean.CurSegments
+	}
+
 	return rv, nil
 }
 
