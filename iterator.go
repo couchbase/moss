@@ -138,12 +138,8 @@ func (ss *segmentStack) startIterator(
 		ss.lowerLevelSnapshot != nil {
 		llss := ss.lowerLevelSnapshot.addRef()
 		if llss != nil {
-			llOptions := iteratorOptions
-			llOptions.MinSegmentLevel = 0
-			llOptions.MaxSegmentHeight = 0
-
 			lowerLevelIter, err := llss.StartIterator(
-				startKeyInclusive, endKeyExclusive, llOptions)
+				startKeyInclusive, endKeyExclusive, IteratorOptions{})
 
 			llss.decRef()
 
