@@ -46,6 +46,23 @@ OUTER:
 		m.m.Lock()
 
 		for m.stackDirtyBase == nil && !checkStop() {
+			// There's a concurrency scenario where imagine that
+			// persistence takes a long time.  Also, imagine that
+			// there are no more incoming batches (so, stackDirtyTop
+			// is empty).
+			//
+			// That allows the merger to complete a merging cycle (so,
+			// stackDirtyMid is non-empty with unpersisted data) and
+			// the merger is now just waiting for either more incoming
+			// batches or waiting to be awoken.
+			//
+			// So, we notify/awake the merger here so that it can feed
+			// stackDirtyMid down to the persister as stackDirtyBase.
+			if (m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0) &&
+				(m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0) {
+				m.NotifyMerger("from-persister", false)
+			}
+
 			atomic.AddUint64(&m.stats.TotPersisterWaitBeg, 1)
 			m.stackDirtyBaseCond.Wait()
 			atomic.AddUint64(&m.stats.TotPersisterWaitEnd, 1)

@@ -221,21 +221,28 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 // ------------------------------------------------------
 
-// WaitForMerger blocks until the merger has run another cycle.
-// Providing a kind of "mergeAll" forces a full merge and can be
-// useful for applications that are no longer performing mutations and
-// that want to optimize for retrievals.
-func (m *collection) WaitForMerger(kind string) error {
-	atomic.AddUint64(&m.stats.TotWaitForMergerBeg, 1)
+// NotifyMerger sends a message (optionally synchronously) to the merger
+// to run another cycle.  Providing a kind of "mergeAll" forces a full
+// merge and can be useful for applications that are no longer
+// performing mutations and that want to optimize for retrievals.
+func (m *collection) NotifyMerger(kind string, synchronous bool) error {
+	atomic.AddUint64(&m.stats.TotNotifyMergerBeg, 1)
 
-	pongCh := make(chan struct{})
+	var pongCh chan struct{}
+	if synchronous {
+		pongCh = make(chan struct{})
+	}
+
 	m.pingMergerCh <- ping{
 		kind:   kind,
 		pongCh: pongCh,
 	}
-	<-pongCh
 
-	atomic.AddUint64(&m.stats.TotWaitForMergerEnd, 1)
+	if pongCh != nil {
+		<-pongCh
+	}
+
+	atomic.AddUint64(&m.stats.TotNotifyMergerEnd, 1)
 	return nil
 }
 

@@ -353,8 +353,8 @@ type CollectionStats struct {
 	TotExecuteBatchAwakeMergerEnd uint64
 	TotExecuteBatchEnd            uint64
 
-	TotWaitForMergerBeg uint64
-	TotWaitForMergerEnd uint64
+	TotNotifyMergerBeg uint64
+	TotNotifyMergerEnd uint64
 
 	TotMergerEnd                  uint64
 	TotMergerLoop                 uint64
