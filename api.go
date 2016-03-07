@@ -115,6 +115,18 @@ type CollectionOptions struct {
 	// allow the merger to catch up.
 	MaxPreMergerBatches int
 
+	// MaxDirtyOps, when greater than zero, is the max number of dirty
+	// (unpersisted) ops allowed before ExecuteBatch() blocks to allow
+	// the persister to catch up.  It only has effect with a non-nil
+	// LowerLevelUpdate.
+	MaxDirtyOps uint64
+
+	// MaxDirtyKeyValBytes, when greater than zero, is the max number
+	// of dirty (unpersisted) key-val bytes allowed before
+	// ExecuteBatch() blocks to allow the persister to catch up.  It
+	// only has effect with a non-nil LowerLevelUpdate.
+	MaxDirtyKeyValBytes uint64
+
 	// CachePersisted allows the collection to cache clean, persisted
 	// key-val's, and is considered when LowerLevelUpdate is used.
 	CachePersisted bool
@@ -359,8 +371,6 @@ type CollectionStats struct {
 	TotMergerEnd                  uint64
 	TotMergerLoop                 uint64
 	TotMergerLoopRepeat           uint64
-	TotMergerWaitBeg              uint64
-	TotMergerWaitEnd              uint64
 	TotMergerAll                  uint64
 	TotMergerInternalBeg          uint64
 	TotMergerInternalErr          uint64
@@ -369,11 +379,22 @@ type CollectionStats struct {
 	TotMergerLowerLevelNotify     uint64
 	TotMergerLowerLevelNotifySkip uint64
 
-	TotPersisterEnd                 uint64
-	TotPersisterLoop                uint64
-	TotPersisterLoopRepeat          uint64
-	TotPersisterWaitBeg             uint64
-	TotPersisterWaitEnd             uint64
+	TotMergerWaitIncomingBeg  uint64
+	TotMergerWaitIncomingStop uint64
+	TotMergerWaitIncomingEnd  uint64
+	TotMergerWaitIncomingSkip uint64
+
+	TotMergerWaitOutgoingBeg  uint64
+	TotMergerWaitOutgoingStop uint64
+	TotMergerWaitOutgoingEnd  uint64
+	TotMergerWaitOutgoingSkip uint64
+
+	TotPersisterLoop       uint64
+	TotPersisterLoopRepeat uint64
+	TotPersisterWaitBeg    uint64
+	TotPersisterWaitEnd    uint64
+	TotPersisterEnd        uint64
+
 	TotPersisterLowerLevelUpdateBeg uint64
 	TotPersisterLowerLevelUpdateErr uint64
 	TotPersisterLowerLevelUpdateEnd uint64

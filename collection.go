@@ -31,15 +31,24 @@ type collection struct {
 	m sync.Mutex // Protects the fields that follow.
 
 	// When ExecuteBatch() has pushed a new segment onto
-	// stackDirtyTop, it notifies the merger via awakeMergerCh (if
+	// stackDirtyTop, it can notify waiters like the merger via
+	// waitDirtyIncomingCh (if non-nil).
+	waitDirtyIncomingCh chan struct{}
+
+	// When the persister has finished a persistence cycle, it can
+	// notify waiters like the merger via waitDirtyOutgoingCh (if
 	// non-nil).
-	awakeMergerCh chan struct{}
+	waitDirtyOutgoingCh chan struct{}
+
+	// ----------------------------------------
 
 	// stackDirtyTopCond is used to wait for space in stackDirtyTop.
 	stackDirtyTopCond *sync.Cond
 
 	// stackDirtyBaseCond is used to wait for non-nil stackDirtyBase.
 	stackDirtyBaseCond *sync.Cond
+
+	// ----------------------------------------
 
 	// ExecuteBatch() will push new segments onto stackDirtyTop if
 	// there is space.
@@ -201,16 +210,16 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	prevStackDirtyTop := m.stackDirtyTop
 	m.stackDirtyTop = stackDirtyTop
 
-	awakeMergerCh := m.awakeMergerCh
-	m.awakeMergerCh = nil
+	waitDirtyIncomingCh := m.waitDirtyIncomingCh
+	m.waitDirtyIncomingCh = nil
 
 	m.m.Unlock()
 
 	prevStackDirtyTop.Close()
 
-	if awakeMergerCh != nil {
+	if waitDirtyIncomingCh != nil {
 		atomic.AddUint64(&m.stats.TotExecuteBatchAwakeMergerBeg, 1)
-		close(awakeMergerCh)
+		close(waitDirtyIncomingCh)
 		atomic.AddUint64(&m.stats.TotExecuteBatchAwakeMergerEnd, 1)
 	}
 
@@ -370,24 +379,25 @@ OUTER:
 		// ---------------------------------------------
 		// Wait for new stackDirtyTop entries and/or pings.
 
-		var awakeMergerCh chan struct{}
+		var waitDirtyIncomingCh chan struct{}
 
 		m.m.Lock()
 
 		if m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0 {
-			m.awakeMergerCh = make(chan struct{})
-			awakeMergerCh = m.awakeMergerCh
+			m.waitDirtyIncomingCh = make(chan struct{})
+			waitDirtyIncomingCh = m.waitDirtyIncomingCh
 		}
 
 		m.m.Unlock()
 
 		mergeAll := false
 
-		if awakeMergerCh != nil {
-			atomic.AddUint64(&m.stats.TotMergerWaitBeg, 1)
+		if waitDirtyIncomingCh != nil {
+			atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
 
 			select {
 			case <-m.stopCh:
+				atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
 				return
 
 			case ping := <-m.pingMergerCh:
@@ -396,11 +406,13 @@ OUTER:
 					mergeAll = true
 				}
 
-			case <-awakeMergerCh:
+			case <-waitDirtyIncomingCh:
 				// NO-OP.
 			}
 
-			atomic.AddUint64(&m.stats.TotMergerWaitEnd, 1)
+			atomic.AddUint64(&m.stats.TotMergerWaitIncomingEnd, 1)
+		} else {
+			atomic.AddUint64(&m.stats.TotMergerWaitIncomingSkip, 1)
 		}
 
 		pings, mergeAll =
@@ -501,6 +513,7 @@ OUTER:
 
 		if m.options.LowerLevelUpdate != nil {
 			m.m.Lock()
+
 			if m.stackDirtyBase == nil &&
 				m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
 				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
@@ -508,11 +521,48 @@ OUTER:
 				m.stackDirtyBase = m.stackDirtyMid
 				m.stackDirtyMid = nil
 
+				if m.waitDirtyOutgoingCh != nil {
+					close(m.waitDirtyOutgoingCh)
+				}
+				m.waitDirtyOutgoingCh = make(chan struct{})
+
 				m.stackDirtyBaseCond.Signal()
 			} else {
 				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotifySkip, 1)
 			}
+
+			var waitDirtyOutgoingCh chan struct{}
+
+			if m.options.MaxDirtyOps > 0 ||
+				m.options.MaxDirtyKeyValBytes > 0 {
+				cs := CollectionStats{}
+
+				m.statsSegmentsLOCKED(&cs)
+
+				if cs.CurDirtyOps > m.options.MaxDirtyOps ||
+					cs.CurDirtyBytes > m.options.MaxDirtyKeyValBytes {
+					waitDirtyOutgoingCh = m.waitDirtyOutgoingCh
+				}
+			}
+
 			m.m.Unlock()
+
+			if waitDirtyOutgoingCh != nil {
+				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingBeg, 1)
+
+				select {
+				case <-m.stopCh:
+					atomic.AddUint64(&m.stats.TotMergerWaitOutgoingStop, 1)
+					return
+
+				case <-waitDirtyOutgoingCh:
+					// NO-OP.
+				}
+
+				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingEnd, 1)
+			} else {
+				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingSkip, 1)
+			}
 		}
 
 		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
@@ -539,14 +589,22 @@ OUTER:
 // Stats returns stats for this collection.
 func (m *collection) Stats() (*CollectionStats, error) {
 	rv := &CollectionStats{}
+
 	m.stats.AtomicCopyTo(rv)
 
+	m.m.Lock()
+	m.statsSegmentsLOCKED(rv)
+	m.m.Unlock()
+
+	return rv, nil
+}
+
+// statsSegmentsLOCKED retrieves stats related to segments.
+func (m *collection) statsSegmentsLOCKED(rv *CollectionStats) {
 	var sssDirtyTop *SegmentStackStats
 	var sssDirtyMid *SegmentStackStats
 	var sssDirtyBase *SegmentStackStats
 	var sssClean *SegmentStackStats
-
-	m.m.Lock()
 
 	if m.stackDirtyTop != nil {
 		sssDirtyTop = m.stackDirtyTop.Stats()
@@ -563,8 +621,6 @@ func (m *collection) Stats() (*CollectionStats, error) {
 	if m.stackClean != nil {
 		sssClean = m.stackClean.Stats()
 	}
-
-	m.m.Unlock()
 
 	sssDirty := &SegmentStackStats{}
 	sssDirtyTop.AddTo(sssDirty)
@@ -598,8 +654,6 @@ func (m *collection) Stats() (*CollectionStats, error) {
 		rv.CurCleanBytes = sssClean.CurBytes
 		rv.CurCleanSegments = sssClean.CurSegments
 	}
-
-	return rv, nil
 }
 
 // AtomicCopyTo copies stats from s to r (from source to result).

@@ -106,6 +106,9 @@ OUTER:
 		}
 		m.stackDirtyBase = nil
 
+		waitDirtyOutgoingCh := m.waitDirtyOutgoingCh
+		m.waitDirtyOutgoingCh = nil
+
 		llssPrev := m.lowerLevelSnapshot
 		m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
 
@@ -121,6 +124,10 @@ OUTER:
 
 		if llssPrev != nil {
 			llssPrev.Close()
+		}
+
+		if waitDirtyOutgoingCh != nil {
+			close(waitDirtyOutgoingCh)
 		}
 
 		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
