@@ -93,7 +93,7 @@ type Collection interface {
 type CollectionOptions struct {
 	// MergeOperator is an optional func provided by an application
 	// that wants to use Batch.Merge()'ing.
-	MergeOperator MergeOperator
+	MergeOperator MergeOperator `json:"-"`
 
 	// DeferredSort allows ExecuteBatch() to operate more quickly by
 	// deferring the sorting of an incoming batch until it is needed
@@ -135,27 +135,27 @@ type CollectionOptions struct {
 	// initializes the lower-level storage of a Collection.  This
 	// might be used, for example, for having a Collection be a
 	// write-back cache in front of a persistent implementation.
-	LowerLevelInit Snapshot
+	LowerLevelInit Snapshot `json:"-"`
 
 	// LowerLevelUpdate is an optional func that is invoked when the
 	// lower-level storage should be updated.
-	LowerLevelUpdate LowerLevelUpdate
+	LowerLevelUpdate LowerLevelUpdate `json:"-"`
 
 	Debug int // Higher means more logging, when Log != nil.
 
 	// Log is a callback invoked when the Collection needs to log a
 	// debug message.  Optional, may be nil.
-	Log func(format string, a ...interface{})
+	Log func(format string, a ...interface{}) `json:"-"`
 
 	// OnError is an optional callback invoked when the Collection
 	// encounters an error.
-	OnError func(error)
+	OnError func(error) `json:"-"`
 
 	// OnEvent is an optional callback invoked on Collection related
 	// processing events.  If the application's callback
 	// implementation blocks, it may pause processing and progress,
 	// depending on the type of callback event kind.
-	OnEvent func(event Event)
+	OnEvent func(event Event) `json:"-"`
 }
 
 // Event represents the information provided in an OnEvent() callback.
