@@ -132,14 +132,14 @@ OUTER:
 
 		// ---------------------------------------------
 
+		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
+
 		if m.options.OnEvent != nil {
 			m.options.OnEvent(Event{
 				Kind:       EventKindPersisterProgress,
 				Collection: m,
 			})
 		}
-
-		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
 	}
 
 	// TODO: More advanced eviction of stackClean.

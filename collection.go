@@ -95,13 +95,6 @@ func (m *collection) Close() error {
 
 	close(m.stopCh)
 
-	if m.options.OnEvent != nil {
-		m.options.OnEvent(Event{
-			Kind:       EventKindClose,
-			Collection: m,
-		})
-	}
-
 	m.stackDirtyBaseCond.Signal() // Awake persister.
 
 	<-m.doneMergerCh
@@ -120,6 +113,13 @@ func (m *collection) Close() error {
 	m.m.Unlock()
 
 	atomic.AddUint64(&m.stats.TotCloseEnd, 1)
+
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(Event{
+			Kind:       EventKindClose,
+			Collection: m,
+		})
+	}
 
 	return nil
 }
@@ -574,14 +574,14 @@ OUTER:
 
 		// ---------------------------------------------
 
+		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
+
 		if m.options.OnEvent != nil {
 			m.options.OnEvent(Event{
 				Kind:       EventKindMergerProgress,
 				Collection: m,
 			})
 		}
-
-		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
 	}
 
 	// TODO: Concurrent merging of disjoint slices of stackDirtyMid
