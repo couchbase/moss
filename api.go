@@ -156,10 +156,6 @@ type CollectionOptions struct {
 	// implementation blocks, it may pause processing and progress,
 	// depending on the type of callback event kind.
 	OnEvent func(event Event)
-
-	// MaxStackDirtyTopHeight is DEPRECATED.  Please see
-	// MaxPreMergerBatches instead.
-	MaxStackDirtyTopHeight int
 }
 
 // Event represents the information provided in an OnEvent() callback.
