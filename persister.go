@@ -133,7 +133,10 @@ OUTER:
 		// ---------------------------------------------
 
 		if m.options.OnEvent != nil {
-			m.options.OnEvent(Event{Kind: EventKindPersisterProgress})
+			m.options.OnEvent(Event{
+				Kind:       EventKindPersisterProgress,
+				Collection: m,
+			})
 		}
 
 		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)

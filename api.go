@@ -160,19 +160,23 @@ type CollectionOptions struct {
 
 // Event represents the information provided in an OnEvent() callback.
 type Event struct {
-	Kind EventKind
+	Kind       EventKind
+	Collection Collection
 }
 
 // EventKind represents an event code for OnEvent() callbacks.
 type EventKind int
 
+// EventKindClose is used when a collection is closing.
+var EventKindClose = EventKind(1)
+
 // EventKindMergerProgress is used when the merger has compeleted a
 // round of merge processing.
-var EventKindMergerProgress = EventKind(1)
+var EventKindMergerProgress = EventKind(2)
 
 // EventKindPersisterProgress is used when the persister had completed
 // a round of persistence processing.
-var EventKindPersisterProgress = EventKind(2)
+var EventKindPersisterProgress = EventKind(3)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{

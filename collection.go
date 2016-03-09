@@ -95,6 +95,13 @@ func (m *collection) Close() error {
 
 	close(m.stopCh)
 
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(Event{
+			Kind:       EventKindClose,
+			Collection: m,
+		})
+	}
+
 	m.stackDirtyBaseCond.Signal() // Awake persister.
 
 	<-m.doneMergerCh
@@ -568,7 +575,10 @@ OUTER:
 		// ---------------------------------------------
 
 		if m.options.OnEvent != nil {
-			m.options.OnEvent(Event{Kind: EventKindMergerProgress})
+			m.options.OnEvent(Event{
+				Kind:       EventKindMergerProgress,
+				Collection: m,
+			})
 		}
 
 		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
