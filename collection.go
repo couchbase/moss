@@ -565,6 +565,12 @@ OUTER:
 			}
 		}
 
+		// ---------------------------------------------
+
+		if m.options.OnEvent != nil {
+			m.options.OnEvent(Event{Kind: EventKindMergerProgress})
+		}
+
 		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
 	}
 

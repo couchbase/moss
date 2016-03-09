@@ -18,13 +18,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
-// TestPersister attempts to test that the persister gets invoked as
-// expected.  It currently has some unsightly time.Sleep() calls
-// since there doesn't seem to be a good way to know when the
-// persister has run.
+// TestPersister tests that the persister is invoked as expected.
 func Test1Persister(t *testing.T) {
 	runTestPersister(t, 1)
 }
@@ -49,11 +45,20 @@ func runTestPersister(t *testing.T, numItems int) {
 		return p, nil
 	}
 
+	persisterCh := make(chan string)
+
+	onEvent := func(event Event) {
+		if event.Kind == EventKindPersisterProgress {
+			persisterCh <- "persisterProgress"
+		}
+	}
+
 	// create new collection configured to use lower level persister
 	m, err := NewCollection(
 		CollectionOptions{
 			LowerLevelInit:   lowerLevelPersister,
 			LowerLevelUpdate: lowerLevelUpdater,
+			OnEvent:          onEvent,
 		})
 	if err != nil || m == nil {
 		t.Fatalf("expected moss")
@@ -100,7 +105,7 @@ func runTestPersister(t *testing.T, numItems int) {
 	}
 
 	// wait for persister to run
-	time.Sleep(1 * time.Second)
+	<-persisterCh
 
 	ss2, err := m.Snapshot()
 	if err != nil || ss2 == nil {
@@ -212,7 +217,11 @@ func runTestPersister(t *testing.T, numItems int) {
 		t.Fatalf("error snapshoting: %v", err)
 	}
 
-	time.Sleep(1 * time.Second)
+	<-persisterCh
+	go func() {
+		for range persisterCh { /* EAT */
+		}
+	}()
 
 	ssd2, err := m.Snapshot()
 	if err != nil || ssd2 == nil {
@@ -254,9 +263,9 @@ func runTestPersister(t *testing.T, numItems int) {
 // method returns an error, the configured OnError callback is
 // invoked
 func TestPersisterError(t *testing.T) {
-	errCallbackInvoked := false
+	onErrorCh := make(chan string)
 	customOnError := func(err error) {
-		errCallbackInvoked = true
+		onErrorCh <- "error expected!"
 	}
 
 	// create a new instance of our mock lower-level persister
@@ -265,12 +274,20 @@ func TestPersisterError(t *testing.T) {
 		return nil, fmt.Errorf("test error")
 	}
 
+	gotPersistence := false
+	onEvent := func(event Event) {
+		if event.Kind == EventKindPersisterProgress {
+			gotPersistence = true
+		}
+	}
+
 	// create new collection configured to use lower level persister
 	m, err := NewCollection(
 		CollectionOptions{
 			LowerLevelInit:   lowerLevelPersister,
 			LowerLevelUpdate: lowerLevelUpdater,
 			OnError:          customOnError,
+			OnEvent:          onEvent,
 		})
 	if err != nil || m == nil {
 		t.Fatalf("expected moss")
@@ -301,10 +318,13 @@ func TestPersisterError(t *testing.T) {
 	}
 
 	// wait for persister to run
-	time.Sleep(1 * time.Second)
+	msg := <-onErrorCh
+	if msg != "error expected!" {
+		t.Errorf("expected error callback")
+	}
 
-	if !errCallbackInvoked {
-		t.Errorf("expected error callback to be invoked")
+	if gotPersistence {
+		t.Errorf("expected no persistence due to error")
 	}
 }
 

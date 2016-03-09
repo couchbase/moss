@@ -147,14 +147,36 @@ type CollectionOptions struct {
 	// debug message.  Optional, may be nil.
 	Log func(format string, a ...interface{})
 
-	// OnError is a callback invoked when the Collection encounters a
-	// background error.  Optional, may be nil.
+	// OnError is an optional callback invoked when the Collection
+	// encounters an error.
 	OnError func(error)
+
+	// OnEvent is an optional callback invoked on Collection related
+	// processing events.  If the application's callback
+	// implementation blocks, it may pause processing and progress,
+	// depending on the type of callback event kind.
+	OnEvent func(event Event)
 
 	// MaxStackDirtyTopHeight is DEPRECATED.  Please see
 	// MaxPreMergerBatches instead.
 	MaxStackDirtyTopHeight int
 }
+
+// Event represents the information provided in an OnEvent() callback.
+type Event struct {
+	Kind EventKind
+}
+
+// EventKind represents an event code for OnEvent() callbacks.
+type EventKind int
+
+// EventKindMergerProgress is used when the merger has compeleted a
+// round of merge processing.
+var EventKindMergerProgress = EventKind(1)
+
+// EventKindPersisterProgress is used when the persister had completed
+// a round of persistence processing.
+var EventKindPersisterProgress = EventKind(2)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{

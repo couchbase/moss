@@ -130,6 +130,12 @@ OUTER:
 			close(waitDirtyOutgoingCh)
 		}
 
+		// ---------------------------------------------
+
+		if m.options.OnEvent != nil {
+			m.options.OnEvent(Event{Kind: EventKindPersisterProgress})
+		}
+
 		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
 	}
 
