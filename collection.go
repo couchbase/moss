@@ -91,6 +91,13 @@ func (m *collection) Start() error {
 
 // Close synchronously stops background goroutines.
 func (m *collection) Close() error {
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(Event{
+			Kind:       EventKindCloseStart,
+			Collection: m,
+		})
+	}
+
 	atomic.AddUint64(&m.stats.TotCloseBeg, 1)
 
 	close(m.stopCh)

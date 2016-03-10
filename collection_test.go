@@ -73,6 +73,34 @@ func TestNewCollection(t *testing.T) {
 	}
 }
 
+func TestNewCollectionCloseEvents(t *testing.T) {
+	events := map[EventKind]int{}
+	m, err := NewCollection(CollectionOptions{
+		OnEvent: func(e Event) {
+			events[e.Kind]++
+		},
+	})
+	if err != nil || m == nil {
+		t.Errorf("expected moss")
+	}
+
+	err = m.Start()
+	if err != nil {
+		t.Errorf("expected Start ok")
+	}
+
+	err = m.Close()
+	if err != nil {
+		t.Errorf("expected Close ok")
+	}
+
+	if len(events) != 2 ||
+		events[EventKindCloseStart] != 1 ||
+		events[EventKindClose] != 1 {
+		t.Errorf("expected 2 close events")
+	}
+}
+
 func TestEmpty(t *testing.T) {
 	m, err := NewCollection(CollectionOptions{})
 	if err != nil || m == nil {

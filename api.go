@@ -167,16 +167,21 @@ type Event struct {
 // EventKind represents an event code for OnEvent() callbacks.
 type EventKind int
 
-// EventKindClose is used when a collection is closing.
-var EventKindClose = EventKind(1)
+// EventKindCloseStart is used when a collection.Close() has begun.
+// The closing might take awhile to complete and an EventKindClose
+// will follow later.
+var EventKindCloseStart = EventKind(1)
+
+// EventKindClose is used when a collection has been fully closed.
+var EventKindClose = EventKind(2)
 
 // EventKindMergerProgress is used when the merger has compeleted a
 // round of merge processing.
-var EventKindMergerProgress = EventKind(2)
+var EventKindMergerProgress = EventKind(3)
 
 // EventKindPersisterProgress is used when the persister had completed
 // a round of persistence processing.
-var EventKindPersisterProgress = EventKind(3)
+var EventKindPersisterProgress = EventKind(4)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
