@@ -27,25 +27,13 @@ func (m *collection) runPersister() {
 		return
 	}
 
-	checkStop := func() bool {
-		select {
-		case <-m.stopCh:
-			return true
-
-		default:
-			// NO-OP.
-		}
-
-		return false
-	}
-
 OUTER:
 	for {
 		atomic.AddUint64(&m.stats.TotPersisterLoop, 1)
 
 		m.m.Lock()
 
-		for m.stackDirtyBase == nil && !checkStop() {
+		for m.stackDirtyBase == nil && !m.isClosed() {
 			// There's a concurrency scenario where imagine that
 			// persistence takes a long time.  Also, imagine that
 			// there are no more incoming batches (so, stackDirtyTop
@@ -72,7 +60,7 @@ OUTER:
 
 		m.m.Unlock()
 
-		if checkStop() {
+		if m.isClosed() {
 			return
 		}
 

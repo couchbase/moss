@@ -102,6 +102,7 @@ func (m *collection) Close() error {
 
 	close(m.stopCh)
 
+	m.stackDirtyTopCond.Signal()  // Awake any ExecuteBatch()'ers.
 	m.stackDirtyBaseCond.Signal() // Awake persister.
 
 	<-m.doneMergerCh
@@ -131,6 +132,15 @@ func (m *collection) Close() error {
 	return nil
 }
 
+func (m *collection) isClosed() bool {
+	select {
+	case <-m.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
 // Options returns the current options.
 func (m *collection) Options() CollectionOptions {
 	return m.options
@@ -138,6 +148,10 @@ func (m *collection) Options() CollectionOptions {
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (Snapshot, error) {
+	if m.isClosed() {
+		return nil, ErrClosed
+	}
+
 	atomic.AddUint64(&m.stats.TotSnapshotBeg, 1)
 
 	rv, _, _, _, _ := m.snapshot(0, nil)
@@ -151,6 +165,10 @@ func (m *collection) Snapshot() (Snapshot, error) {
 // resources expected to be required.
 func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 	Batch, error) {
+	if m.isClosed() {
+		return nil, ErrClosed
+	}
+
 	atomic.AddUint64(&m.stats.TotNewBatch, 1)
 	atomic.AddUint64(&m.stats.TotNewBatchTotalOps, uint64(totalOps))
 	atomic.AddUint64(&m.stats.TotNewBatchTotalKeyValBytes, uint64(totalKeyValBytes))
@@ -199,6 +217,11 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	for m.stackDirtyTop != nil &&
 		len(m.stackDirtyTop.a) >= maxPreMergerBatches {
+		if m.isClosed() {
+			m.m.Unlock()
+			return ErrClosed
+		}
+
 		if m.options.DeferredSort {
 			go b.requestSort(false) // While waiting, might as well sort.
 		}
@@ -206,6 +229,11 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		atomic.AddUint64(&m.stats.TotExecuteBatchWaitBeg, 1)
 		m.stackDirtyTopCond.Wait()
 		atomic.AddUint64(&m.stats.TotExecuteBatchWaitEnd, 1)
+	}
+
+	if m.isClosed() {
+		m.m.Unlock()
+		return ErrClosed
 	}
 
 	numDirtyTop := 0

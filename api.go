@@ -41,23 +41,27 @@ import (
 	"sync"
 )
 
-// ErrAllocTooLarge is returned when the requested allocation cannot be
-// satisfied by the pre-allocated buffer
+// ErrAllocTooLarge is returned when the requested allocation cannot
+// be satisfied by the pre-allocated buffer.
 var ErrAllocTooLarge = errors.New("alloc-too-large")
 
-// ErrIteratorDone is returned when the iterator has reached the end range
-// of the iterator or the end of the collection
+// ErrClosed is returned when the collection is already closed.
+var ErrClosed = errors.New("closed")
+
+// ErrIteratorDone is returned when the iterator has reached the end
+// range of the iterator or the end of the collection.
 var ErrIteratorDone = errors.New("iterator-done")
 
 // ErrMergeOperatorNil is returned if a merge operation is performed
-// without specifying a MergeOperator in the CollectionOptions
+// without specifying a MergeOperator in the CollectionOptions.
 var ErrMergeOperatorNil = errors.New("merge-operator-nil")
 
-// ErrMergeOperatorFullMergeFailed is returned when the provided MergeOperator
-// fails during the FullMerge operations
+// ErrMergeOperatorFullMergeFailed is returned when the provided
+// MergeOperator fails during the FullMerge operations.
 var ErrMergeOperatorFullMergeFailed = errors.New("merge-operator-full-merge-failed")
 
-// ErrUnimplemented is returned when an unimplemented feature has been used
+// ErrUnimplemented is returned when an unimplemented feature has been
+// used.
 var ErrUnimplemented = errors.New("unimplemented")
 
 // A Collection represents an ordered mapping of key-val entries,

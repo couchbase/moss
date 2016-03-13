@@ -89,6 +89,13 @@ func TestNewCollectionCloseEvents(t *testing.T) {
 		t.Errorf("expected Start ok")
 	}
 
+	b, err := m.NewBatch(0, 0)
+	if err != nil || b == nil {
+		t.Errorf("expected b ok")
+	}
+
+	b.Set([]byte("a"), []byte("A"))
+
 	err = m.Close()
 	if err != nil {
 		t.Errorf("expected Close ok")
@@ -98,6 +105,21 @@ func TestNewCollectionCloseEvents(t *testing.T) {
 		events[EventKindCloseStart] != 1 ||
 		events[EventKindClose] != 1 {
 		t.Errorf("expected 2 close events")
+	}
+
+	b1, err := m.NewBatch(0, 0)
+	if err != ErrClosed || b1 != nil {
+		t.Errorf("expected err-close")
+	}
+
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != ErrClosed {
+		t.Errorf("expected err-close")
+	}
+
+	ss, err := m.Snapshot()
+	if err != ErrClosed || ss != nil {
+		t.Errorf("expected err-close")
 	}
 }
 
