@@ -102,8 +102,8 @@ func (m *collection) Close() error {
 
 	close(m.stopCh)
 
-	m.stackDirtyTopCond.Signal()  // Awake any ExecuteBatch()'ers.
-	m.stackDirtyBaseCond.Signal() // Awake persister.
+	m.stackDirtyTopCond.Broadcast()  // Awake all ExecuteBatch()'ers.
+	m.stackDirtyBaseCond.Broadcast() // Awake persister.
 
 	<-m.doneMergerCh
 	atomic.AddUint64(&m.stats.TotCloseMergerDone, 1)
@@ -479,9 +479,9 @@ OUTER:
 					stackDirtyMidPrev = m.stackDirtyMid
 					m.stackDirtyMid = ss
 
-					// Awake any writers that are waiting for more space
+					// Awake all writers that are waiting for more space
 					// in stackDirtyTop.
-					m.stackDirtyTopCond.Signal()
+					m.stackDirtyTopCond.Broadcast()
 				})
 
 		stackDirtyTopPrev.Close()
@@ -568,7 +568,7 @@ OUTER:
 				}
 				m.waitDirtyOutgoingCh = make(chan struct{})
 
-				m.stackDirtyBaseCond.Signal()
+				m.stackDirtyBaseCond.Broadcast()
 			} else {
 				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotifySkip, 1)
 			}
