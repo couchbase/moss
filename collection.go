@@ -213,6 +213,14 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	stackDirtyTop := &segmentStack{collection: m, refs: 1}
 
+	// notify interested handlers that we are about to execute this batch
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(Event{
+			Kind:       EventKindBatchExecuteStart,
+			Collection: m,
+		})
+	}
+
 	m.m.Lock()
 
 	for m.stackDirtyTop != nil &&
@@ -231,6 +239,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		atomic.AddUint64(&m.stats.TotExecuteBatchWaitEnd, 1)
 	}
 
+	// check again, could have been closed while waiting
 	if m.isClosed() {
 		m.m.Unlock()
 		return ErrClosed

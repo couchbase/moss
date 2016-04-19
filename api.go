@@ -187,6 +187,10 @@ var EventKindMergerProgress = EventKind(3)
 // a round of persistence processing.
 var EventKindPersisterProgress = EventKind(4)
 
+// EventKindBatchExecuteStart is used when a collection is starting
+// to execute a batch
+var EventKindBatchExecuteStart = EventKind(5)
+
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
 	MergeOperator:       nil,
