@@ -321,7 +321,7 @@ func (sss *SegmentStackStats) AddTo(dest *SegmentStackStats) {
 
 	dest.CurOps += sss.CurOps
 	dest.CurBytes += sss.CurBytes
-	dest.CurBytes += sss.CurBytes
+	dest.CurSegments += sss.CurSegments
 }
 
 // Stats returns the stats for this segment stack.
