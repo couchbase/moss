@@ -1289,3 +1289,48 @@ func TestCollectionStats(t *testing.T) {
 		t.Errorf("expect close stat == 1")
 	}
 }
+
+func TestCollectionStatsClose(t *testing.T) {
+	m, _ := NewCollection(CollectionOptions{})
+	m.Start()
+
+	b, err := m.NewBatch(0, 0)
+	if err != nil {
+		t.Errorf("expected ok")
+	}
+
+	b.Set([]byte("a"), []byte("A"))
+
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected exec batch ok")
+	}
+
+	s, err := m.Stats()
+	if err != nil || s == nil {
+		t.Errorf("expect some stats")
+	}
+
+	if s.CurDirtyBytes <= 0 {
+		t.Errorf("expected dirty bytes, %#v", s)
+	}
+
+	if s.CurDirtySegments <= 0 {
+		t.Errorf("expected dirty segments, %#v", s)
+	}
+
+	m.Close()
+
+	s, err = m.Stats()
+	if err != nil || s == nil {
+		t.Errorf("expect some stats")
+	}
+
+	if s.CurDirtyBytes > 0 {
+		t.Errorf("expected no dirty bytes after close, %#v", s)
+	}
+
+	if s.CurDirtySegments > 0 {
+		t.Errorf("expected no dirty segments after close, %#v", s)
+	}
+}

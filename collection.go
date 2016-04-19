@@ -112,13 +112,32 @@ func (m *collection) Close() error {
 	atomic.AddUint64(&m.stats.TotClosePersisterDone, 1)
 
 	m.m.Lock()
+
 	if m.lowerLevelSnapshot != nil {
 		atomic.AddUint64(&m.stats.TotCloseLowerLevelBeg, 1)
 		m.lowerLevelSnapshot.Close()
 		m.lowerLevelSnapshot = nil
 		atomic.AddUint64(&m.stats.TotCloseLowerLevelEnd, 1)
 	}
+
+	stackDirtyTopPrev := m.stackDirtyTop
+	m.stackDirtyTop = nil
+
+	stackDirtyMidPrev := m.stackDirtyMid
+	m.stackDirtyMid = nil
+
+	stackDirtyBasePrev := m.stackDirtyBase
+	m.stackDirtyBase = nil
+
+	stackCleanPrev := m.stackClean
+	m.stackClean = nil
+
 	m.m.Unlock()
+
+	stackDirtyTopPrev.Close()
+	stackDirtyMidPrev.Close()
+	stackDirtyBasePrev.Close()
+	stackCleanPrev.Close()
 
 	atomic.AddUint64(&m.stats.TotCloseEnd, 1)
 
