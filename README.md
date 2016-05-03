@@ -34,10 +34,10 @@ Example
 
     import github.com/couchbase/moss
 
-    c, err := moss.NewCollection(CollectionOptions{})
+    c, err := moss.NewCollection(moss.CollectionOptions{})
     defer c.Close()
 
-    batch, c := c.NewBatch(0, 0)
+    batch, err := c.NewBatch(0, 0)
     defer batch.Close()
 
     batch.Set([]byte("car-0"), []byte("tesla"))
