@@ -73,7 +73,7 @@ efficient in memory usage and efficient for binary search and range
 iteration.
 
 Iterations when the stack height is > 1 are implementing using a N-way
- heap merge.
+heap merge.
 
 In this design, the stack of segments is treated as immutable via a
 copy-on-write approach whenever the stack needs to be "modified".  So,
@@ -86,6 +86,8 @@ Limitations and considerations
 Max key length is 2^24 (24 bits used to track key length).
 
 Max val length is 2^28 (28 bits used to track val length).
+
+Metadata overhead for each key-val operation is 16 bytes.
 
 Read performance characterization is roughly O(log N) for key-val
 retrieval.
