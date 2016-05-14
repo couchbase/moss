@@ -110,9 +110,9 @@ func (ss *segmentStack) startIterator(
 	for ssIndex := minSegmentLevel; ssIndex <= maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
-		pos := b.findStartKeyInclusivePos(startKeyInclusive)
+		pos := b.FindStartKeyInclusivePos(startKeyInclusive)
 
-		op, k, v := b.getOperationKeyVal(pos)
+		op, k, v := b.GetOperationKeyVal(pos)
 		if op == 0 && k == nil && v == nil {
 			continue
 		}
@@ -222,7 +222,7 @@ func (iter *iterator) Next() error {
 		} else {
 			next.pos++
 			next.op, next.k, next.v =
-				iter.ss.a[next.ssIndex].getOperationKeyVal(next.pos)
+				iter.ss.a[next.ssIndex].GetOperationKeyVal(next.pos)
 			if (next.op == 0 && next.k == nil && next.v == nil) ||
 				(iter.endKeyExclusive != nil &&
 					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {

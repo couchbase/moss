@@ -239,15 +239,15 @@ func TestBatchSort(t *testing.T) {
 	b.Set([]byte("d"), []byte("D"))
 	b.Set([]byte("b"), []byte("B"))
 
-	o, k, v := b.getOperationKeyVal(0)
+	o, k, v := b.GetOperationKeyVal(0)
 	if o != OperationSet || string(k) != "f" || string(v) != "F" {
 		t.Errorf("wrong okv")
 	}
-	o, k, v = b.getOperationKeyVal(1)
+	o, k, v = b.GetOperationKeyVal(1)
 	if o != OperationSet || string(k) != "d" || string(v) != "D" {
 		t.Errorf("wrong okv")
 	}
-	o, k, v = b.getOperationKeyVal(2)
+	o, k, v = b.GetOperationKeyVal(2)
 	if o != OperationSet || string(k) != "b" || string(v) != "B" {
 		t.Errorf("wrong okv")
 	}
@@ -256,56 +256,56 @@ func TestBatchSort(t *testing.T) {
 
 	b2 := b
 
-	o, k, v = b2.getOperationKeyVal(0)
+	o, k, v = b2.GetOperationKeyVal(0)
 	if o != OperationSet || string(k) != "b" || string(v) != "B" {
 		t.Errorf("wrong okv")
 	}
-	o, k, v = b2.getOperationKeyVal(1)
+	o, k, v = b2.GetOperationKeyVal(1)
 	if o != OperationSet || string(k) != "d" || string(v) != "D" {
 		t.Errorf("wrong okv")
 	}
-	o, k, v = b2.getOperationKeyVal(2)
+	o, k, v = b2.GetOperationKeyVal(2)
 	if o != OperationSet || string(k) != "f" || string(v) != "F" {
 		t.Errorf("wrong okv")
 	}
-	o, k, v = b2.getOperationKeyVal(3)
+	o, k, v = b2.GetOperationKeyVal(3)
 	if o != 0 || k != nil || v != nil {
 		t.Errorf("wrong okv")
 	}
 
-	i := b2.findStartKeyInclusivePos(nil)
+	i := b2.FindStartKeyInclusivePos(nil)
 	if i != 0 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte(""))
+	i = b2.FindStartKeyInclusivePos([]byte(""))
 	if i != 0 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("a"))
+	i = b2.FindStartKeyInclusivePos([]byte("a"))
 	if i != 0 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("b"))
+	i = b2.FindStartKeyInclusivePos([]byte("b"))
 	if i != 0 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("c"))
+	i = b2.FindStartKeyInclusivePos([]byte("c"))
 	if i != 1 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("d"))
+	i = b2.FindStartKeyInclusivePos([]byte("d"))
 	if i != 1 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("e"))
+	i = b2.FindStartKeyInclusivePos([]byte("e"))
 	if i != 2 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("f"))
+	i = b2.FindStartKeyInclusivePos([]byte("f"))
 	if i != 2 {
 		t.Errorf("wrong i")
 	}
-	i = b2.findStartKeyInclusivePos([]byte("g"))
+	i = b2.FindStartKeyInclusivePos([]byte("g"))
 	if i != 3 {
 		t.Errorf("wrong i")
 	}

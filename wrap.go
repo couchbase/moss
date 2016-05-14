@@ -12,6 +12,7 @@
 package moss
 
 import (
+	"io"
 	"sync"
 )
 
@@ -67,4 +68,29 @@ func (w *snapshotWrapper) StartIterator(
 ) (Iterator, error) {
 	return w.obj.StartIterator(startKeyInclusive, endKeyExclusive,
 		iteratorOptions)
+}
+
+// --------------------------------------------------------
+
+type iteratorWrapper struct {
+	iter   Iterator
+	closer io.Closer
+}
+
+func (w *iteratorWrapper) Close() error {
+	w.iter.Close()
+	w.closer.Close()
+	return nil
+}
+
+func (w *iteratorWrapper) Next() error {
+	return w.iter.Next()
+}
+
+func (w *iteratorWrapper) Current() (key, val []byte, err error) {
+	return w.iter.Current()
+}
+
+func (w *iteratorWrapper) CurrentEx() (entryEx EntryEx, key, val []byte, err error) {
+	return w.iter.CurrentEx()
 }

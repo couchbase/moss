@@ -16,6 +16,34 @@ import (
 	"sort"
 )
 
+// A Segment represents the read-oriented interface for a segment.
+type Segment interface {
+	// Len returns the number of ops in the segment.
+	Len() int
+
+	// NumKeyValBytes returns the number of bytes used for key-val data.
+	NumKeyValBytes() int
+
+	// FindStartKeyInclusivePos() returns the logical entry position for
+	// the given (inclusive) start key.  With segment keys of [b, d, f],
+	// looking for 'c' will return 1.  Looking for 'd' will return 1.
+	// Looking for 'g' will return 3.  Looking for 'a' will return 0.
+	FindStartKeyInclusivePos(startKeyInclusive []byte) int
+
+	// GetOperationKeyVal() returns the operation, key, val for a given
+	// logical entry position in the segment.
+	GetOperationKeyVal(pos int) (operation uint64, key []byte, val []byte)
+
+	// Returns true if the segment is already sorted, and returns
+	// false if the sorting is only asynchronously scheduled.
+	RequestSort(synchronous bool) bool
+}
+
+// A SegmentMutator represents the mutation methods of a segment.
+type SegmentMutator interface {
+	Mutate(operation uint64, key, val []byte) error
+}
+
 // A segment is a sequence of key-val entries or operations.  A
 // segment's kvs will be sorted by key when the segment is pushed into
 // the collection.  A segment implements the Batch interface.
@@ -149,6 +177,10 @@ func (a *segment) AllocMerge(keyFromAlloc, valFromAlloc []byte) error {
 
 // ------------------------------------------------------
 
+func (a *segment) Mutate(operation uint64, key, val []byte) error {
+	return a.mutate(operation, key, val)
+}
+
 func (a *segment) mutate(operation uint64, key, val []byte) error {
 	keyStart := len(a.buf)
 	a.buf = append(a.buf, key...)
@@ -233,11 +265,11 @@ func (a *segment) Less(i, j int) bool {
 
 // ------------------------------------------------------
 
-// findStartKeyInclusivePos() returns the logical entry position for
+// FindStartKeyInclusivePos() returns the logical entry position for
 // the given (inclusive) start key.  With segment keys of [b, d, f],
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
-func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
+func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
 	n := a.Len()
 
 	return sort.Search(n, func(pos int) bool {
@@ -254,10 +286,9 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	// TODO: Consider a perfectly balanced btree?
 }
 
-// getOperationKeyVal() returns the operation, key, val for a given
+// GetOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
-func (a *segment) getOperationKeyVal(pos int) (
-	uint64, []byte, []byte) {
+func (a *segment) GetOperationKeyVal(pos int) (uint64, []byte, []byte) {
 	x := pos * 2
 	if x < 0 || x >= len(a.kvs) {
 		return 0, nil, nil
@@ -281,12 +312,12 @@ func (a *segment) getOperationKeyVal(pos int) (
 
 // ------------------------------------------------------
 
-// requestSort() will either perform the previously deferred sorting,
+// RequestSort() will either perform the previously deferred sorting,
 // if the goroutine can acquire the 1 ticket from the needSorterCh.
 // Or, requestSort() will ensure that a sorter is working on this
 // segment.  Returns true if the segment is sorted, and returns false
 // if the sorting is only asynchronously scheduled.
-func (a *segment) requestSort(synchronous bool) bool {
+func (a *segment) RequestSort(synchronous bool) bool {
 	if a.needSorterCh == nil {
 		return true
 	}

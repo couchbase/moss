@@ -21,9 +21,9 @@ import (
 // entries of the same key from lower in the stack.  A segmentStack
 // implements the Snapshot interface.
 type segmentStack struct {
-	collection *collection
+	options *CollectionOptions
 
-	a []*segment
+	a []Segment
 
 	m sync.Mutex // Protects the fields the follow.
 
@@ -79,7 +79,7 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
 			b := ss.a[seg]
 
 			operation, k, v :=
-				b.getOperationKeyVal(b.findStartKeyInclusivePos(key))
+				b.GetOperationKeyVal(b.FindStartKeyInclusivePos(key))
 			if k != nil && bytes.Equal(k, key) {
 				if operation == OperationDel {
 					return nil, nil
@@ -111,7 +111,10 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
 // a merged val, based on the configured merge operator.
 func (ss *segmentStack) getMerged(key, val []byte, segStart int,
 	base *segmentStack) ([]byte, error) {
-	mo := ss.collection.options.MergeOperator
+	var mo MergeOperator
+	if ss.options != nil {
+		mo = ss.options.MergeOperator
+	}
 	if mo == nil {
 		return nil, ErrMergeOperatorNil
 	}
@@ -134,7 +137,10 @@ func (ss *segmentStack) getMerged(key, val []byte, segStart int,
 // calcTargetTopLevel() heuristically computes a new top level that
 // the segmentStack should be merged to.
 func (ss *segmentStack) calcTargetTopLevel() int {
-	minMergePercentage := ss.collection.options.MinMergePercentage
+	var minMergePercentage float64
+	if ss.options != nil {
+		minMergePercentage = ss.options.MinMergePercentage
+	}
 	if minMergePercentage <= 0 {
 		minMergePercentage = DefaultCollectionOptions.MinMergePercentage
 	}
@@ -209,15 +215,34 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 		return nil, err
 	}
 
+	err = ss.mergeInto(newTopLevel, mergedSegment, base)
+	if err != nil {
+		return nil, err
+	}
+
+	a := make([]Segment, 0, newTopLevel+1)
+	a = append(a, ss.a[0:newTopLevel]...)
+	a = append(a, mergedSegment)
+
+	return &segmentStack{
+		options:            ss.options,
+		a:                  a,
+		refs:               1,
+		lowerLevelSnapshot: ss.lowerLevelSnapshot.addRef(),
+	}, nil
+}
+
+func (ss *segmentStack) mergeInto(minSegmentLevel int, dest SegmentMutator,
+	base *segmentStack) error {
 	iter, err := ss.startIterator(nil, nil, IteratorOptions{
 		IncludeDeletions: true,
 		SkipLowerLevel:   true,
-		MinSegmentLevel:  newTopLevel,
+		MinSegmentLevel:  minSegmentLevel,
 		MaxSegmentHeight: len(ss.a),
 		base:             base,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer iter.Close()
@@ -229,7 +254,7 @@ OUTER:
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if len(iter.cursors) == 1 {
@@ -242,11 +267,11 @@ OUTER:
 			segmentOps := segment.Len()
 
 			for pos := cursor.pos; pos < segmentOps; pos++ {
-				op, k, v := segment.getOperationKeyVal(pos)
+				op, k, v := segment.GetOperationKeyVal(pos)
 
-				err = mergedSegment.mutate(op, k, v)
+				err = dest.Mutate(op, k, v)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 
@@ -259,7 +284,7 @@ OUTER:
 			// inefficient and not lazy enough right now.
 			val, err = ss.get(key, len(ss.a)-1, base)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if val == nil {
@@ -269,9 +294,9 @@ OUTER:
 			}
 		}
 
-		err = mergedSegment.mutate(op, key, val)
+		err = dest.Mutate(op, key, val)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		err = iter.Next()
@@ -279,38 +304,28 @@ OUTER:
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	var a []*segment
-
-	a = append(a, ss.a[0:newTopLevel]...)
-	a = append(a, mergedSegment)
-
-	return &segmentStack{
-		collection:         ss.collection,
-		a:                  a,
-		refs:               1,
-		lowerLevelSnapshot: ss.lowerLevelSnapshot.addRef(),
-	}, nil
+	return nil
 }
 
 // ------------------------------------------------------
 
 func (ss *segmentStack) ensureSorted(minSeg, maxSeg int) {
-	if !ss.collection.options.DeferredSort {
+	if ss.options == nil || !ss.options.DeferredSort {
 		return
 	}
 
 	sorted := true // Two phases allows for more concurrent sorting.
 	for seg := maxSeg; seg >= minSeg; seg-- {
-		sorted = sorted && ss.a[seg].requestSort(false)
+		sorted = sorted && ss.a[seg].RequestSort(false)
 	}
 
 	if !sorted {
 		for seg := maxSeg; seg >= minSeg; seg-- {
-			ss.a[seg].requestSort(true)
+			ss.a[seg].RequestSort(true)
 		}
 	}
 }
