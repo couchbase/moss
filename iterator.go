@@ -265,8 +265,8 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 	}
 
 	if op == OperationMerge {
-		valMerged, err :=
-			iter.ss.getMerged(key, val, iter.cursors[0].ssIndex-1)
+		valMerged, err := iter.ss.getMerged(key, val, iter.cursors[0].ssIndex-1,
+			iter.iteratorOptions.base)
 		if err != nil {
 			return nil, nil, err
 		}

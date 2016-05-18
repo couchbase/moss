@@ -493,6 +493,7 @@ OUTER:
 
 		var stackDirtyTopPrev *segmentStack
 		var stackDirtyMidPrev *segmentStack
+		var stackDirtyBase *segmentStack
 
 		stackDirtyMid, _, _, prevLenDirtyMid, prevLenDirtyTop :=
 			m.snapshot(snapshotSkipClean|snapshotSkipDirtyBase,
@@ -506,6 +507,11 @@ OUTER:
 
 					stackDirtyMidPrev = m.stackDirtyMid
 					m.stackDirtyMid = ss
+
+					stackDirtyBase = m.stackDirtyBase
+					if stackDirtyBase != nil {
+						stackDirtyBase.addRef()
+					}
 
 					// Awake all writers that are waiting for more space
 					// in stackDirtyTop.
@@ -533,7 +539,8 @@ OUTER:
 
 			atomic.AddUint64(&m.stats.TotMergerInternalBeg, 1)
 
-			mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel)
+			mergedStackDirtyMid, err :=
+				stackDirtyMid.merge(newTopLevel, stackDirtyBase)
 			if err != nil {
 				atomic.AddUint64(&m.stats.TotMergerInternalErr, 1)
 
@@ -561,6 +568,8 @@ OUTER:
 		} else {
 			atomic.AddUint64(&m.stats.TotMergerInternalSkip, 1)
 		}
+
+		stackDirtyBase.Close()
 
 		lenDirtyMid := len(stackDirtyMid.a)
 		if lenDirtyMid > 0 {

@@ -62,14 +62,16 @@ func (ss *segmentStack) Close() error {
 }
 
 // Get retrieves a val from a segmentStack.
-func (ss *segmentStack) Get(key []byte,
-	readOptions ReadOptions) ([]byte, error) {
-	return ss.get(key, len(ss.a)-1)
+func (ss *segmentStack) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	return ss.get(key, len(ss.a)-1, nil)
 }
 
 // get() retrieves a val from a segmentStack, but only considers
-// segments at or below the segStart level.
-func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
+// segments at or below the segStart level.  The optional base
+// segmentStack, when non-nil, is used instead of the
+// lowerLevelSnapshot, as a form of controllable chaining.
+func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
+	[]byte, error) {
 	if segStart >= 0 {
 		ss.ensureSorted(0, segStart)
 
@@ -84,12 +86,16 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 				}
 
 				if operation == OperationMerge {
-					return ss.getMerged(k, v, seg-1)
+					return ss.getMerged(k, v, seg-1, base)
 				}
 
 				return v, nil
 			}
 		}
+	}
+
+	if base != nil {
+		return base.Get(key, ReadOptions{})
 	}
 
 	if ss.lowerLevelSnapshot != nil {
@@ -103,14 +109,14 @@ func (ss *segmentStack) get(key []byte, segStart int) ([]byte, error) {
 
 // getMerged() retrieves a lower level val for a given key and returns
 // a merged val, based on the configured merge operator.
-func (ss *segmentStack) getMerged(key, val []byte, segStart int) (
-	[]byte, error) {
+func (ss *segmentStack) getMerged(key, val []byte, segStart int,
+	base *segmentStack) ([]byte, error) {
 	mo := ss.collection.options.MergeOperator
 	if mo == nil {
 		return nil, ErrMergeOperatorNil
 	}
 
-	vLower, err := ss.get(key, segStart)
+	vLower, err := ss.get(key, segStart, base)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +159,8 @@ func (ss *segmentStack) calcTargetTopLevel() int {
 
 // merge() returns a new segmentStack, merging all the segments that
 // are at the given newTopLevel and higher.
-func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
+func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
+	*segmentStack, error) {
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
 
@@ -165,6 +172,7 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		SkipLowerLevel:   true,
 		MinSegmentLevel:  newTopLevel + 1,
 		MaxSegmentHeight: len(ss.a),
+		base:             base,
 	})
 	if err != nil {
 		return nil, err
@@ -206,14 +214,13 @@ func (ss *segmentStack) merge(newTopLevel int) (*segmentStack, error) {
 		SkipLowerLevel:   true,
 		MinSegmentLevel:  newTopLevel,
 		MaxSegmentHeight: len(ss.a),
+		base:             base,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	defer iter.Close()
-
-	var readOptions ReadOptions
 
 OUTER:
 	for {
@@ -250,7 +257,7 @@ OUTER:
 		if op == OperationMerge {
 			// TODO: the merge operator implementation is currently
 			// inefficient and not lazy enough right now.
-			val, err = iter.ss.Get(key, readOptions)
+			val, err = ss.get(key, len(ss.a)-1, base)
 			if err != nil {
 				return nil, err
 			}
@@ -281,7 +288,12 @@ OUTER:
 	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
 
-	return &segmentStack{collection: ss.collection, a: a, refs: 1}, nil
+	return &segmentStack{
+		collection:         ss.collection,
+		a:                  a,
+		refs:               1,
+		lowerLevelSnapshot: ss.lowerLevelSnapshot.addRef(),
+	}, nil
 }
 
 // ------------------------------------------------------

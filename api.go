@@ -325,6 +325,11 @@ type IteratorOptions struct {
 	// MaxSegmentHeight.  MaxSegmentHeight is 1-based height, like an
 	// array length.
 	MaxSegmentHeight int
+
+	// base is used internally to provide the iterator with a
+	// segmentStack to use instead of a lower-level snapshot.  It's
+	// used so that segment merging consults the stackDirtyBase.
+	base *segmentStack
 }
 
 // EntryEx provides extra, advanced information about an entry from
