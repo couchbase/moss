@@ -16,45 +16,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 )
-
-type testMergeOperatorAppend struct {
-	m          sync.Mutex
-	numFull    int
-	numPartial int
-}
-
-func (mo *testMergeOperatorAppend) Name() string {
-	return "testMergeOperatorAppend"
-}
-
-func (mo *testMergeOperatorAppend) FullMerge(key, existingValue []byte,
-	operands [][]byte) ([]byte, bool) {
-	mo.m.Lock()
-	mo.numFull++
-	mo.m.Unlock()
-
-	s := string(existingValue)
-
-	for _, operand := range operands {
-		s = s + ":" + string(operand)
-	}
-
-	return []byte(s), true
-}
-
-func (mo *testMergeOperatorAppend) PartialMerge(key,
-	leftOperand, rightOperand []byte) ([]byte, bool) {
-	mo.m.Lock()
-	mo.numPartial++
-	mo.m.Unlock()
-
-	return []byte(string(leftOperand) + ":" + string(rightOperand)), true
-}
-
-// ----------------------------------------------------------------
 
 func TestNewCollection(t *testing.T) {
 	m, err := NewCollection(CollectionOptions{})
@@ -625,7 +588,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 
 func TestOpsAsyncMerge(t *testing.T) {
 	m, err := NewCollection(CollectionOptions{
-		MergeOperator: &testMergeOperatorAppend{},
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
 	})
 	if err != nil || m == nil {
 		t.Errorf("expected moss")

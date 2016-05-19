@@ -21,7 +21,7 @@ func TestIteratorMergeOps(t *testing.T) {
 
 	events := map[EventKind]int{}
 
-	mo := &testMergeOperatorAppend{}
+	mo := &MergeOperatorStringAppend{Sep: ":"}
 
 	m, err := NewCollection(CollectionOptions{
 		MergeOperator: mo,
@@ -122,7 +122,7 @@ func TestIteratorMergeOps_MB19667(t *testing.T) {
 
 	var eventCh chan EventKind
 
-	mo := &testMergeOperatorAppend{}
+	mo := &MergeOperatorStringAppend{Sep: ":"}
 
 	m, err := NewCollection(CollectionOptions{
 		MergeOperator: mo,

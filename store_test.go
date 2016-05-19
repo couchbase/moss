@@ -295,7 +295,7 @@ func TestStoreOps(t *testing.T) {
 	counts := map[EventKind]int{}
 
 	m, err := NewCollection(CollectionOptions{
-		MergeOperator:  &testMergeOperatorAppend{},
+		MergeOperator:  &MergeOperatorStringAppend{Sep: ":"},
 		LowerLevelInit: ssInit,
 		LowerLevelUpdate: func(higher Snapshot) (Snapshot, error) {
 			return store.Persist(higher, StorePersistOptions{})
