@@ -471,7 +471,7 @@ func NewCollection(options CollectionOptions) (
 		pingMergerCh:       make(chan ping, 10),
 		doneMergerCh:       make(chan struct{}),
 		donePersisterCh:    make(chan struct{}),
-		lowerLevelSnapshot: newSnapshotWrapper(options.LowerLevelInit),
+		lowerLevelSnapshot: NewSnapshotWrapper(options.LowerLevelInit, nil),
 		stats:              &CollectionStats{},
 	}
 

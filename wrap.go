@@ -19,15 +19,19 @@ import (
 type snapshotWrapper struct {
 	m        sync.Mutex
 	refCount uint64
-	obj      Snapshot
+	ss       Snapshot
+	closer   io.Closer // Optional, may be nil.
 }
 
-func newSnapshotWrapper(obj Snapshot) *snapshotWrapper {
-	if obj == nil {
+// NewSnapshotWrapper creates a wrapper which provides ref-counting
+// around a snapshot.  The snapshot (and an optional io.Closer) will
+// be closed when the ref-count reaches zero.
+func NewSnapshotWrapper(ss Snapshot, closer io.Closer) *snapshotWrapper {
+	if ss == nil {
 		return nil
 	}
 
-	return &snapshotWrapper{refCount: 1, obj: obj}
+	return &snapshotWrapper{refCount: 1, ss: ss}
 }
 
 func (w *snapshotWrapper) addRef() *snapshotWrapper {
@@ -44,9 +48,13 @@ func (w *snapshotWrapper) decRef() (err error) {
 	w.m.Lock()
 	w.refCount--
 	if w.refCount <= 0 {
-		if w.obj != nil {
-			err = w.obj.Close()
-			w.obj = nil
+		if w.ss != nil {
+			err = w.ss.Close()
+			w.ss = nil
+		}
+		if w.closer != nil {
+			w.closer.Close()
+			w.closer = nil
 		}
 	}
 	w.m.Unlock()
@@ -59,14 +67,14 @@ func (w *snapshotWrapper) Close() (err error) {
 
 func (w *snapshotWrapper) Get(key []byte, readOptions ReadOptions) (
 	[]byte, error) {
-	return w.obj.Get(key, readOptions)
+	return w.ss.Get(key, readOptions)
 }
 
 func (w *snapshotWrapper) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions,
 ) (Iterator, error) {
-	return w.obj.StartIterator(startKeyInclusive, endKeyExclusive,
+	return w.ss.StartIterator(startKeyInclusive, endKeyExclusive,
 		iteratorOptions)
 }
 

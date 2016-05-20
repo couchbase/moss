@@ -15,8 +15,10 @@ import (
 	"sync"
 )
 
+// MergeOperatorStringAppend implements a simple merger that appends
+// strings.  It was originally built for testing and sample purposes.
 type MergeOperatorStringAppend struct {
-	Sep        string
+	Sep        string // The separator string between operands.
 	m          sync.Mutex
 	numFull    int
 	numPartial int

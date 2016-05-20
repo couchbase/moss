@@ -18,9 +18,8 @@ import (
 	"sync"
 )
 
-// Implementation of mock lower-level iterator, with COW, using map
-// that's cloned on updates and with key sorting whenever an iterator
-// is needed.
+// Implementation of mock lower-level iterator, using map that's
+// cloned and sorted on creation.
 type TestPersisterIterator struct {
 	pos     int
 	kvpairs map[string][]byte // immutable.
@@ -28,6 +27,8 @@ type TestPersisterIterator struct {
 	endkey  string
 }
 
+// NewTestPersisterIterator returns an iterator, cloning the provided
+// kvpairs.
 func NewTestPersisterIterator(kvpairs map[string][]byte,
 	startkey, endkey string) *TestPersisterIterator {
 	rv := &TestPersisterIterator{
@@ -76,9 +77,9 @@ func (i *TestPersisterIterator) CurrentEx() (entryEx EntryEx,
 	return EntryEx{OperationSet}, k, v, err
 }
 
-// Implementation of mock lower-level test persister, with COW, using
-// map that's cloned on updates and with key sorting whenever an
-// iterator is needed.
+// Implementation of mock lower-level test persister, using a map
+// that's cloned on updates and with key sorting whenever an iterator
+// is needed.
 type TestPersister struct {
 	// stable snapshots through writes blocking reads
 	mutex sync.RWMutex
@@ -86,6 +87,8 @@ type TestPersister struct {
 	kvpairs map[string][]byte
 }
 
+// NewTestPersister returns a TestPersister instance that can be used
+// to test lower-level persistence features.
 func NewTestPersister() *TestPersister {
 	return &TestPersister{
 		kvpairs: map[string][]byte{},

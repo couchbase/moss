@@ -62,8 +62,10 @@ type Store struct {
 }
 
 type StoreOptions struct {
+	CollectionOptions CollectionOptions
+
 	// OpenFile allows apps to optionally provide their own file
-	// opening implementation.  Defaults to os.OpenFile().
+	// opening implementation.  When nil, os.OpenFile() is used.
 	OpenFile OpenFile `json:"-"`
 
 	// Log is a callback invoked when store needs to log a debug
@@ -120,7 +122,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 	var maxFNameSeq int64
 
 	var fnames []string
-	for _, fileInfo := range fileInfos {
+	for _, fileInfo := range fileInfos { // Find candidate file names.
 		fname := fileInfo.Name()
 		if strings.HasPrefix(fname, STORE_PREFIX) &&
 			strings.HasSuffix(fname, STORE_SUFFIX) {
@@ -141,7 +143,12 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 	}
 
 	if len(fnames) <= 0 {
-		return &Store{dir: dir, options: &options, nextFNameSeq: 1}, nil
+		return &Store{
+			dir:          dir,
+			options:      &options,
+			footer:       &Footer{},
+			nextFNameSeq: 1,
+		}, nil
 	}
 
 	sort.Strings(fnames)
@@ -151,7 +158,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 			continue
 		}
 
-		footer, err := ReadFooter(file) // The footer owns the file on success.
+		footer, err := ReadFooter(&options, file) // The footer owns the file on success.
 		if err != nil {
 			file.Close()
 			continue
@@ -173,7 +180,7 @@ func (s *Store) Dir() string {
 }
 
 func (s *Store) Options() StoreOptions {
-	return *s.options
+	return *s.options // Copy.
 }
 
 func (s *Store) Snapshot() (Snapshot, error) {
@@ -181,8 +188,6 @@ func (s *Store) Snapshot() (Snapshot, error) {
 	footer := s.footer
 	if footer != nil {
 		footer.fref.AddRef()
-	} else {
-		footer = &Footer{}
 	}
 	s.m.Unlock()
 	return footer, nil
@@ -193,11 +198,7 @@ func (s *Store) Close() error {
 	footer := s.footer
 	s.footer = nil
 	s.m.Unlock()
-
-	if footer != nil {
-		return footer.Close()
-	}
-	return nil
+	return footer.Close()
 }
 
 // --------------------------------------------------------
@@ -205,6 +206,9 @@ func (s *Store) Close() error {
 // Persist helps the store implement the lower-level-update func.
 func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 	Snapshot, error) {
+	if higher == nil {
+		return s.Snapshot()
+	}
 	ss, ok := higher.(*segmentStack)
 	if !ok {
 		return nil, fmt.Errorf("store: can only persist segmentStack")
@@ -216,13 +220,12 @@ func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
 	ss.addRef()
 	defer ss.decRef()
 
-	fref, file, err := s.createOrReuseFile()
+	fref, file, err := s.startOrReuseFile()
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: Pre-allocate file space up front?
-	// TODO: Multiple, concurrent segment persisters?
 
 	ss.ensureSorted(0, len(ss.a)-1)
 
@@ -237,7 +240,8 @@ func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
 		segmentLocs = append(segmentLocs, segmentLoc)
 	}
 
-	footer, err := initFooter(&Footer{SegmentLocs: segmentLocs, fref: fref}, file)
+	footer, err := loadFooterSegments(s.options,
+		&Footer{SegmentLocs: segmentLocs, fref: fref}, file)
 	if err != nil {
 		fref.DecRef()
 		return nil, err
@@ -249,25 +253,27 @@ func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
 	}
 
 	s.m.Lock()
-	if s.footer != nil {
-		s.footer.fref.DecRef()
-	}
+	footerPrev := s.footer
 	s.footer = footer
 	s.footer.fref.AddRef() // One ref-count held by store.
 	s.m.Unlock()
+
+	if footerPrev != nil {
+		footerPrev.fref.DecRef()
+	}
 
 	return footer, nil // The other ref-count returned to caller.
 }
 
 // --------------------------------------------------------
 
-// createOrReuseFile either creates a new file or reuses the file from
+// startOrReuseFile either creates a new file or reuses the file from
 // the last/current footer.
-func (s *Store) createOrReuseFile() (fref *FileRef, file File, err error) {
+func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if s.footer != nil {
+	if s.footer != nil && s.footer.fref != nil {
 		return s.footer.fref, s.footer.fref.AddRef(), nil
 	}
 
@@ -313,6 +319,13 @@ func (s *Store) persistHeader(file File) error {
 
 // --------------------------------------------------------
 
+type ioResult struct {
+	kind string // Kind of io attempted.
+	want int    // Num bytes expected to be written or read.
+	got  int    // Num bytes actually written or read.
+	err  error
+}
+
 func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err error) {
 	seg, ok := segIn.(*segment)
 	if !ok {
@@ -334,28 +347,40 @@ func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err err
 	kvsBufSliceHeader.Cap = kvsSliceHeader.Cap * 8
 
 	kvsPos := pageAlign(pos)
-	kvsWritten, err := file.WriteAt(kvsBuf, kvsPos)
-	if err != nil {
-		return rv, err
-	}
-	if kvsWritten != len(kvsBuf) {
-		return rv, fmt.Errorf("store: persistSegment error writing all kvs")
+	bufPos := pageAlign(kvsPos + int64(len(kvsBuf)))
+
+	ioCh := make(chan ioResult)
+
+	go func() {
+		kvsWritten, err := file.WriteAt(kvsBuf, kvsPos)
+		ioCh <- ioResult{kind: "kvs", want: len(kvsBuf), got: kvsWritten, err: err}
+	}()
+
+	go func() {
+		bufWritten, err := file.WriteAt(seg.buf, bufPos)
+		ioCh <- ioResult{kind: "buf", want: len(seg.buf), got: bufWritten, err: err}
+	}()
+
+	resMap := map[string]ioResult{}
+	for len(resMap) < 2 {
+		res := <-ioCh
+		if res.err != nil {
+			return rv, res.err
+		}
+		if res.want != res.got {
+			return rv, fmt.Errorf("store: persistSegment error writing,"+
+				" res: %+v, err: %v", res, res.err)
+		}
+		resMap[res.kind] = res
 	}
 
-	bufPos := pageAlign(kvsPos + int64(kvsWritten))
-	bufWritten, err := file.WriteAt(seg.buf, bufPos)
-	if err != nil {
-		return rv, err
-	}
-	if bufWritten != len(seg.buf) {
-		return rv, fmt.Errorf("store: persistSegment error writing all buf")
-	}
+	close(ioCh)
 
 	return SegmentLoc{
 		KvsOffset:  uint64(kvsPos),
-		KvsBytes:   uint64(kvsWritten),
+		KvsBytes:   uint64(resMap["kvs"].got),
 		BufOffset:  uint64(bufPos),
-		BufBytes:   uint64(bufWritten),
+		BufBytes:   uint64(resMap["buf"].got),
 		TotOpsSet:  seg.totOperationSet,
 		TotOpsDel:  seg.totOperationDel,
 		TotKeyByte: seg.totKeyByte,
@@ -404,16 +429,16 @@ func (s *Store) persistFooter(file File, footer *Footer) error {
 // --------------------------------------------------------
 
 // ReadFooter reads the Footer from a file.
-func ReadFooter(file File) (*Footer, error) {
+func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 	finfo, err := file.Stat()
 	if err != nil {
 		return nil, err
 	}
-	return ScanFooter(file, finfo.Size())
+	return ScanFooter(options, file, finfo.Size())
 }
 
 // ScanFooter scans a file backwards for a valid Footer.
-func ScanFooter(file File, pos int64) (*Footer, error) {
+func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
 	footerEnd := make([]byte, footerEndLen)
 	for {
 		for { // Scan backwards for STORE_MAGIC_END, which might be a potential footer.
@@ -478,7 +503,7 @@ func ScanFooter(file File, pos int64) (*Footer, error) {
 				if err := json.Unmarshal(data[2*lenMagicBeg+4+4:], m); err != nil {
 					return nil, err
 				}
-				return initFooter(m, file)
+				return loadFooterSegments(options, m, file)
 			} // Else, perhaps file was unlucky in having STORE_MAGIC_END's.
 		} // Else, perhaps a persist file was stored in a file.
 
@@ -488,16 +513,20 @@ func ScanFooter(file File, pos int64) (*Footer, error) {
 
 // --------------------------------------------------------
 
-// initFooter initializes the Footer instance.
-func initFooter(f *Footer, file File) (*Footer, error) {
+// loadFooterSegments mmap()'s the segments that the footer points at.
+func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, error) {
+	if f.ss.a != nil {
+		return f, nil
+	}
+
 	osFile := ToOsFile(file)
 	if osFile == nil {
-		return nil, fmt.Errorf("store: initFooter could not convert to os.File")
+		return nil, fmt.Errorf("store: loadFooterSegments convert to os.File error")
 	}
 
 	mm, err := mmap.Map(osFile, mmap.RDONLY, 0)
 	if err != nil {
-		return nil, fmt.Errorf("store: initFooter mmap.Map(), err: %v", err)
+		return nil, fmt.Errorf("store: loadFooterSegments mmap.Map(), err: %v", err)
 	}
 
 	f.fref.OnClose(func() { mm.Unmap() })
@@ -526,6 +555,7 @@ func initFooter(f *Footer, file File) (*Footer, error) {
 		}
 	}
 	f.ss.refs = 1
+	f.ss.options = &options.CollectionOptions
 
 	return f, nil
 }
@@ -552,13 +582,12 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 // Iterator.Current() will either provide the first entry in the
 // range or ErrIteratorDone.
 //
-// A startKeyInclusive of nil means the logical "bottom-most"
-// possible key and an endKeyExclusive of nil means the logical
-// "top-most" possible key.
-func (f *Footer) StartIterator(startKeyInclusive, endKeyExclusive []byte,
+// A startKeyIncl of nil means the logical "bottom-most" possible key
+// and an endKeyExcl of nil means the logical "top-most" possible key.
+func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
 	f.fref.AddRef()
-	iter, err := f.ss.StartIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
+	iter, err := f.ss.StartIterator(startKeyIncl, endKeyExcl, iteratorOptions)
 	if err != nil {
 		f.fref.DecRef()
 		return nil, err
@@ -568,13 +597,13 @@ func (f *Footer) StartIterator(startKeyInclusive, endKeyExclusive []byte,
 
 // --------------------------------------------------------
 
-// ParseFNameSeq parses a file name like "data-0000123.moss" into 123.
+// ParseFNameSeq parses a file name like "data-000123.moss" into 123.
 func ParseFNameSeq(fname string) (int64, error) {
 	seqStr := fname[len(STORE_PREFIX) : len(fname)-len(STORE_SUFFIX)]
 	return strconv.ParseInt(seqStr, 10, 64)
 }
 
-// FormatFName returns a file name like "data-0000123.moss" given a seq of 123.
+// FormatFName returns a file name like "data-000123.moss" given a seq of 123.
 func FormatFName(seq int64) string {
 	return fmt.Sprintf("%s%016d%s", STORE_PREFIX, seq, STORE_SUFFIX)
 }

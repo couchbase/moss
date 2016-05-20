@@ -98,7 +98,7 @@ OUTER:
 		m.waitDirtyOutgoingCh = nil
 
 		llssPrev := m.lowerLevelSnapshot
-		m.lowerLevelSnapshot = newSnapshotWrapper(llssNext)
+		m.lowerLevelSnapshot = NewSnapshotWrapper(llssNext, nil)
 
 		m.m.Unlock()
 
