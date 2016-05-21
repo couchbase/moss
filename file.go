@@ -24,6 +24,7 @@ type File interface {
 	io.WriterAt
 	io.Closer
 	Stat() (os.FileInfo, error)
+	Sync() error
 	Truncate(size int64) error
 }
 
@@ -34,15 +35,27 @@ type OpenFile func(name string, flag int, perm os.FileMode) (File, error)
 type FileRef struct {
 	file File
 	m    sync.Mutex // Protects the fields that follow.
-	cbs  []func()   // Optional callbacks invoked before final close.
 	refs int
+
+	beforeCloseCallbacks []func() // Optional callbacks invoked before final close.
+	afterCloseCallbacks  []func() // Optional callbacks invoked after final close.
 }
 
-// OnClose registers event callback func's that are invoked before the
+// --------------------------------------------------------
+
+// OnBeforeClose registers event callback func's that are invoked before the
 // file is closed.
-func (r *FileRef) OnClose(cb func()) {
+func (r *FileRef) OnBeforeClose(cb func()) {
 	r.m.Lock()
-	r.cbs = append(r.cbs, cb)
+	r.beforeCloseCallbacks = append(r.beforeCloseCallbacks, cb)
+	r.m.Unlock()
+}
+
+// OnAfterClose registers event callback func's that are invoked after the
+// file is closed.
+func (r *FileRef) OnAfterClose(cb func()) {
+	r.m.Lock()
+	r.afterCloseCallbacks = append(r.afterCloseCallbacks, cb)
 	r.m.Unlock()
 }
 
@@ -68,15 +81,24 @@ func (r *FileRef) DecRef() (err error) {
 	}
 
 	r.m.Lock()
+
 	r.refs--
 	if r.refs <= 0 {
-		for _, cb := range r.cbs {
+		for _, cb := range r.beforeCloseCallbacks {
 			cb()
 		}
-		r.cbs = nil
+		r.beforeCloseCallbacks = nil
+
 		err = r.file.Close()
+
+		for _, cb := range r.afterCloseCallbacks {
+			cb()
+		}
+		r.afterCloseCallbacks = nil
+
 		r.file = nil
 	}
+
 	r.m.Unlock()
 
 	return err
@@ -86,7 +108,9 @@ func (r *FileRef) Close() error {
 	return r.DecRef()
 }
 
-// OsFile interface let's one convert from a File to an os.File.
+// --------------------------------------------------------
+
+// OsFile interface allows conversion from a File to an os.File.
 type OsFile interface {
 	OsFile() *os.File
 }
@@ -100,4 +124,132 @@ func ToOsFile(f File) *os.File {
 		return osFile2.OsFile()
 	}
 	return nil
+}
+
+// --------------------------------------------------------
+
+type bufferedSectionWriter struct {
+	err error
+	w   io.WriterAt
+	beg int64 // Start position where we started writing in file.
+	cur int64 // Current write-at position in file.
+	max int64 // When > 0, max number of bytes we can write.
+	buf []byte
+	n   int
+
+	stopCh chan struct{}
+	doneCh chan struct{}
+	reqCh  chan ioBuf
+	resCh  chan ioBuf
+}
+
+type ioBuf struct {
+	buf []byte
+	pos int64
+	err error
+}
+
+// NewBufferedSectionWriter converts incoming Write() requests into
+// buffered, asynchronous WriteAt()'s in a section of a file.
+func NewBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
+	bufSize int) *bufferedSectionWriter {
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	reqCh := make(chan ioBuf)
+	resCh := make(chan ioBuf)
+
+	go func() {
+		defer close(doneCh)
+		defer close(resCh)
+
+		buf := make([]byte, bufSize)
+		var pos int64
+		var err error
+
+		for {
+			select {
+			case <-stopCh:
+				return
+			case resCh <- ioBuf{buf: buf, pos: pos, err: err}:
+			}
+
+			req, ok := <-reqCh
+			if ok {
+				buf, pos = req.buf, req.pos
+				if len(buf) > 0 {
+					_, err = w.WriteAt(buf, pos)
+				}
+			}
+		}
+	}()
+
+	return &bufferedSectionWriter{
+		w:   w,
+		beg: begPos,
+		cur: begPos,
+		max: maxBytes,
+		buf: make([]byte, bufSize),
+
+		stopCh: stopCh,
+		doneCh: doneCh,
+		reqCh:  reqCh,
+		resCh:  resCh,
+	}
+}
+
+// Offset returns the byte offset into the file where the
+// bufferedSectionWriter is currently logically positioned.
+func (b *bufferedSectionWriter) Offset() int64 { return b.cur + int64(b.n) }
+
+// Written returns the logical number of bytes written to this
+// bufferedSectionWriter; or, the sum of bytes to Write() calls.
+func (b *bufferedSectionWriter) Written() int64 { return b.Offset() - b.beg }
+
+func (b *bufferedSectionWriter) Write(p []byte) (nn int, err error) {
+	if b.max > 0 && b.Written()+int64(len(p)) > b.max {
+		return 0, io.ErrShortBuffer // Would go over b.max.
+	}
+	for len(p) > 0 && b.err == nil {
+		n := copy(b.buf[b.n:], p)
+		b.n += n
+		nn += n
+		if n < len(p) {
+			b.err = b.Flush()
+		}
+		p = p[n:]
+	}
+	return nn, b.err
+}
+
+func (b *bufferedSectionWriter) Flush() error {
+	if b.err != nil {
+		return b.err
+	}
+	if b.n <= 0 {
+		return nil
+	}
+
+	prevWrite := <-b.resCh
+	b.err = prevWrite.err
+	if b.err != nil {
+		return b.err
+	}
+
+	b.reqCh <- ioBuf{buf: b.buf[0:b.n], pos: b.cur}
+
+	b.cur += int64(b.n)
+	b.buf = prevWrite.buf[:]
+	b.n = 0
+
+	return nil
+}
+
+func (b *bufferedSectionWriter) Stop() error {
+	if b.stopCh != nil {
+		close(b.stopCh)
+		close(b.reqCh)
+		<-b.doneCh
+		b.stopCh = nil
+	}
+	return b.err
 }

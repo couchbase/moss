@@ -30,9 +30,15 @@ func TestFileRef(t *testing.T) {
 
 	var m sync.Mutex
 	x := 0
-	fref.OnClose(func() {
+	after := 0
+	fref.OnBeforeClose(func() {
 		m.Lock()
 		x++
+		m.Unlock()
+	})
+	fref.OnAfterClose(func() {
+		m.Lock()
+		after++
 		m.Unlock()
 	})
 
@@ -53,6 +59,9 @@ func TestFileRef(t *testing.T) {
 	if x != 0 {
 		t.Errorf("expected x 0")
 	}
+	if after != 0 {
+		t.Errorf("expected after 0")
+	}
 	m.Unlock()
 
 	fref.m.Lock()
@@ -69,6 +78,9 @@ func TestFileRef(t *testing.T) {
 	m.Lock()
 	if x != 1 {
 		t.Errorf("expected x 1")
+	}
+	if after != 1 {
+		t.Errorf("expected after 1")
 	}
 	m.Unlock()
 

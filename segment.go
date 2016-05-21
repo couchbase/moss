@@ -199,9 +199,7 @@ func (a *segment) mutateEx(operation uint64,
 		keyStart = 0
 	}
 
-	opKlVl := (maskOperation & operation) |
-		(maskKeyLength & (uint64(keyLength) << 32)) |
-		(maskValLength & (uint64(valLength)))
+	opKlVl := encodeOpKeyLenValLen(operation, keyLength, valLength)
 
 	a.kvs = append(a.kvs, opKlVl, uint64(keyStart))
 
@@ -296,18 +294,30 @@ func (a *segment) GetOperationKeyVal(pos int) (uint64, []byte, []byte) {
 
 	opklvl := a.kvs[x]
 
-	klength := int((maskKeyLength & opklvl) >> 32)
-	vlength := int(maskValLength & opklvl)
+	operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
 
 	kstart := int(a.kvs[x+1])
-	vstart := kstart + klength
+	vstart := kstart + keyLen
 
-	k := a.buf[kstart : kstart+klength]
-	v := a.buf[vstart : vstart+vlength]
-
-	operation := maskOperation & opklvl
+	k := a.buf[kstart : kstart+keyLen]
+	v := a.buf[vstart : vstart+valLen]
 
 	return operation, k, v
+}
+
+// ------------------------------------------------------
+
+func encodeOpKeyLenValLen(operation uint64, keyLen, valLen int) uint64 {
+	return (maskOperation & operation) |
+		(maskKeyLength & (uint64(keyLen) << 32)) |
+		(maskValLength & (uint64(valLen)))
+}
+
+func decodeOpKeyLenValLen(opklvl uint64) (uint64, int, int) {
+	operation := maskOperation & opklvl
+	keyLen := int((maskKeyLength & opklvl) >> 32)
+	valLen := int(maskValLength & opklvl)
+	return operation, keyLen, valLen
 }
 
 // ------------------------------------------------------

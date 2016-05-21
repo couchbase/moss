@@ -521,7 +521,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	var eventCh chan EventKind
 	var onPersistCh chan bool
 
-	mo := &testMergeOperatorAppend{}
+	mo := &MergeOperatorStringAppend{Sep: ":"}
 
 	lowerLevelPersister := newTestPersister()
 	lowerLevelUpdater := func(higher Snapshot) (Snapshot, error) {

@@ -12,7 +12,6 @@
 package moss
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -26,12 +25,15 @@ import (
 	"sync"
 	"time"
 	"unsafe"
-
-	"github.com/edsrzf/mmap-go"
 )
 
-var STORE_PREFIX = "data-"
-var STORE_SUFFIX = ".moss"
+// TODO: Handle endian'ness properly.
+// TODO: Better version parsers / checkers / handling.
+
+// --------------------------------------------------------
+
+var STORE_PREFIX = "data-" // File name prefix.
+var STORE_SUFFIX = ".moss" // File name suffix.
 
 var STORE_ENDIAN = binary.LittleEndian
 var STORE_PAGE_SIZE = 4096
@@ -61,8 +63,25 @@ type Store struct {
 	nextFNameSeq int64
 }
 
+// StoreOptions are provided to OpenStore().
 type StoreOptions struct {
+	// CollectionOptions should be the same as used with
+	// NewCollection().
 	CollectionOptions CollectionOptions
+
+	// CompactionPercentage determines when a compaction will run when
+	// CompactionConcern is CompactionAllowed.  When the percentage of
+	// ops between the non-base level and the base level is greater
+	// than CompactionPercentage, then compaction will be run.
+	CompactionPercentage float64
+
+	// CompactionBufferPages is the number of pages to use for
+	// compaction, where writes are buffered before flushing to disk.
+	CompactionBufferPages int
+
+	// CompactionSync of true means perform a file sync at the end of
+	// compaction for additional safety.
+	CompactionSync bool
 
 	// OpenFile allows apps to optionally provide their own file
 	// opening implementation.  When nil, os.OpenFile() is used.
@@ -73,14 +92,22 @@ type StoreOptions struct {
 	Log func(format string, a ...interface{}) `json:"-"`
 }
 
-type StorePersistOptions struct {
+var DefaultStoreOptions = StoreOptions{
+	CompactionBufferPages: 512,
 }
 
-// Header represents the JSON stored at the head of a file.
+// StorePersistOptions are provided to Store.Persist().
+type StorePersistOptions struct {
+	// CompactionConcern controls whether compaction is allowed or
+	// forced as part of persistence.
+	CompactionConcern CompactionConcern
+}
+
+// Header represents the JSON stored at the head of a file, where the
+// file header bytes should be less than STORE_PAGE_SIZE length.
 type Header struct {
-	Version         uint32 // The file format / STORE_VERSION.
-	CreatedAt       string
-	CreatedPageSize int
+	Version   uint32 // The file format / STORE_VERSION.
+	CreatedAt string
 }
 
 // Footer represents a footer record persisted in a file, and
@@ -184,6 +211,10 @@ func (s *Store) Options() StoreOptions {
 }
 
 func (s *Store) Snapshot() (Snapshot, error) {
+	return s.snapshot()
+}
+
+func (s *Store) snapshot() (*Footer, error) {
 	s.m.Lock()
 	footer := s.footer
 	if footer != nil {
@@ -203,9 +234,19 @@ func (s *Store) Close() error {
 
 // --------------------------------------------------------
 
-// Persist helps the store implement the lower-level-update func.
+// Persist helps the store implement the lower-level-update func.  The
+// higher snapshot may be nil.
 func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 	Snapshot, error) {
+	wasCompacted, err := s.compactMaybe(higher, persistOptions)
+	if err != nil {
+		return nil, err
+	}
+	if wasCompacted {
+		return s.Snapshot()
+	}
+
+	// If we weren't compacted, perform a normal persist operation.
 	if higher == nil {
 		return s.Snapshot()
 	}
@@ -229,7 +270,18 @@ func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
 
 	ss.ensureSorted(0, len(ss.a)-1)
 
-	segmentLocs := make([]SegmentLoc, 0, len(ss.a))
+	numSegmentLocs := len(ss.a)
+
+	s.m.Lock()
+	if s.footer != nil {
+		numSegmentLocs += len(s.footer.SegmentLocs)
+	}
+	segmentLocs := make([]SegmentLoc, 0, numSegmentLocs)
+	if s.footer != nil {
+		segmentLocs = append(segmentLocs, s.footer.SegmentLocs...)
+	}
+	s.m.Unlock()
+
 	for _, segment := range ss.a {
 		segmentLoc, err := s.persistSegment(file, segment)
 		if err != nil {
@@ -277,11 +329,12 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 		return s.footer.fref, s.footer.fref.AddRef(), nil
 	}
 
-	fname := FormatFName(s.nextFNameSeq)
-	s.nextFNameSeq++
+	return s.startFileLOCKED()
+}
 
-	if file, err = s.options.OpenFile(path.Join(s.dir, fname),
-		os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600); err != nil {
+func (s *Store) startFileLOCKED() (*FileRef, File, error) {
+	fname, file, err := s.createNextFileLOCKED()
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -291,21 +344,39 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 		return nil, nil, err
 	}
 
-	return &FileRef{file: file, refs: 1}, file, err
+	return &FileRef{file: file, refs: 1}, file, nil
 }
+
+func (s *Store) createNextFileLOCKED() (string, File, error) {
+	fname := FormatFName(s.nextFNameSeq)
+	s.nextFNameSeq++
+
+	file, err := s.options.OpenFile(path.Join(s.dir, fname),
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return fname, file, nil
+}
+
+// --------------------------------------------------------
 
 func (s *Store) persistHeader(file File) error {
 	buf, err := json.Marshal(Header{
-		Version:         STORE_VERSION,
-		CreatedAt:       time.Now().Format(time.RFC3339),
-		CreatedPageSize: os.Getpagesize(),
+		Version:   STORE_VERSION,
+		CreatedAt: time.Now().Format(time.RFC3339),
 	})
 	if err != nil {
 		return err
 	}
 
 	str := "moss-data-store:\n" + string(buf) + "\n"
-	str = str + strings.Repeat(" ", STORE_PAGE_SIZE-len(str))
+	if len(str) >= STORE_PAGE_SIZE {
+		return fmt.Errorf("store: header size too big")
+	}
+	str = str + strings.Repeat("\n", STORE_PAGE_SIZE-len(str))
+
 	n, err := file.WriteAt([]byte(str), 0)
 	if err != nil {
 		return err
@@ -390,222 +461,15 @@ func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err err
 
 // --------------------------------------------------------
 
-func (s *Store) persistFooter(file File, footer *Footer) error {
-	jBuf, err := json.Marshal(footer)
-	if err != nil {
-		return err
-	}
-
-	finfo, err := file.Stat()
-	if err != nil {
-		return err
-	}
-
-	footerPos := pageAlign(finfo.Size())
-	footerLen := footerBegLen + len(jBuf) + footerEndLen
-
-	footerBuf := bytes.NewBuffer(make([]byte, 0, footerLen))
-	footerBuf.Write(STORE_MAGIC_BEG)
-	footerBuf.Write(STORE_MAGIC_BEG)
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(STORE_VERSION))
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(footerLen))
-	footerBuf.Write(jBuf)
-	binary.Write(footerBuf, STORE_ENDIAN, footerPos)
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(footerLen))
-	footerBuf.Write(STORE_MAGIC_END)
-	footerBuf.Write(STORE_MAGIC_END)
-
-	footerWritten, err := file.WriteAt(footerBuf.Bytes(), footerPos)
-	if err != nil {
-		return err
-	}
-	if footerWritten != len(footerBuf.Bytes()) {
-		return fmt.Errorf("store: persistFooter error writing all footerBuf")
-	}
-
-	return nil
-}
-
-// --------------------------------------------------------
-
-// ReadFooter reads the Footer from a file.
-func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
-	finfo, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	return ScanFooter(options, file, finfo.Size())
-}
-
-// ScanFooter scans a file backwards for a valid Footer.
-func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
-	footerEnd := make([]byte, footerEndLen)
-	for {
-		for { // Scan backwards for STORE_MAGIC_END, which might be a potential footer.
-			if pos <= int64(footerBegLen+footerEndLen) {
-				return nil, fmt.Errorf("store: no valid footer found")
-			}
-			n, err := file.ReadAt(footerEnd, pos-int64(footerEndLen))
-			if err != nil {
-				return nil, err
-			}
-			if n != footerEndLen {
-				return nil, fmt.Errorf("store: read footer too small")
-			}
-			if bytes.Equal(STORE_MAGIC_END, footerEnd[8+4:8+4+lenMagicEnd]) &&
-				bytes.Equal(STORE_MAGIC_END, footerEnd[8+4+lenMagicEnd:]) {
-				break
-			}
-
-			pos-- // TODO: optimizations to scan backwards faster.
-		}
-
-		// Read and check the potential footer.
-		footerEndBuf := bytes.NewBuffer(footerEnd)
-		var offset int64
-		if err := binary.Read(footerEndBuf, STORE_ENDIAN, &offset); err != nil {
-			return nil, err
-		}
-		var length uint32
-		if err := binary.Read(footerEndBuf, STORE_ENDIAN, &length); err != nil {
-			return nil, err
-		}
-		if offset > 0 && offset < pos-int64(footerBegLen+footerEndLen) &&
-			length == uint32(pos-offset) {
-			data := make([]byte, pos-offset-int64(footerEndLen))
-			n, err := file.ReadAt(data, offset)
-			if err != nil {
-				return nil, err
-			}
-			if n != len(data) {
-				return nil, fmt.Errorf("store: read footer data too small")
-			}
-			if bytes.Equal(STORE_MAGIC_BEG, data[:lenMagicBeg]) &&
-				bytes.Equal(STORE_MAGIC_BEG, data[lenMagicBeg:2*lenMagicBeg]) {
-				b := bytes.NewBuffer(data[2*lenMagicBeg:])
-				var version uint32
-				if err := binary.Read(b, STORE_ENDIAN, &version); err != nil {
-					return nil, err
-				}
-				if version != STORE_VERSION {
-					return nil, fmt.Errorf("store: version mismatch, "+
-						"current version: %v != found version: %v", STORE_VERSION, version)
-				}
-				var length0 uint32
-				if err := binary.Read(b, STORE_ENDIAN, &length0); err != nil {
-					return nil, err
-				}
-				if length0 != length {
-					return nil, fmt.Errorf("store: length mismatch, "+
-						"wanted length: %v != found length: %v", length0, length)
-				}
-				m := &Footer{fref: &FileRef{file: file, refs: 1}}
-				if err := json.Unmarshal(data[2*lenMagicBeg+4+4:], m); err != nil {
-					return nil, err
-				}
-				return loadFooterSegments(options, m, file)
-			} // Else, perhaps file was unlucky in having STORE_MAGIC_END's.
-		} // Else, perhaps a persist file was stored in a file.
-
-		pos-- // Footer was invalid, so keep scanning.
-	}
-}
-
-// --------------------------------------------------------
-
-// loadFooterSegments mmap()'s the segments that the footer points at.
-func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, error) {
-	if f.ss.a != nil {
-		return f, nil
-	}
-
-	osFile := ToOsFile(file)
-	if osFile == nil {
-		return nil, fmt.Errorf("store: loadFooterSegments convert to os.File error")
-	}
-
-	mm, err := mmap.Map(osFile, mmap.RDONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("store: loadFooterSegments mmap.Map(), err: %v", err)
-	}
-
-	f.fref.OnClose(func() { mm.Unmap() })
-
-	f.ss.a = make([]Segment, len(f.SegmentLocs))
-	for i := range f.SegmentLocs {
-		sloc := &f.SegmentLocs[i]
-
-		kvsBytes := mm[sloc.KvsOffset : sloc.KvsOffset+sloc.KvsBytes]
-		kvsBytesSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBytes))
-
-		var kvs []uint64
-		kvsSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvs))
-		kvsSliceHeader.Data = kvsBytesSliceHeader.Data
-		kvsSliceHeader.Len = kvsBytesSliceHeader.Len / 8
-		kvsSliceHeader.Cap = kvsSliceHeader.Len
-
-		f.ss.a[i] = &segment{
-			kvs: kvs,
-			buf: mm[sloc.BufOffset : sloc.BufOffset+sloc.BufBytes],
-
-			totOperationSet: sloc.TotOpsSet,
-			totOperationDel: sloc.TotOpsDel,
-			totKeyByte:      sloc.TotKeyByte,
-			totValByte:      sloc.TotValByte,
-		}
-	}
-	f.ss.refs = 1
-	f.ss.options = &options.CollectionOptions
-
-	return f, nil
-}
-
-func (f *Footer) Close() error {
-	return f.fref.DecRef()
-}
-
-// Get retrieves a val from the Snapshot, and will return nil val
-// if the entry does not exist in the Snapshot.
-func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
-	f.fref.AddRef()
-	rv, err := f.ss.Get(key, readOptions)
-	if err == nil {
-		rv = append([]byte(nil), rv...) // Copy.
-	}
-	f.fref.DecRef()
-	return rv, err
-}
-
-// StartIterator returns a new Iterator instance on this Snapshot.
-//
-// On success, the returned Iterator will be positioned so that
-// Iterator.Current() will either provide the first entry in the
-// range or ErrIteratorDone.
-//
-// A startKeyIncl of nil means the logical "bottom-most" possible key
-// and an endKeyExcl of nil means the logical "top-most" possible key.
-func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
-	iteratorOptions IteratorOptions) (Iterator, error) {
-	f.fref.AddRef()
-	iter, err := f.ss.StartIterator(startKeyIncl, endKeyExcl, iteratorOptions)
-	if err != nil {
-		f.fref.DecRef()
-		return nil, err
-	}
-	return &iteratorWrapper{iter: iter, closer: f.fref}, nil
-}
-
-// --------------------------------------------------------
-
 // ParseFNameSeq parses a file name like "data-000123.moss" into 123.
 func ParseFNameSeq(fname string) (int64, error) {
 	seqStr := fname[len(STORE_PREFIX) : len(fname)-len(STORE_SUFFIX)]
-	return strconv.ParseInt(seqStr, 10, 64)
+	return strconv.ParseInt(seqStr, 16, 64)
 }
 
 // FormatFName returns a file name like "data-000123.moss" given a seq of 123.
 func FormatFName(seq int64) string {
-	return fmt.Sprintf("%s%016d%s", STORE_PREFIX, seq, STORE_SUFFIX)
+	return fmt.Sprintf("%s%016x%s", STORE_PREFIX, seq, STORE_SUFFIX)
 }
 
 // --------------------------------------------------------
