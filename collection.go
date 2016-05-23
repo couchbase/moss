@@ -600,6 +600,12 @@ OUTER:
 				m.stackDirtyBase = m.stackDirtyMid
 				m.stackDirtyMid = nil
 
+				prevLowerLevelSnapshot := m.stackDirtyBase.lowerLevelSnapshot
+				m.stackDirtyBase.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
+				if prevLowerLevelSnapshot != nil {
+					prevLowerLevelSnapshot.decRef()
+				}
+
 				if m.waitDirtyOutgoingCh != nil {
 					close(m.waitDirtyOutgoingCh)
 				}
