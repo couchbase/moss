@@ -13,12 +13,17 @@ package moss
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sort"
+	"time"
 
 	"github.com/mschoch/smat"
 )
 
 // TODO: Test pre-allocated batches and AllocSet/Del/Merge().
+
+var smatDebug = false
 
 // Fuzz test using state machine driven by byte stream.
 func Fuzz(data []byte) int {
@@ -27,6 +32,8 @@ func Fuzz(data []byte) int {
 }
 
 type context struct {
+	tmpDir string
+
 	coll       Collection // Initialized in setupFunc().
 	collMirror mirrorColl
 
@@ -87,6 +94,7 @@ var actionMap = smat.ActionMap{
 	smat.ActionID('>'): iteratorNextFunc,
 	smat.ActionID('K'): keyRegisterFunc,
 	smat.ActionID('k'): keyUnregisterFunc,
+	smat.ActionID('$'): closeReopenFunc,
 }
 
 var runningPercentActions []smat.PercentAction
@@ -108,7 +116,13 @@ func running(next byte) smat.ActionID {
 	//
 	// return smat.PercentExecute(next, runningPercentActions...)
 	//
-	return runningPercentActions[int(next)%len(runningPercentActions)].Action
+	a := runningPercentActions[int(next)%len(runningPercentActions)]
+
+	if smatDebug {
+		fmt.Printf("  next: %3d, action %c\n", next, a.Action)
+	}
+
+	return a.Action
 }
 
 // Creates an action func based on a callback, used for moving the curXxxx properties.
@@ -137,26 +151,32 @@ func delta(cb func(c *context)) func(ctx smat.Context) (next smat.State, err err
 func setupFunc(ctx smat.Context) (next smat.State, err error) {
 	c := ctx.(*context)
 
-	mo := &MergeOperatorStringAppend{Sep: ":"}
-
-	coll, err := NewCollection(CollectionOptions{
-		MergeOperator: mo,
-	})
+	c.tmpDir, err = ioutil.TempDir("", "mossStoreSMAT")
 	if err != nil {
 		return nil, err
 	}
-	c.coll = coll
-	c.coll.Start()
+
+	next, err = closeReopenFunc(ctx)
+	if err != nil {
+		return next, err
+	}
+
 	c.collMirror.kvs = map[string]string{}
-	c.mo = mo
 
 	return running, nil
 }
 
 func teardownFunc(ctx smat.Context) (next smat.State, err error) {
 	c := ctx.(*context)
-	c.coll.Close()
-
+	if c.coll != nil {
+		err = c.coll.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if c.tmpDir != "" {
+		os.RemoveAll(c.tmpDir)
+	}
 	return nil, nil
 }
 
@@ -391,6 +411,96 @@ func keyUnregisterFunc(ctx smat.Context) (next smat.State, err error) {
 	}
 	i := c.curKey % len(c.keys)
 	c.keys = append(c.keys[:i], c.keys[i+1:]...)
+	return running, nil
+}
+
+// ------------------------------------------------------
+
+func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
+	c := ctx.(*context)
+
+	for c.coll != nil { // Wait until dirty ops are drained.
+		stats, err := c.coll.Stats()
+		if err != nil {
+			return nil, err
+		}
+
+		if stats.CurDirtyBytes <= 0 {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	for _, b := range c.batches {
+		err = b.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.batches = nil
+	c.batchMirrors = nil
+
+	for _, ss := range c.snapshots {
+		err = ss.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.snapshots = nil
+	c.snapshotMirrors = nil
+
+	for _, iter := range c.iterators {
+		err = iter.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	c.iterators = nil
+	c.iteratorMirrors = nil
+
+	if c.coll != nil {
+		err = c.coll.Close()
+		if err != nil {
+			return nil, err
+		}
+		c.coll = nil
+	}
+
+	co := CollectionOptions{
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+	}
+
+	store, err := OpenStore(c.tmpDir, StoreOptions{
+		CollectionOptions: co,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	storeSnapshotInit, err := store.Snapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	co.LowerLevelInit = storeSnapshotInit
+	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
+		return store.Persist(higher, StorePersistOptions{})
+	}
+
+	coll, err := NewCollection(co)
+	if err != nil {
+		return nil, err
+	}
+
+	err = coll.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	c.coll = coll
+	c.mo = co.MergeOperator
+
 	return running, nil
 }
 

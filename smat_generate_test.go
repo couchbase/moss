@@ -23,7 +23,7 @@ import (
 )
 
 func TestGenerateSmatCorpus(t *testing.T) {
-	for i, actionSeq := range actionSeqs {
+	for i, actionSeq := range smatActionSeqs {
 		byteSequence, err := actionSeq.ByteEncoding(&context{},
 			smat.ActionID('S'), smat.ActionID('T'), actionMap)
 		if err != nil {
@@ -34,7 +34,7 @@ func TestGenerateSmatCorpus(t *testing.T) {
 	}
 }
 
-var actionSeqs = []smat.ActionSeq{
+var smatActionSeqs = []smat.ActionSeq{
 	{
 		smat.ActionID('g'),
 		smat.ActionID('B'),

@@ -14,15 +14,15 @@ To run the smat tests for moss...
 
 1.  Generate initial smat corpus:
 ```
-    $ go test -tags=smat -run=TestGenerateSmatCorpus
+    go test -tags=smat -run=TestGenerateSmatCorpus
 ```
 
 2.  Build go-fuzz test program with instrumentation:
 ```
-    $ go-fuzz-build github.com/couchbase/moss
+    go-fuzz-build github.com/couchbase/moss
 ```
 
 3.  Run go-fuzz:
 ```
-    $ go-fuzz -bin=./moss-fuzz.zip -workdir=workdir/ -timeout=60
+    go-fuzz -bin=./moss-fuzz.zip -workdir=workdir/ -timeout=60
 ```
