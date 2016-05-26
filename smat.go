@@ -1,5 +1,4 @@
-//  Copyright (c) 2016 Marty Schoch
-
+//  Copyright (c) 2016 Couchbase, Inc.
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the
 //  License. You may obtain a copy of the License at
@@ -10,43 +9,41 @@
 //  express or implied. See the License for the specific language
 //  governing permissions and limitations under the License.
 
-package test
+package moss
 
 import (
 	"fmt"
 	"sort"
-
-	"github.com/couchbase/moss"
 
 	"github.com/mschoch/smat"
 )
 
 // TODO: Test pre-allocated batches and AllocSet/Del/Merge().
 
-// Fuzz using state machine driven by byte stream.
+// Fuzz test using state machine driven by byte stream.
 func Fuzz(data []byte) int {
 	return smat.Fuzz(&context{}, smat.ActionID('S'), smat.ActionID('T'),
 		actionMap, data)
 }
 
 type context struct {
-	coll       moss.Collection // Initialized in setupFunc().
+	coll       Collection // Initialized in setupFunc().
 	collMirror mirrorColl
 
-	mo moss.MergeOperator
+	mo MergeOperator
 
 	curBatch    int
 	curSnapshot int
 	curIterator int
 	curKey      int
 
-	batches      []moss.Batch
+	batches      []Batch
 	batchMirrors []map[string]batchOp // Mirrors the entries in batches.
 
-	snapshots       []moss.Snapshot
+	snapshots       []Snapshot
 	snapshotMirrors []*mirrorColl
 
-	iterators       []moss.Iterator
+	iterators       []Iterator
 	iteratorMirrors []*mirrorIter
 
 	keys []string
@@ -140,9 +137,9 @@ func delta(cb func(c *context)) func(ctx smat.Context) (next smat.State, err err
 func setupFunc(ctx smat.Context) (next smat.State, err error) {
 	c := ctx.(*context)
 
-	mo := &moss.MergeOperatorStringAppend{Sep: ":"}
+	mo := &MergeOperatorStringAppend{Sep: ":"}
 
-	coll, err := moss.NewCollection(moss.CollectionOptions{
+	coll, err := NewCollection(CollectionOptions{
 		MergeOperator: mo,
 	})
 	if err != nil {
@@ -226,7 +223,7 @@ func opGetFunc(ctx smat.Context) (next smat.State, err error) {
 		return nil, err
 	}
 	k := c.getCurKey()
-	v, err := ss.Get([]byte(k), moss.ReadOptions{})
+	v, err := ss.Get([]byte(k), ReadOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +251,7 @@ func batchExecuteFunc(ctx smat.Context) (next smat.State, err error) {
 		return running, nil
 	}
 	b := c.batches[c.curBatch%len(c.batches)]
-	err = c.coll.ExecuteBatch(b, moss.WriteOptions{})
+	err = c.coll.ExecuteBatch(b, WriteOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +317,7 @@ func iteratorCreateFunc(ctx smat.Context) (next smat.State, err error) {
 	if err != nil {
 		return nil, err
 	}
-	iter, err := ss.StartIterator(nil, nil, moss.IteratorOptions{})
+	iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -355,12 +352,12 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 	iterMirror := c.iteratorMirrors[i]
 	err = iter.Next()
 	iterMirror.pos++
-	if err != nil && err != moss.ErrIteratorDone {
+	if err != nil && err != ErrIteratorDone {
 		return nil, err
 	}
 	k, v, err := iter.Current()
 	if err != nil {
-		if err != moss.ErrIteratorDone {
+		if err != ErrIteratorDone {
 			return nil, err
 		}
 		if iterMirror.pos < len(iterMirror.ss.keys) {
@@ -406,7 +403,7 @@ func (c *context) getCurKey() string {
 	return c.keys[c.curKey%len(c.keys)]
 }
 
-func (c *context) getCurBatch() (moss.Batch, map[string]batchOp, error) {
+func (c *context) getCurBatch() (Batch, map[string]batchOp, error) {
 	if len(c.batches) <= 0 {
 		_, err := batchCreateFunc(c)
 		if err != nil {
@@ -417,7 +414,7 @@ func (c *context) getCurBatch() (moss.Batch, map[string]batchOp, error) {
 		c.batchMirrors[c.curBatch%len(c.batchMirrors)], nil
 }
 
-func (c *context) getCurSnapshot() (moss.Snapshot, *mirrorColl, error) {
+func (c *context) getCurSnapshot() (Snapshot, *mirrorColl, error) {
 	if len(c.snapshots) <= 0 {
 		_, err := snapshotCreateFunc(c)
 		if err != nil {

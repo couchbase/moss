@@ -2,3 +2,5 @@
 #*
 *.tmp
 *.out
+*-fuzz.zip
+workdir

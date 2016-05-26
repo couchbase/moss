@@ -1,5 +1,4 @@
-//  Copyright (c) 2016 Marty Schoch
-
+//  Copyright (c) 2016 Couchbase, Inc.
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the
 //  License. You may obtain a copy of the License at
@@ -10,9 +9,9 @@
 //  express or implied. See the License for the specific language
 //  governing permissions and limitations under the License.
 
-// +build gofuzz
+// +build smat
 
-package test
+package moss
 
 import (
 	"fmt"
@@ -23,7 +22,7 @@ import (
 	"github.com/mschoch/smat"
 )
 
-func TestGenerateFuzzCorpus(t *testing.T) {
+func TestGenerateSmatCorpus(t *testing.T) {
 	for i, actionSeq := range actionSeqs {
 		byteSequence, err := actionSeq.ByteEncoding(&context{},
 			smat.ActionID('S'), smat.ActionID('T'), actionMap)
@@ -36,7 +35,6 @@ func TestGenerateFuzzCorpus(t *testing.T) {
 }
 
 var actionSeqs = []smat.ActionSeq{
-	// open tx, write 5 random keys, delete 5 random keys, commit tx
 	{
 		smat.ActionID('g'),
 		smat.ActionID('B'),
