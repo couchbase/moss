@@ -99,10 +99,14 @@ func (m *collection) Close() error {
 
 	atomic.AddUint64(&m.stats.TotCloseBeg, 1)
 
+	m.m.Lock()
+
 	close(m.stopCh)
 
 	m.stackDirtyTopCond.Broadcast()  // Awake all ExecuteBatch()'ers.
 	m.stackDirtyBaseCond.Broadcast() // Awake persister.
+
+	m.m.Unlock()
 
 	<-m.doneMergerCh
 	atomic.AddUint64(&m.stats.TotCloseMergerDone, 1)

@@ -64,6 +64,15 @@ var smatCrashers = []string{
 		"    endooanuo mahor7" +
 		"mDit aciondthat15qer" +
 		"r S0S_S2Ro3\x12",
+
+	"panic: iterMirror val != iter val",
+	"_rj_h7tuxX_f8P6160f7" +
+		"wP19_8nLt_a2QEyY3__J" +
+		"393Emt_EHbR7w0_rinvo" +
+		"k\xa1ng setup action-6",
+
+	"fatal error: all goroutines are asleep - deadlock!",
+	"\xd4\x00\u007f\x06\xef\xd4D\xd49",
 }
 
 // Test the previous crashers found by smat.
