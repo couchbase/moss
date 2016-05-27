@@ -25,13 +25,13 @@ import (
 
 var smatDebug = false
 
-// Fuzz test using state machine driven by byte stream.
+// fuzz test using state machine driven by byte stream.
 func Fuzz(data []byte) int {
-	return smat.Fuzz(&context{}, smat.ActionID('S'), smat.ActionID('T'),
+	return smat.Fuzz(&smatContext{}, smat.ActionID('S'), smat.ActionID('T'),
 		actionMap, data)
 }
 
-type context struct {
+type smatContext struct {
 	tmpDir string
 
 	coll       Collection // Initialized in setupFunc().
@@ -45,7 +45,7 @@ type context struct {
 	curKey      int
 
 	batches      []Batch
-	batchMirrors []map[string]batchOp // Mirrors the entries in batches.
+	batchMirrors []map[string]smatBatchOp // Mirrors the entries in batches.
 
 	snapshots       []Snapshot
 	snapshotMirrors []*mirrorColl
@@ -56,7 +56,7 @@ type context struct {
 	keys []string
 }
 
-type batchOp struct {
+type smatBatchOp struct {
 	op, v string
 }
 
@@ -73,62 +73,58 @@ type mirrorIter struct { // Used to validate iterator entries.
 // ------------------------------------------------------------------
 
 var actionMap = smat.ActionMap{
-	smat.ActionID('.'): delta(func(c *context) { c.curBatch++ }),
-	smat.ActionID(','): delta(func(c *context) { c.curBatch-- }),
-	smat.ActionID('{'): delta(func(c *context) { c.curSnapshot++ }),
-	smat.ActionID('}'): delta(func(c *context) { c.curSnapshot-- }),
-	smat.ActionID('['): delta(func(c *context) { c.curIterator++ }),
-	smat.ActionID(']'): delta(func(c *context) { c.curIterator-- }),
-	smat.ActionID(':'): delta(func(c *context) { c.curKey++ }),
-	smat.ActionID(';'): delta(func(c *context) { c.curKey-- }),
-	smat.ActionID('s'): opSetFunc,
-	smat.ActionID('d'): opDelFunc,
-	smat.ActionID('m'): opMergeFunc,
-	smat.ActionID('g'): opGetFunc,
-	smat.ActionID('B'): batchCreateFunc,
-	smat.ActionID('b'): batchExecuteFunc,
-	smat.ActionID('H'): snapshotCreateFunc,
-	smat.ActionID('h'): snapshotCloseFunc,
-	smat.ActionID('I'): iteratorCreateFunc,
-	smat.ActionID('i'): iteratorCloseFunc,
-	smat.ActionID('>'): iteratorNextFunc,
-	smat.ActionID('K'): keyRegisterFunc,
-	smat.ActionID('k'): keyUnregisterFunc,
-	smat.ActionID('$'): closeReopenFunc,
+	smat.ActionID('.'): action("      +batch", delta(func(c *smatContext) { c.curBatch++ })),
+	smat.ActionID(','): action("      -batch", delta(func(c *smatContext) { c.curBatch-- })),
+	smat.ActionID('{'): action("      +snapshot", delta(func(c *smatContext) { c.curSnapshot++ })),
+	smat.ActionID('}'): action("      -snapshot", delta(func(c *smatContext) { c.curSnapshot-- })),
+	smat.ActionID('['): action("      +itr", delta(func(c *smatContext) { c.curIterator++ })),
+	smat.ActionID(']'): action("      -itr", delta(func(c *smatContext) { c.curIterator-- })),
+	smat.ActionID(':'): action("      +key", delta(func(c *smatContext) { c.curKey++ })),
+	smat.ActionID(';'): action("      -key", delta(func(c *smatContext) { c.curKey-- })),
+	smat.ActionID('s'): action("    set", opSetFunc),
+	smat.ActionID('d'): action("    del", opDelFunc),
+	smat.ActionID('m'): action("    merge", opMergeFunc),
+	smat.ActionID('g'): action("    get", opGetFunc),
+	smat.ActionID('B'): action("  batchCreate", batchCreateFunc),
+	smat.ActionID('b'): action("  batchExecute", batchExecuteFunc),
+	smat.ActionID('H'): action("  snapshotCreate", snapshotCreateFunc),
+	smat.ActionID('h'): action("  snapshotClose", snapshotCloseFunc),
+	smat.ActionID('I'): action("  itrCreate", iteratorCreateFunc),
+	smat.ActionID('i'): action("  itrClose", iteratorCloseFunc),
+	smat.ActionID('>'): action("  itrNext", iteratorNextFunc),
+	smat.ActionID('K'): action("  keyRegister", keyRegisterFunc),
+	smat.ActionID('k'): action("  keyUnregister", keyUnregisterFunc),
+	smat.ActionID('$'): action("CLOSE-REOPEN", closeReopenFunc),
 }
 
 var runningPercentActions []smat.PercentAction
 
 func init() {
-	pct := 100 / len(actionMap)
+	var ids []int
 	for actionId := range actionMap {
+		ids = append(ids, int(actionId))
+	}
+	sort.Ints(ids)
+
+	pct := 100 / len(actionMap)
+	for _, actionId := range ids {
 		runningPercentActions = append(runningPercentActions,
-			smat.PercentAction{pct, actionId})
+			smat.PercentAction{pct, smat.ActionID(actionId)})
 	}
 
-	actionMap[smat.ActionID('S')] = setupFunc
-	actionMap[smat.ActionID('T')] = teardownFunc
+	actionMap[smat.ActionID('S')] = action("SETUP", setupFunc)
+	actionMap[smat.ActionID('T')] = action("TEARDOWN", teardownFunc)
 }
 
 // We only have one state: running.
 func running(next byte) smat.ActionID {
-	// Code coverage climbs maybe slightly faster if we do a simple modulus instead.
-	//
-	// return smat.PercentExecute(next, runningPercentActions...)
-	//
-	a := runningPercentActions[int(next)%len(runningPercentActions)]
-
-	if smatDebug {
-		fmt.Printf("  next: %3d, action %c\n", next, a.Action)
-	}
-
-	return a.Action
+	return smat.PercentExecute(next, runningPercentActions...)
 }
 
 // Creates an action func based on a callback, used for moving the curXxxx properties.
-func delta(cb func(c *context)) func(ctx smat.Context) (next smat.State, err error) {
+func delta(cb func(c *smatContext)) func(ctx smat.Context) (next smat.State, err error) {
 	return func(ctx smat.Context) (next smat.State, err error) {
-		c := ctx.(*context)
+		c := ctx.(*smatContext)
 		cb(c)
 		if c.curBatch < 0 {
 			c.curBatch = 1000
@@ -146,10 +142,19 @@ func delta(cb func(c *context)) func(ctx smat.Context) (next smat.State, err err
 	}
 }
 
+func action(name string, f func(ctx smat.Context) (smat.State, error)) func(ctx smat.Context) (smat.State, error) {
+	return func(ctx smat.Context) (smat.State, error) {
+		if smatDebug {
+			fmt.Printf("  %s\n", name)
+		}
+		return f(ctx)
+	}
+}
+
 // ------------------------------------------------------------------
 
 func setupFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 
 	c.tmpDir, err = ioutil.TempDir("", "mossStoreSMAT")
 	if err != nil {
@@ -167,7 +172,7 @@ func setupFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func teardownFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if c.coll != nil {
 		err = c.coll.Close()
 		if err != nil {
@@ -183,7 +188,7 @@ func teardownFunc(ctx smat.Context) (next smat.State, err error) {
 // ------------------------------------------------------------------
 
 func opSetFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	b, mirror, err := c.getCurBatch()
 	if err != nil {
 		return nil, err
@@ -191,7 +196,7 @@ func opSetFunc(ctx smat.Context) (next smat.State, err error) {
 	k := c.getCurKey()
 	_, exists := mirror[k]
 	if !exists {
-		mirror[k] = batchOp{op: "set", v: k}
+		mirror[k] = smatBatchOp{op: "set", v: k}
 		err := b.Set([]byte(k), []byte(k))
 		if err != nil {
 			return nil, err
@@ -201,7 +206,7 @@ func opSetFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func opDelFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	b, mirror, err := c.getCurBatch()
 	if err != nil {
 		return nil, err
@@ -209,7 +214,7 @@ func opDelFunc(ctx smat.Context) (next smat.State, err error) {
 	k := c.getCurKey()
 	_, exists := mirror[k]
 	if !exists {
-		mirror[k] = batchOp{op: "del"}
+		mirror[k] = smatBatchOp{op: "del"}
 		err := b.Del([]byte(k))
 		if err != nil {
 			return nil, err
@@ -219,7 +224,7 @@ func opDelFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func opMergeFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	b, mirror, err := c.getCurBatch()
 	if err != nil {
 		return nil, err
@@ -227,7 +232,7 @@ func opMergeFunc(ctx smat.Context) (next smat.State, err error) {
 	k := c.getCurKey()
 	_, exists := mirror[k]
 	if !exists {
-		mirror[k] = batchOp{op: "merge", v: k}
+		mirror[k] = smatBatchOp{op: "merge", v: k}
 		err := b.Merge([]byte(k), []byte(k))
 		if err != nil {
 			return nil, err
@@ -237,7 +242,7 @@ func opMergeFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func opGetFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	ss, ssMirror, err := c.getCurSnapshot()
 	if err != nil {
 		return nil, err
@@ -255,18 +260,18 @@ func opGetFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func batchCreateFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	b, err := c.coll.NewBatch(0, 0)
 	if err != nil {
 		return nil, err
 	}
 	c.batches = append(c.batches, b)
-	c.batchMirrors = append(c.batchMirrors, map[string]batchOp{})
+	c.batchMirrors = append(c.batchMirrors, map[string]smatBatchOp{})
 	return running, nil
 }
 
 func batchExecuteFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if len(c.batches) <= 0 {
 		return running, nil
 	}
@@ -279,22 +284,22 @@ func batchExecuteFunc(ctx smat.Context) (next smat.State, err error) {
 	if err != nil {
 		return nil, err
 	}
-	batchOps := c.batchMirrors[c.curBatch%len(c.batchMirrors)]
-	for key, batchOp := range batchOps {
-		if batchOp.op == "set" {
-			c.collMirror.kvs[key] = batchOp.v
-		} else if batchOp.op == "del" {
+	smatBatchOps := c.batchMirrors[c.curBatch%len(c.batchMirrors)]
+	for key, smatBatchOp := range smatBatchOps {
+		if smatBatchOp.op == "set" {
+			c.collMirror.kvs[key] = smatBatchOp.v
+		} else if smatBatchOp.op == "del" {
 			delete(c.collMirror.kvs, key)
-		} else if batchOp.op == "merge" {
+		} else if smatBatchOp.op == "merge" {
 			k := []byte(key)
-			v := []byte(batchOp.v)
+			v := []byte(smatBatchOp.v)
 			mv, ok := c.mo.FullMerge(k, []byte(c.collMirror.kvs[key]), [][]byte{v})
 			if !ok {
 				return nil, fmt.Errorf("failed FullMerge")
 			}
 			c.collMirror.kvs[key] = string(mv)
 		} else {
-			return nil, fmt.Errorf("unexpected batchOp.op: %+v, key: %s", batchOp, key)
+			return nil, fmt.Errorf("unexpected smatBatchOp.op: %+v, key: %s", smatBatchOp, key)
 		}
 	}
 	i := c.curBatch % len(c.batches)
@@ -305,7 +310,7 @@ func batchExecuteFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func snapshotCreateFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	ss, err := c.coll.Snapshot()
 	if err != nil {
 		return nil, err
@@ -316,7 +321,7 @@ func snapshotCreateFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func snapshotCloseFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if len(c.snapshots) <= 0 {
 		return running, nil
 	}
@@ -332,7 +337,7 @@ func snapshotCloseFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func iteratorCreateFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	ss, ssMirror, err := c.getCurSnapshot()
 	if err != nil {
 		return nil, err
@@ -347,7 +352,7 @@ func iteratorCreateFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func iteratorCloseFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if len(c.iterators) <= 0 {
 		return running, nil
 	}
@@ -363,7 +368,7 @@ func iteratorCloseFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if len(c.iterators) <= 0 {
 		return running, nil
 	}
@@ -399,13 +404,13 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 }
 
 func keyRegisterFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	c.keys = append(c.keys, fmt.Sprintf("%d", c.curKey+len(c.keys)))
 	return running, nil
 }
 
 func keyUnregisterFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 	if len(c.keys) <= 0 {
 		return running, nil
 	}
@@ -417,7 +422,7 @@ func keyUnregisterFunc(ctx smat.Context) (next smat.State, err error) {
 // ------------------------------------------------------
 
 func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
-	c := ctx.(*context)
+	c := ctx.(*smatContext)
 
 	for c.coll != nil { // Wait until dirty ops are drained.
 		stats, err := c.coll.Stats()
@@ -506,14 +511,14 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 
 // ------------------------------------------------------
 
-func (c *context) getCurKey() string {
+func (c *smatContext) getCurKey() string {
 	if len(c.keys) <= 0 {
 		return "x"
 	}
 	return c.keys[c.curKey%len(c.keys)]
 }
 
-func (c *context) getCurBatch() (Batch, map[string]batchOp, error) {
+func (c *smatContext) getCurBatch() (Batch, map[string]smatBatchOp, error) {
 	if len(c.batches) <= 0 {
 		_, err := batchCreateFunc(c)
 		if err != nil {
@@ -524,7 +529,7 @@ func (c *context) getCurBatch() (Batch, map[string]batchOp, error) {
 		c.batchMirrors[c.curBatch%len(c.batchMirrors)], nil
 }
 
-func (c *context) getCurSnapshot() (Snapshot, *mirrorColl, error) {
+func (c *smatContext) getCurSnapshot() (Snapshot, *mirrorColl, error) {
 	if len(c.snapshots) <= 0 {
 		_, err := snapshotCreateFunc(c)
 		if err != nil {

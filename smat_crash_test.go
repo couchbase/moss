@@ -9,6 +9,8 @@
 //  express or implied. See the License for the specific language
 //  governing permissions and limitations under the License.
 
+// +build smat
+
 package moss
 
 import (
@@ -89,7 +91,7 @@ func TestSmatCrashers(t *testing.T) {
 		log.Printf("testing smat crasher: (%d) %s", i/2, desc)
 
 		// fuzz the crasher input
-		smat.Fuzz(&context{}, smat.ActionID('S'), smat.ActionID('T'),
+		smat.Fuzz(&smatContext{}, smat.ActionID('S'), smat.ActionID('T'),
 			actionMap, crasher)
 	}
 

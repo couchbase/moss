@@ -24,7 +24,7 @@ import (
 
 func TestGenerateSmatCorpus(t *testing.T) {
 	for i, actionSeq := range smatActionSeqs {
-		byteSequence, err := actionSeq.ByteEncoding(&context{},
+		byteSequence, err := actionSeq.ByteEncoding(&smatContext{},
 			smat.ActionID('S'), smat.ActionID('T'), actionMap)
 		if err != nil {
 			t.Fatalf("error from ByteEncoding, err: %v", err)
