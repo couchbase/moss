@@ -9,8 +9,6 @@
 //  express or implied. See the License for the specific language
 //  governing permissions and limitations under the License.
 
-// +build smat
-
 package moss
 
 import (
@@ -75,6 +73,13 @@ var smatCrashers = []string{
 
 	"fatal error: all goroutines are asleep - deadlock!",
 	"\xd4\x00\u007f\x06\xef\xd4D\xd49",
+
+	"panic: open /.../mossStoreSMAT673923094: too many open files",
+	"\xacY\x00\x00\x15\xc4\x15\x80@\x00\x00\x00\x00\x01\x00\x00\x01\x00",
+
+	"panic: iterMirror val != iter val",
+	" ee\xbd|\x03\x80\x0e\xc1\x80\xbf|06\xbc|\x91\x9b?\xc4" +
+		"[\x99\xb4Ģ\xce=",
 }
 
 // Test the previous crashers found by smat.

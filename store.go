@@ -170,10 +170,13 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 	}
 
 	if len(fnames) <= 0 {
+		emptyFooter := &Footer{}
+		emptyFooter.ss.options = &options.CollectionOptions
+
 		return &Store{
 			dir:          dir,
 			options:      &options,
-			footer:       &Footer{},
+			footer:       emptyFooter,
 			nextFNameSeq: 1,
 		}, nil
 	}
