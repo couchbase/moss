@@ -294,26 +294,14 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 	tmpDir, _ := ioutil.TempDir("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
-	store, err := OpenStore(tmpDir, StoreOptions{})
-	if err != nil || store == nil {
-		t.Errorf("expected open empty store to work")
-	}
-
-	ssInit, err := store.Snapshot()
-	if err != nil || ssInit == nil {
-		t.Errorf("expected ssInit")
-	}
+	mo := &MergeOperatorStringAppend{Sep: ":"}
 
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
 	eventWaiters := map[EventKind]chan bool{}
 
-	m, err := NewCollection(CollectionOptions{
-		MergeOperator:  &MergeOperatorStringAppend{Sep: ":"},
-		LowerLevelInit: ssInit,
-		LowerLevelUpdate: func(higher Snapshot) (Snapshot, error) {
-			return store.Persist(higher, spo)
-		},
+	co := CollectionOptions{
+		MergeOperator: mo,
 		OnEvent: func(event Event) {
 			mu.Lock()
 			counts[event.Kind]++
@@ -323,7 +311,26 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 				eventWaiter <- true
 			}
 		},
+	}
+
+	store, err := OpenStore(tmpDir, StoreOptions{
+		CollectionOptions: co,
 	})
+	if err != nil || store == nil {
+		t.Errorf("expected open empty store to work")
+	}
+
+	ssInit, err := store.Snapshot()
+	if err != nil || ssInit == nil {
+		t.Errorf("expected ssInit")
+	}
+
+	co.LowerLevelInit = ssInit
+	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
+		return store.Persist(higher, spo)
+	}
+
+	m, err := NewCollection(co)
 	if err != nil || m == nil {
 		t.Errorf("expected moss")
 	}
