@@ -14,7 +14,7 @@ To run the smat tests for moss...
 
 1.  Generate initial smat corpus:
 ```
-    go test -tags=smat -run=TestGenerateSmatCorpus
+    go test -tags=gofuzz -run=TestGenerateSmatCorpus
 ```
 
 2.  Build go-fuzz test program with instrumentation:
