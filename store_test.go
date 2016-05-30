@@ -306,6 +306,7 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
+	eventWaiters := map[EventKind]chan bool{}
 
 	m, err := NewCollection(CollectionOptions{
 		MergeOperator:  &MergeOperatorStringAppend{Sep: ":"},
@@ -316,7 +317,11 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 		OnEvent: func(event Event) {
 			mu.Lock()
 			counts[event.Kind]++
+			eventWaiter := eventWaiters[event.Kind]
 			mu.Unlock()
+			if eventWaiter != nil {
+				eventWaiter <- true
+			}
 		},
 	})
 	if err != nil || m == nil {
@@ -327,6 +332,11 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 
 	testOps(t, m)
 
+	persistWaiterCh := make(chan bool)
+	mu.Lock()
+	eventWaiters[EventKindPersisterProgress] = persistWaiterCh
+	mu.Unlock()
+
 	err = m.(*collection).NotifyMerger("mergeAll", true)
 	if err != nil {
 		t.Errorf("mergeAll err")
@@ -336,6 +346,18 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 	if err != nil {
 		t.Errorf("mergeAll err")
 	}
+
+	<-persistWaiterCh
+
+	mu.Lock()
+	eventWaiters[EventKindPersisterProgress] = nil
+	mu.Unlock()
+
+	go func() {
+		for range persistWaiterCh {
+			/* eat any more events to keep persister unblocked */
+		}
+	}()
 
 	m.Close()
 
