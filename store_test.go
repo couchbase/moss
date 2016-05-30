@@ -330,12 +330,13 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 
 	m.Start()
 
-	testOps(t, m)
+	persistWaiterCh := make(chan bool, 100)
 
-	persistWaiterCh := make(chan bool)
 	mu.Lock()
 	eventWaiters[EventKindPersisterProgress] = persistWaiterCh
 	mu.Unlock()
+
+	testOps(t, m)
 
 	err = m.(*collection).NotifyMerger("mergeAll", true)
 	if err != nil {
