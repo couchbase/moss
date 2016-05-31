@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/edsrzf/mmap-go"
 )
@@ -669,4 +670,200 @@ func TestStoreCompaction(t *testing.T) {
 	if numKVs != len(mirror) {
 		t.Errorf("numKVs: %d, not matching len(mirror): %d", numKVs, len(mirror))
 	}
+}
+
+func TestOpenStoreCollection(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	counts := map[EventKind]int{}
+	eventWaiters := map[EventKind]chan bool{}
+
+	co := CollectionOptions{
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+		OnEvent: func(event Event) {
+			mu.Lock()
+			counts[event.Kind]++
+			eventWaiter := eventWaiters[event.Kind]
+			mu.Unlock()
+			if eventWaiter != nil {
+				eventWaiter <- true
+			}
+		},
+	}
+
+	m, err := OpenStoreCollection(tmpDir, StoreOptions{
+		CollectionOptions: co,
+	}, StorePersistOptions{})
+	if err != nil || m == nil {
+		t.Errorf("expected open empty store collection to work")
+	}
+
+	mirror := map[string]string{}
+
+	set1000 := true
+	delTens := true
+	updateOdds := true
+
+	numBatches := 0
+	for j := 0; j < 10; j++ {
+		if set1000 {
+			b, _ := m.NewBatch(0, 0)
+			for i := 0; i < 1000; i++ {
+				xs := fmt.Sprintf("%d", i)
+				x := []byte(xs)
+				b.Set(x, x)
+				mirror[xs] = xs
+			}
+			err = m.ExecuteBatch(b, WriteOptions{})
+			if err != nil {
+				t.Errorf("expected exec batch to work")
+			}
+			b.Close()
+
+			numBatches++
+		}
+
+		if delTens {
+			b, _ := m.NewBatch(0, 0)
+			for i := 0; i < 1000; i += 10 {
+				xs := fmt.Sprintf("%d", i)
+				x := []byte(xs)
+				b.Del(x)
+				delete(mirror, xs)
+			}
+			err = m.ExecuteBatch(b, WriteOptions{})
+			if err != nil {
+				t.Errorf("expected exec batch to work")
+			}
+			b.Close()
+
+			numBatches++
+		}
+
+		if updateOdds {
+			b, _ := m.NewBatch(0, 0)
+			for i := 1; i < 1000; i += 2 {
+				xs := fmt.Sprintf("%d", i)
+				x := []byte(xs)
+				vs := fmt.Sprintf("odd-%d", i)
+				b.Set(x, []byte(vs))
+				mirror[xs] = vs
+			}
+			err = m.ExecuteBatch(b, WriteOptions{})
+			if err != nil {
+				t.Errorf("expected exec batch to work")
+			}
+			b.Close()
+
+			numBatches++
+		}
+	}
+
+	waitUntilClean := func() error {
+		for {
+			stats, err := m.Stats()
+			if err != nil {
+				return err
+			}
+
+			if stats.CurDirtyOps <= 0 &&
+				stats.CurDirtyBytes <= 0 &&
+				stats.CurDirtySegments <= 0 {
+				break
+			}
+
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		return nil
+	}
+
+	waitUntilClean()
+
+	m.Close()
+
+	// --------------------
+
+	fileInfos, err := ioutil.ReadDir(tmpDir)
+	if err != nil {
+		t.Errorf("expected read dir to work")
+	}
+	if len(fileInfos) != 1 {
+		t.Errorf("expected only 1 file")
+	}
+
+	seq, err := ParseFNameSeq(fileInfos[0].Name())
+	if err != nil {
+		t.Errorf("expected parse seq to work")
+	}
+	if seq <= 0 {
+		t.Errorf("expected nonzero seq")
+	}
+
+	// --------------------
+
+	m2, err := OpenStoreCollection(tmpDir, StoreOptions{
+		CollectionOptions: co,
+	}, StorePersistOptions{})
+	if err != nil || m2 == nil {
+		t.Errorf("expected reopen store to work")
+	}
+
+	ss2, err := m2.Snapshot()
+	if err != nil {
+		t.Errorf("expected ss2 to work")
+	}
+
+	iter2, err := ss2.StartIterator(nil, nil, IteratorOptions{})
+	if err != nil || iter2 == nil {
+		t.Errorf("expected ss2 iter to start")
+	}
+
+	numKVs := 0
+	for {
+		k, v, err := iter2.Current()
+		if err == ErrIteratorDone {
+			break
+		}
+
+		numKVs++
+
+		ks := string(k)
+		vs := string(v)
+
+		i, err := strconv.Atoi(ks)
+		if err != nil {
+			t.Errorf("expected all int keys, got: %s", ks)
+		}
+		if i <= 0 || i >= 1000 {
+			t.Errorf("expected i within range")
+		}
+		if delTens && i%10 == 0 {
+			t.Errorf("expected no multiples of 10")
+		}
+		if updateOdds && i%2 == 1 {
+			if !strings.HasPrefix(vs, "odd-") {
+				t.Errorf("expected odds to have odd prefix")
+			}
+		}
+
+		if mirror[ks] != vs {
+			t.Errorf("mirror[ks] (%s) != vs (%s)", mirror[ks], vs)
+		}
+
+		err = iter2.Next()
+		if err == ErrIteratorDone {
+			break
+		}
+	}
+
+	if numKVs != len(mirror) {
+		t.Errorf("numKVs: %d, not matching len(mirror): %d", numKVs, len(mirror))
+	}
+
+	ss2.Close()
+
+	m2.Close()
 }
