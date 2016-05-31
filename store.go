@@ -59,6 +59,7 @@ type Store struct {
 	options *StoreOptions
 
 	m            sync.Mutex // Protects the fields that follow.
+	refs         int
 	footer       *Footer
 	nextFNameSeq int64
 }
@@ -176,6 +177,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 		return &Store{
 			dir:          dir,
 			options:      &options,
+			refs:         1,
 			footer:       emptyFooter,
 			nextFNameSeq: 1,
 		}, nil
@@ -197,6 +199,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 		return &Store{
 			dir:          dir,
 			options:      &options,
+			refs:         1,
 			footer:       footer,
 			nextFNameSeq: maxFNameSeq + 1,
 		}, nil
@@ -227,11 +230,26 @@ func (s *Store) snapshot() (*Footer, error) {
 	return footer, nil
 }
 
+func (s *Store) AddRef() {
+	s.m.Lock()
+	s.refs++
+	s.m.Unlock()
+}
+
 func (s *Store) Close() error {
 	s.m.Lock()
+
+	s.refs--
+	if s.refs > 0 {
+		s.m.Unlock()
+		return nil
+	}
+
 	footer := s.footer
 	s.footer = nil
+
 	s.m.Unlock()
+
 	return footer.Close()
 }
 

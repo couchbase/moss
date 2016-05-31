@@ -530,6 +530,9 @@ func TestStoreCompaction(t *testing.T) {
 
 	store2.m.Lock()
 
+	if store2.refs != 1 {
+		t.Errorf("expected 1 refs")
+	}
 	if store2.nextFNameSeq != seq+1 {
 		t.Errorf("expected nextFNameseq to be seq+1")
 	}
@@ -587,6 +590,30 @@ func TestStoreCompaction(t *testing.T) {
 		}
 	}
 
+	store2.m.Unlock()
+
+	// --------------------
+
+	store2.AddRef()
+
+	store2.m.Lock()
+	if store2.refs != 2 {
+		t.Errorf("expected 2 refs")
+	}
+	store2.m.Unlock()
+
+	err = store2.Close()
+	if err != nil {
+		t.Errorf("expected close to work")
+	}
+
+	store2.m.Lock()
+	if store2.refs != 1 {
+		t.Errorf("expected 1 refs after close")
+	}
+	if store2.footer == nil {
+		t.Errorf("expected footer after non-final close")
+	}
 	store2.m.Unlock()
 
 	// --------------------
