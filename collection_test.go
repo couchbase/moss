@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewCollection(t *testing.T) {
@@ -38,9 +39,11 @@ func TestNewCollection(t *testing.T) {
 
 func TestNewCollectionCloseEvents(t *testing.T) {
 	events := map[EventKind]int{}
+	durations := map[EventKind]time.Duration{}
 	m, err := NewCollection(CollectionOptions{
 		OnEvent: func(e Event) {
 			events[e.Kind]++
+			durations[e.Kind] += e.Duration
 		},
 	})
 	if err != nil || m == nil {
@@ -68,6 +71,10 @@ func TestNewCollectionCloseEvents(t *testing.T) {
 		events[EventKindCloseStart] != 1 ||
 		events[EventKindClose] != 1 {
 		t.Errorf("expected 2 close events")
+	}
+
+	if durations[EventKindClose] <= 0 {
+		t.Errorf("expected close to take some time")
 	}
 
 	b1, err := m.NewBatch(0, 0)

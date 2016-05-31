@@ -13,6 +13,7 @@ package moss
 
 import (
 	"sync/atomic"
+	"time"
 )
 
 // runPersister() implements the persister task.
@@ -63,6 +64,8 @@ OUTER:
 		if m.isClosed() {
 			return
 		}
+
+		startTime := time.Now()
 
 		atomic.AddUint64(&m.stats.TotPersisterLowerLevelUpdateBeg, 1)
 
@@ -122,12 +125,7 @@ OUTER:
 
 		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
 
-		if m.options.OnEvent != nil {
-			m.options.OnEvent(Event{
-				Kind:       EventKindPersisterProgress,
-				Collection: m,
-			})
-		}
+		m.fireEvent(EventKindPersisterProgress, time.Now().Sub(startTime))
 	}
 
 	// TODO: More advanced eviction of stackClean.

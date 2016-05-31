@@ -39,6 +39,7 @@ package moss
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
 // ErrAllocTooLarge is returned when the requested allocation cannot
@@ -166,6 +167,7 @@ type CollectionOptions struct {
 type Event struct {
 	Kind       EventKind
 	Collection Collection
+	Duration   time.Duration
 }
 
 // EventKind represents an event code for OnEvent() callbacks.
@@ -188,8 +190,12 @@ var EventKindMergerProgress = EventKind(3)
 var EventKindPersisterProgress = EventKind(4)
 
 // EventKindBatchExecuteStart is used when a collection is starting
-// to execute a batch
+// to execute a batch.
 var EventKindBatchExecuteStart = EventKind(5)
+
+// EventKindBatchExecute is used when a collection has finished
+// executing a batch.
+var EventKindBatchExecute = EventKind(6)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{

@@ -13,6 +13,7 @@ package moss
 
 import (
 	"sync/atomic"
+	"time"
 )
 
 // NotifyMerger sends a message (optionally synchronously) to the merger
@@ -145,6 +146,8 @@ OUTER:
 		// ---------------------------------------------
 		// Merge multiple stackDirtyMid layers.
 
+		startTime := time.Now()
+
 		if len(stackDirtyMid.a) > 1 {
 			newTopLevel := 0
 
@@ -273,12 +276,7 @@ OUTER:
 
 		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
 
-		if m.options.OnEvent != nil {
-			m.options.OnEvent(Event{
-				Kind:       EventKindMergerProgress,
-				Collection: m,
-			})
-		}
+		m.fireEvent(EventKindMergerProgress, time.Now().Sub(startTime))
 	}
 
 	// TODO: Concurrent merging of disjoint slices of stackDirtyMid

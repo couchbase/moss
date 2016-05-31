@@ -16,6 +16,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // A collection implements the Collection interface.
@@ -90,12 +91,11 @@ func (m *collection) Start() error {
 
 // Close synchronously stops background goroutines.
 func (m *collection) Close() error {
-	if m.options.OnEvent != nil {
-		m.options.OnEvent(Event{
-			Kind:       EventKindCloseStart,
-			Collection: m,
-		})
-	}
+	m.fireEvent(EventKindCloseStart, 0)
+	startTime := time.Now()
+	defer func() {
+		m.fireEvent(EventKindClose, time.Now().Sub(startTime))
+	}()
 
 	atomic.AddUint64(&m.stats.TotCloseBeg, 1)
 
@@ -143,13 +143,6 @@ func (m *collection) Close() error {
 	stackCleanPrev.Close()
 
 	atomic.AddUint64(&m.stats.TotCloseEnd, 1)
-
-	if m.options.OnEvent != nil {
-		m.options.OnEvent(Event{
-			Kind:       EventKindClose,
-			Collection: m,
-		})
-	}
 
 	return nil
 }
@@ -203,6 +196,11 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 // ExecuteBatch() returns.
 func (m *collection) ExecuteBatch(bIn Batch,
 	writeOptions WriteOptions) error {
+	startTime := time.Now()
+	defer func() {
+		m.fireEvent(EventKindBatchExecute, time.Now().Sub(startTime))
+	}()
+
 	atomic.AddUint64(&m.stats.TotExecuteBatchBeg, 1)
 
 	b, ok := bIn.(*segment)
@@ -236,12 +234,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	stackDirtyTop := &segmentStack{options: &m.options, refs: 1}
 
 	// notify interested handlers that we are about to execute this batch
-	if m.options.OnEvent != nil {
-		m.options.OnEvent(Event{
-			Kind:       EventKindBatchExecuteStart,
-			Collection: m,
-		})
-	}
+	m.fireEvent(EventKindBatchExecuteStart, 0)
 
 	m.m.Lock()
 
@@ -321,6 +314,12 @@ func (m *collection) OnError(err error) {
 
 	if m.options.OnError != nil {
 		m.options.OnError(err)
+	}
+}
+
+func (m *collection) fireEvent(kind EventKind, dur time.Duration) {
+	if m.options.OnEvent != nil {
+		m.options.OnEvent(Event{Kind: kind, Collection: m, Duration: dur})
 	}
 }
 

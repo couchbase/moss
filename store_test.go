@@ -299,6 +299,7 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
+	durations := map[EventKind]time.Duration{}
 	eventWaiters := map[EventKind]chan bool{}
 
 	co := CollectionOptions{
@@ -306,6 +307,7 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 		OnEvent: func(event Event) {
 			mu.Lock()
 			counts[event.Kind]++
+			durations[event.Kind] += event.Duration
 			eventWaiter := eventWaiters[event.Kind]
 			mu.Unlock()
 			if eventWaiter != nil {
@@ -373,6 +375,9 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 	mu.Lock()
 	if counts[EventKindPersisterProgress] <= 0 {
 		t.Errorf("expected persistence progress")
+	}
+	if durations[EventKindPersisterProgress] <= 0 {
+		t.Errorf("expected persistence to take some time")
 	}
 	mu.Unlock()
 
