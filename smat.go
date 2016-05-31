@@ -596,6 +596,11 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 
 		return ss, err
 	}
+	co.OnEvent = func(ev Event) {
+		if ev.Kind == EventKindClose {
+			store.Close()
+		}
+	}
 
 	coll, err := NewCollection(co)
 	if err != nil {
