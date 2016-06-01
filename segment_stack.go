@@ -179,7 +179,8 @@ func (ss *segmentStack) Stats() *SegmentStackStats {
 	rv := &SegmentStackStats{CurSegments: uint64(len(ss.a))}
 	for _, seg := range ss.a {
 		rv.CurOps += uint64(seg.Len())
-		rv.CurBytes += uint64(seg.NumKeyValBytes())
+		nk, nv := seg.NumKeyValBytes()
+		rv.CurBytes += nk + nv
 	}
 	return rv
 }

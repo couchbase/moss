@@ -35,7 +35,7 @@ type Segment interface {
 	Len() int
 
 	// NumKeyValBytes returns the number of bytes used for key-val data.
-	NumKeyValBytes() int
+	NumKeyValBytes() (uint64, uint64)
 
 	// FindStartKeyInclusivePos() returns the logical entry position for
 	// the given (inclusive) start key.  With segment keys of [b, d, f],
@@ -244,8 +244,8 @@ func (a *segment) mutateEx(operation uint64,
 // ------------------------------------------------------
 
 // NumKeyValBytes returns the number of bytes used for key-val data.
-func (a *segment) NumKeyValBytes() int {
-	return len(a.buf)
+func (a *segment) NumKeyValBytes() (uint64, uint64) {
+	return a.totKeyByte, a.totValByte
 }
 
 // ------------------------------------------------------

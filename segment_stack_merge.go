@@ -47,16 +47,19 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
 
-	var totOps, totBytes int
+	var totOps int
+	var totKeyBytes, totValBytes uint64
 	for i := newTopLevel; i < len(ss.a); i++ {
 		totOps += ss.a[i].Len()
-		totBytes += ss.a[i].NumKeyValBytes()
+		nk, nv := ss.a[i].NumKeyValBytes()
+		totKeyBytes += nk
+		totValBytes += nv
 	}
 
 	// ----------------------------------------------------
 	// Next, use an iterator for the actual merge.
 
-	mergedSegment, err := newSegment(totOps, totBytes)
+	mergedSegment, err := newSegment(totOps, int(totKeyBytes + totValBytes))
 	if err != nil {
 		return nil, err
 	}
