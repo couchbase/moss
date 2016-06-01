@@ -59,7 +59,7 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 	// ----------------------------------------------------
 	// Next, use an iterator for the actual merge.
 
-	mergedSegment, err := newSegment(totOps, int(totKeyBytes + totValBytes))
+	mergedSegment, err := newSegment(totOps, int(totKeyBytes+totValBytes))
 	if err != nil {
 		return nil, err
 	}

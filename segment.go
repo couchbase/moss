@@ -290,17 +290,23 @@ func (a *segment) Less(i, j int) bool {
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
 func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
-	n := a.Len()
+	kvs := a.kvs
+	buf := a.buf
 
-	return sort.Search(n, func(pos int) bool {
-		x := pos * 2
+	i, j := 0, a.Len()
+	for i < j {
+		h := i + (j-i)/2 // Keep i <= h < j.
+		x := h * 2
+		klen := int((maskKeyLength & kvs[x]) >> 32)
+		kbeg := int(kvs[x+1])
+		if bytes.Compare(buf[kbeg:kbeg+klen], startKeyInclusive) < 0 {
+			i = h + 1
+		} else {
+			j = h
+		}
+	}
 
-		klength := int((maskKeyLength & a.kvs[x]) >> 32)
-		kstart := int(a.kvs[x+1])
-		k := a.buf[kstart : kstart+klength]
-
-		return bytes.Compare(k, startKeyInclusive) >= 0
-	})
+	return i
 
 	// TODO: Do better than binary search?
 	// TODO: Consider a perfectly balanced btree?
