@@ -41,6 +41,13 @@ type FileRef struct {
 	afterCloseCallbacks  []func() // Optional callbacks invoked after final close.
 }
 
+type ioResult struct {
+	kind string // Kind of io attempted.
+	want int    // Num bytes expected to be written or read.
+	got  int    // Num bytes actually written or read.
+	err  error
+}
+
 // --------------------------------------------------------
 
 // OnBeforeClose registers event callback func's that are invoked before the

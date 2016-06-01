@@ -13,7 +13,10 @@ package moss
 
 import (
 	"bytes"
+	"fmt"
+	"reflect"
 	"sort"
+	"unsafe"
 )
 
 // A Segment represents the read-oriented interface for a segment.
@@ -42,6 +45,11 @@ type Segment interface {
 // A SegmentMutator represents the mutation methods of a segment.
 type SegmentMutator interface {
 	Mutate(operation uint64, key, val []byte) error
+}
+
+// A SegmentPersister represents a segment that can be persisted.
+type SegmentPersister interface {
+	Persist(file File) (SegmentLoc, error)
 }
 
 // A segment is a sequence of key-val entries or operations.  A
@@ -340,4 +348,64 @@ func (a *segment) RequestSort(synchronous bool) bool {
 	}
 
 	return false
+}
+
+// ------------------------------------------------------
+
+// Persist allows a segment to meet the SegmentPersister interface.
+func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
+	finfo, err := file.Stat()
+	if err != nil {
+		return rv, err
+	}
+	pos := finfo.Size()
+
+	kvsSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&seg.kvs))
+
+	var kvsBuf []byte
+	kvsBufSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBuf))
+	kvsBufSliceHeader.Data = kvsSliceHeader.Data
+	kvsBufSliceHeader.Len = kvsSliceHeader.Len * 8
+	kvsBufSliceHeader.Cap = kvsSliceHeader.Cap * 8
+
+	kvsPos := pageAlign(pos)
+	bufPos := pageAlign(kvsPos + int64(len(kvsBuf)))
+
+	ioCh := make(chan ioResult)
+
+	go func() {
+		kvsWritten, err := file.WriteAt(kvsBuf, kvsPos)
+		ioCh <- ioResult{kind: "kvs", want: len(kvsBuf), got: kvsWritten, err: err}
+	}()
+
+	go func() {
+		bufWritten, err := file.WriteAt(seg.buf, bufPos)
+		ioCh <- ioResult{kind: "buf", want: len(seg.buf), got: bufWritten, err: err}
+	}()
+
+	resMap := map[string]ioResult{}
+	for len(resMap) < 2 {
+		res := <-ioCh
+		if res.err != nil {
+			return rv, res.err
+		}
+		if res.want != res.got {
+			return rv, fmt.Errorf("store: persistSegment error writing,"+
+				" res: %+v, err: %v", res, res.err)
+		}
+		resMap[res.kind] = res
+	}
+
+	close(ioCh)
+
+	return SegmentLoc{
+		KvsOffset:  uint64(kvsPos),
+		KvsBytes:   uint64(resMap["kvs"].got),
+		BufOffset:  uint64(bufPos),
+		BufBytes:   uint64(resMap["buf"].got),
+		TotOpsSet:  seg.totOperationSet,
+		TotOpsDel:  seg.totOperationDel,
+		TotKeyByte: seg.totKeyByte,
+		TotValByte: seg.totValByte,
+	}, nil
 }

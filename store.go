@@ -18,13 +18,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 // TODO: Handle endian'ness properly.
@@ -411,73 +409,12 @@ func (s *Store) persistHeader(file File) error {
 
 // --------------------------------------------------------
 
-type ioResult struct {
-	kind string // Kind of io attempted.
-	want int    // Num bytes expected to be written or read.
-	got  int    // Num bytes actually written or read.
-	err  error
-}
-
 func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err error) {
-	seg, ok := segIn.(*segment)
+	segPersister, ok := segIn.(SegmentPersister)
 	if !ok {
-		return rv, fmt.Errorf("store: can only persist segment type")
+		return rv, fmt.Errorf("store: can only persist SegmentPersister type")
 	}
-
-	finfo, err := file.Stat()
-	if err != nil {
-		return rv, err
-	}
-	pos := finfo.Size()
-
-	kvsSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&seg.kvs))
-
-	var kvsBuf []byte
-	kvsBufSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBuf))
-	kvsBufSliceHeader.Data = kvsSliceHeader.Data
-	kvsBufSliceHeader.Len = kvsSliceHeader.Len * 8
-	kvsBufSliceHeader.Cap = kvsSliceHeader.Cap * 8
-
-	kvsPos := pageAlign(pos)
-	bufPos := pageAlign(kvsPos + int64(len(kvsBuf)))
-
-	ioCh := make(chan ioResult)
-
-	go func() {
-		kvsWritten, err := file.WriteAt(kvsBuf, kvsPos)
-		ioCh <- ioResult{kind: "kvs", want: len(kvsBuf), got: kvsWritten, err: err}
-	}()
-
-	go func() {
-		bufWritten, err := file.WriteAt(seg.buf, bufPos)
-		ioCh <- ioResult{kind: "buf", want: len(seg.buf), got: bufWritten, err: err}
-	}()
-
-	resMap := map[string]ioResult{}
-	for len(resMap) < 2 {
-		res := <-ioCh
-		if res.err != nil {
-			return rv, res.err
-		}
-		if res.want != res.got {
-			return rv, fmt.Errorf("store: persistSegment error writing,"+
-				" res: %+v, err: %v", res, res.err)
-		}
-		resMap[res.kind] = res
-	}
-
-	close(ioCh)
-
-	return SegmentLoc{
-		KvsOffset:  uint64(kvsPos),
-		KvsBytes:   uint64(resMap["kvs"].got),
-		BufOffset:  uint64(bufPos),
-		BufBytes:   uint64(resMap["buf"].got),
-		TotOpsSet:  seg.totOperationSet,
-		TotOpsDel:  seg.totOperationDel,
-		TotKeyByte: seg.totKeyByte,
-		TotValByte: seg.totValByte,
-	}, nil
+	return segPersister.Persist(file)
 }
 
 // --------------------------------------------------------
