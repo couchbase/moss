@@ -110,7 +110,7 @@ OUTER:
 			// When only 1 cursor remains, copy the remains of the
 			// last segment more directly instead of Next()'ing
 			// through the iterator.
-			cursor := &iter.cursors[0]
+			cursor := iter.cursors[0]
 
 			segment := iter.ss.a[cursor.ssIndex]
 			segmentOps := segment.Len()

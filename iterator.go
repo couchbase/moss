@@ -22,7 +22,7 @@ import (
 type iterator struct {
 	ss *segmentStack
 
-	cursors []cursor // The len(cursors) <= len(ss.a).
+	cursors []*cursor // The len(cursors) <= len(ss.a).
 
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
@@ -91,7 +91,7 @@ func (ss *segmentStack) startIterator(
 	iteratorOptions IteratorOptions) (*iterator, error) {
 	iter := &iterator{
 		ss:      ss,
-		cursors: make([]cursor, 0, len(ss.a)+1),
+		cursors: make([]*cursor, 0, len(ss.a)+1),
 
 		startKeyInclusive: startKeyInclusive,
 		endKeyExclusive:   endKeyExclusive,
@@ -122,7 +122,7 @@ func (ss *segmentStack) startIterator(
 			continue
 		}
 
-		iter.cursors = append(iter.cursors, cursor{
+		iter.cursors = append(iter.cursors, &cursor{
 			ssIndex: ssIndex,
 			pos:     pos,
 			op:      op,
@@ -155,7 +155,7 @@ func (ss *segmentStack) startIterator(
 				lowerLevelIter.Close()
 			}
 			if err == nil {
-				iter.cursors = append(iter.cursors, cursor{
+				iter.cursors = append(iter.cursors, &cursor{
 					ssIndex: -1,
 					pos:     -1,
 					op:      OperationSet,
@@ -202,7 +202,7 @@ func (iter *iterator) Next() error {
 	lastK := iter.cursors[0].k
 
 	for len(iter.cursors) > 0 {
-		next := &iter.cursors[0]
+		next := iter.cursors[0]
 
 		if next.ssIndex < 0 && next.pos < 0 {
 			err := iter.lowerLevelIter.Next()
@@ -287,7 +287,7 @@ func (iter *iterator) CurrentEx() (
 		return EntryEx{}, nil, nil, ErrIteratorDone
 	}
 
-	cursor := &iter.cursors[0]
+	cursor := iter.cursors[0]
 
 	return EntryEx{Operation: cursor.op}, cursor.k, cursor.v, nil
 }
@@ -315,7 +315,7 @@ func (iter *iterator) Swap(i, j int) {
 func (iter *iterator) Push(x interface{}) {
 	// Push and Pop use pointer receivers because they modify the slice's length,
 	// not just its contents.
-	iter.cursors = append(iter.cursors, x.(cursor))
+	iter.cursors = append(iter.cursors, x.(*cursor))
 }
 
 func (iter *iterator) Pop() interface{} {
