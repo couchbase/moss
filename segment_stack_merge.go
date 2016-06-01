@@ -47,41 +47,10 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
 
-	totOps := ss.a[newTopLevel].Len()
-	totBytes := ss.a[newTopLevel].NumKeyValBytes()
-
-	iterPrealloc, err := ss.StartIterator(nil, nil, IteratorOptions{
-		IncludeDeletions: true,
-		SkipLowerLevel:   true,
-		MinSegmentLevel:  newTopLevel + 1,
-		MaxSegmentHeight: len(ss.a),
-		base:             base,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	defer iterPrealloc.Close()
-
-	for {
-		_, key, val, err := iterPrealloc.CurrentEx()
-		if err == ErrIteratorDone {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		totOps++
-		totBytes += len(key) + len(val)
-
-		err = iterPrealloc.Next()
-		if err == ErrIteratorDone {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
+	var totOps, totBytes int
+	for i := newTopLevel; i < len(ss.a); i++ {
+		totOps += ss.a[i].Len()
+		totBytes += ss.a[i].NumKeyValBytes()
 	}
 
 	// ----------------------------------------------------
