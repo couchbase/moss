@@ -179,6 +179,11 @@ func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, e
 	for i := range f.SegmentLocs {
 		sloc := &f.SegmentLocs[i]
 
+		segmentLoader, exists := SegmentLoaders[sloc.Kind]
+		if !exists || segmentLoader == nil {
+			return nil, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
+		}
+
 		var kvs []uint64
 		var buf []byte
 
@@ -196,15 +201,12 @@ func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, e
 			}
 		}
 
-		f.ss.a[i] = &segment{
-			kvs: kvs,
-			buf: buf,
-
-			totOperationSet: sloc.TotOpsSet,
-			totOperationDel: sloc.TotOpsDel,
-			totKeyByte:      sloc.TotKeyByte,
-			totValByte:      sloc.TotValByte,
+		seg, err := segmentLoader(sloc, kvs, buf)
+		if err != nil {
+			return nil, err
 		}
+
+		f.ss.a[i] = seg
 	}
 	f.ss.refs = 1
 	f.ss.options = &options.CollectionOptions

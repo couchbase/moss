@@ -151,6 +151,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 	compactFooter := &Footer{
 		SegmentLocs: []SegmentLoc{
 			SegmentLoc{
+				Kind:       BASIC_SEGMENT_KIND,
 				KvsOffset:  uint64(kvsBegPos),
 				KvsBytes:   uint64(compactWriter.kvsWriter.Offset() - kvsBegPos),
 				BufOffset:  uint64(bufBegPos),

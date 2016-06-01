@@ -36,7 +36,7 @@ var STORE_SUFFIX = ".moss" // File name suffix.
 var STORE_ENDIAN = binary.LittleEndian
 var STORE_PAGE_SIZE = 4096
 
-var STORE_VERSION = uint32(1)
+var STORE_VERSION = uint32(2)
 var STORE_MAGIC_BEG []byte = []byte("0m1o2s")
 var STORE_MAGIC_END []byte = []byte("3s4p5s")
 
@@ -120,6 +120,8 @@ type Footer struct {
 
 // SegmentLoc represents a persisted segment.
 type SegmentLoc struct {
+	Kind string // Used as the key for SegmentLoaders.
+
 	KvsOffset uint64 // Byte offset within the file.
 	KvsBytes  uint64 // Number of bytes for the persisted segment.kvs.
 
@@ -134,6 +136,17 @@ type SegmentLoc struct {
 
 // TotOps returns number of ops in a segment loc.
 func (sloc *SegmentLoc) TotOps() int { return int(sloc.KvsBytes / 8 / 2) }
+
+// --------------------------------------------------------
+
+// A SegmentLoaderFunc is able to load a segment from a SegmentLoc.
+type SegmentLoaderFunc func(
+	sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, error)
+
+// SegmentLoaders is a registry of available segment loaders, which
+// should be immutable after process init()'ialization.  It is keyed
+// by SegmentLoc.Kind.
+var SegmentLoaders = map[string]SegmentLoaderFunc{}
 
 // --------------------------------------------------------
 

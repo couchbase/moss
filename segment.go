@@ -19,8 +19,18 @@ import (
 	"unsafe"
 )
 
+// BASIC_SEGMENT_KIND is persisted.
+var BASIC_SEGMENT_KIND = "a"
+
+func init() {
+	SegmentLoaders[BASIC_SEGMENT_KIND] = loadBasicSegment
+}
+
 // A Segment represents the read-oriented interface for a segment.
 type Segment interface {
+	// Returns the kind of segment, used for persistence.
+	Kind() string
+
 	// Len returns the number of ops in the segment.
 	Len() int
 
@@ -52,9 +62,11 @@ type SegmentPersister interface {
 	Persist(file File) (SegmentLoc, error)
 }
 
-// A segment is a sequence of key-val entries or operations.  A
-// segment's kvs will be sorted by key when the segment is pushed into
-// the collection.  A segment implements the Batch interface.
+// A segment is a basic implementation of the segment related
+// interfaces and represents a sequence of key-val entries or
+// operations.  A segment's kvs will be sorted by key when the segment
+// is pushed into the collection.  A segment implements the Batch
+// interface.
 type segment struct {
 	// Each key-val operation is encoded as 2 uint64's...
 	// - operation (see: maskOperation) |
@@ -105,6 +117,8 @@ func newSegment(totalOps, totalKeyValBytes int) (
 		buf: make([]byte, 0, totalKeyValBytes),
 	}, nil
 }
+
+func (a *segment) Kind() string { return BASIC_SEGMENT_KIND }
 
 // Close releases resources associated with the segment.
 func (a *segment) Close() error {
@@ -352,7 +366,8 @@ func (a *segment) RequestSort(synchronous bool) bool {
 
 // ------------------------------------------------------
 
-// Persist allows a segment to meet the SegmentPersister interface.
+// Persist persists a basic segment, and allows a segment to meet the
+// SegmentPersister interface.
 func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 	finfo, err := file.Stat()
 	if err != nil {
@@ -399,6 +414,7 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 	close(ioCh)
 
 	return SegmentLoc{
+		Kind:       seg.Kind(),
 		KvsOffset:  uint64(kvsPos),
 		KvsBytes:   uint64(resMap["kvs"].got),
 		BufOffset:  uint64(bufPos),
@@ -407,5 +423,19 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 		TotOpsDel:  seg.totOperationDel,
 		TotKeyByte: seg.totKeyByte,
 		TotValByte: seg.totValByte,
+	}, nil
+}
+
+// ------------------------------------------------------
+
+// loadBasicSegment loads a basic segment.
+func loadBasicSegment(sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, error) {
+	return &segment{
+		kvs:             kvs,
+		buf:             buf,
+		totOperationSet: sloc.TotOpsSet,
+		totOperationDel: sloc.TotOpsDel,
+		totKeyByte:      sloc.TotKeyByte,
+		totValByte:      sloc.TotValByte,
 	}, nil
 }
