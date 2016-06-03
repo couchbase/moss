@@ -37,6 +37,7 @@ type iterator struct {
 // from the lowerLevelIter.
 type cursor struct {
 	ssIndex int // Index into Iterator.ss.a.
+	posEnd  int // Found via endKeyExclusive, or the segment length.
 	pos     int // Logical entry position into Iterator.ss.a[ssIndex].
 
 	op uint64
@@ -110,20 +111,24 @@ func (ss *segmentStack) startIterator(
 	for ssIndex := minSegmentLevel; ssIndex <= maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
+		posEnd := b.Len()
+		if endKeyExclusive != nil {
+			posEnd = b.FindStartKeyInclusivePos(endKeyExclusive)
+		}
+
 		pos := b.FindStartKeyInclusivePos(startKeyInclusive)
+		if pos >= posEnd {
+			continue
+		}
 
 		op, k, v := b.GetOperationKeyVal(pos)
 		if op == 0 && k == nil && v == nil {
 			continue
 		}
 
-		if iter.endKeyExclusive != nil &&
-			bytes.Compare(k, iter.endKeyExclusive) >= 0 {
-			continue
-		}
-
 		iter.cursors = append(iter.cursors, &cursor{
 			ssIndex: ssIndex,
+			posEnd:  posEnd,
 			pos:     pos,
 			op:      op,
 			k:       k,
@@ -221,14 +226,16 @@ func (iter *iterator) Next() error {
 			}
 		} else {
 			next.pos++
-			next.op, next.k, next.v =
-				iter.ss.a[next.ssIndex].GetOperationKeyVal(next.pos)
-			if (next.op == 0 && next.k == nil && next.v == nil) ||
-				(iter.endKeyExclusive != nil &&
-					bytes.Compare(next.k, iter.endKeyExclusive) >= 0) {
+			if next.pos >= next.posEnd {
 				heap.Pop(iter)
 			} else {
-				heap.Fix(iter, 0)
+				next.op, next.k, next.v =
+					iter.ss.a[next.ssIndex].GetOperationKeyVal(next.pos)
+				if next.op == 0 {
+					heap.Pop(iter)
+				} else {
+					heap.Fix(iter, 0)
+				}
 			}
 		}
 
