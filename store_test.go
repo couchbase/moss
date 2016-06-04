@@ -388,19 +388,29 @@ func testStoreOps(t *testing.T, spo StorePersistOptions) {
 }
 
 func TestStoreCompaction(t *testing.T) {
+	testStoreCompaction(t, CollectionOptions{},
+		StorePersistOptions{CompactionConcern: CompactionForce})
+}
+
+func TestStoreCompactionDeferredSort(t *testing.T) {
+	testStoreCompaction(t, CollectionOptions{DeferredSort: true},
+		StorePersistOptions{CompactionConcern: CompactionForce})
+}
+
+func testStoreCompaction(t *testing.T, co CollectionOptions,
+	spo StorePersistOptions) {
 	tmpDir, _ := ioutil.TempDir("", "mossStore")
 	defer os.RemoveAll(tmpDir)
+
+	co.MergeOperator = &MergeOperatorStringAppend{Sep: ":"}
 
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
 
-	co := CollectionOptions{
-		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
-		OnEvent: func(event Event) {
-			mu.Lock()
-			counts[event.Kind]++
-			mu.Unlock()
-		},
+	co.OnEvent = func(event Event) {
+		mu.Lock()
+		counts[event.Kind]++
+		mu.Unlock()
 	}
 
 	store, err := OpenStore(tmpDir, StoreOptions{
@@ -416,8 +426,6 @@ func TestStoreCompaction(t *testing.T) {
 	}
 
 	persistCh := make(chan struct{})
-
-	spo := StorePersistOptions{CompactionConcern: CompactionForce}
 
 	co2 := co
 	co2.LowerLevelInit = ssInit

@@ -606,6 +606,20 @@ func TestOpsAsyncMerge(t *testing.T) {
 	m.Close()
 }
 
+func TestOpsDeferredSort(t *testing.T) {
+	m, err := NewCollection(CollectionOptions{
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+		DeferredSort:  true,
+	})
+	if err != nil || m == nil {
+		t.Errorf("expected moss")
+	}
+
+	m.Start()
+	testOps(t, m)
+	m.Close()
+}
+
 type opTest struct {
 	op string
 	sb string // Snapshot or batch name.
