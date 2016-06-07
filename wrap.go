@@ -31,7 +31,7 @@ func NewSnapshotWrapper(ss Snapshot, closer io.Closer) *snapshotWrapper {
 		return nil
 	}
 
-	return &snapshotWrapper{refCount: 1, ss: ss}
+	return &snapshotWrapper{refCount: 1, ss: ss, closer: closer}
 }
 
 func (w *snapshotWrapper) addRef() *snapshotWrapper {

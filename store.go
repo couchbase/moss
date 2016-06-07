@@ -458,18 +458,19 @@ func pageAlign(pos int64) int64 {
 
 // OpenStoreCollection returns collection based on a persisted store.
 // Updates to the collection will be persisted.  An empty directory
-// results in an empty collection.
+// results in an empty collection.  Both the store and collection
+// should be closed by the caller.
 func OpenStoreCollection(dir string,
 	options StoreOptions,
-	persistOptions StorePersistOptions) (Collection, error) {
+	persistOptions StorePersistOptions) (*Store, Collection, error) {
 	store, err := OpenStore(dir, options)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	storeSnapshotInit, err := store.Snapshot()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	storeSnapshotInitWrapper := NewSnapshotWrapper(storeSnapshotInit, store)
 
@@ -489,14 +490,16 @@ func OpenStoreCollection(dir string,
 	coll, err := NewCollection(co)
 	if err != nil {
 		storeSnapshotInitWrapper.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = coll.Start()
 	if err != nil {
 		storeSnapshotInitWrapper.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
-	return coll, nil
+	store.AddRef() // Ref-count owned by caller.
+
+	return store, coll, nil
 }

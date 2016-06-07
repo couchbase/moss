@@ -117,6 +117,9 @@ func TestOpenEmptyStore(t *testing.T) {
 	if s.Close() != nil {
 		t.Errorf("expected s close to work")
 	}
+	if s.refs != 0 {
+		t.Errorf("expected 0 refs")
+	}
 
 	fileInfos, _ := ioutil.ReadDir(tmpDir)
 	if len(fileInfos) != 0 {
@@ -235,6 +238,10 @@ func TestSimpleStore(t *testing.T) {
 		t.Errorf("expected store close to work")
 	}
 
+	if store.refs != 0 {
+		t.Errorf("expected 0 refs")
+	}
+
 	// ------------------------------------------------------
 
 	store2, err := OpenStore(tmpDir, StoreOptions{})
@@ -280,6 +287,10 @@ func TestSimpleStore(t *testing.T) {
 
 	if store2.Close() != nil {
 		t.Errorf("expected store2 close to work")
+	}
+
+	if store2.refs != 0 {
+		t.Errorf("expected 0 refs")
 	}
 }
 
@@ -510,6 +521,10 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 
 	store.Close()
 
+	if store.refs != 0 {
+		t.Errorf("expected 0 refs")
+	}
+
 	// --------------------
 
 	fileInfos, err := ioutil.ReadDir(tmpDir)
@@ -706,10 +721,10 @@ func TestOpenStoreCollection(t *testing.T) {
 		},
 	}
 
-	m, err := OpenStoreCollection(tmpDir, StoreOptions{
+	store, m, err := OpenStoreCollection(tmpDir, StoreOptions{
 		CollectionOptions: co,
 	}, StorePersistOptions{})
-	if err != nil || m == nil {
+	if err != nil || m == nil || store == nil {
 		t.Errorf("expected open empty store collection to work")
 	}
 
@@ -797,6 +812,12 @@ func TestOpenStoreCollection(t *testing.T) {
 
 	m.Close()
 
+	store.Close()
+
+	if store.refs != 0 {
+		t.Errorf("expected store refs to be 0, got: %d", store.refs)
+	}
+
 	// --------------------
 
 	fileInfos, err := ioutil.ReadDir(tmpDir)
@@ -817,10 +838,10 @@ func TestOpenStoreCollection(t *testing.T) {
 
 	// --------------------
 
-	m2, err := OpenStoreCollection(tmpDir, StoreOptions{
+	store2, m2, err := OpenStoreCollection(tmpDir, StoreOptions{
 		CollectionOptions: co,
 	}, StorePersistOptions{})
-	if err != nil || m2 == nil {
+	if err != nil || m2 == nil || store2 == nil {
 		t.Errorf("expected reopen store to work")
 	}
 
@@ -872,6 +893,8 @@ func TestOpenStoreCollection(t *testing.T) {
 		}
 	}
 
+	iter2.Close()
+
 	if numKVs != len(mirror) {
 		t.Errorf("numKVs: %d, not matching len(mirror): %d", numKVs, len(mirror))
 	}
@@ -879,4 +902,10 @@ func TestOpenStoreCollection(t *testing.T) {
 	ss2.Close()
 
 	m2.Close()
+
+	store2.Close()
+
+	if store2.refs != 0 {
+		t.Errorf("expected store2 refs to be 0, got: %d", store2.refs)
+	}
 }
