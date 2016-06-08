@@ -71,44 +71,11 @@ OUTER:
 		// ---------------------------------------------
 		// Wait for new stackDirtyTop entries and/or pings.
 
-		var waitDirtyIncomingCh chan struct{}
-
-		m.m.Lock()
-
-		if m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0 {
-			m.waitDirtyIncomingCh = make(chan struct{})
-			waitDirtyIncomingCh = m.waitDirtyIncomingCh
+		var stopped, mergeAll bool
+		stopped, mergeAll, pings = m.mergerWaitForWork(pings)
+		if stopped {
+			return
 		}
-
-		m.m.Unlock()
-
-		mergeAll := false
-
-		if waitDirtyIncomingCh != nil {
-			atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
-
-			select {
-			case <-m.stopCh:
-				atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
-				return
-
-			case ping := <-m.pingMergerCh:
-				pings = append(pings, ping)
-				if ping.kind == "mergeAll" {
-					mergeAll = true
-				}
-
-			case <-waitDirtyIncomingCh:
-				// NO-OP.
-			}
-
-			atomic.AddUint64(&m.stats.TotMergerWaitIncomingEnd, 1)
-		} else {
-			atomic.AddUint64(&m.stats.TotMergerWaitIncomingSkip, 1)
-		}
-
-		pings, mergeAll =
-			receivePings(m.pingMergerCh, pings, "mergeAll", mergeAll)
 
 		// ---------------------------------------------
 		// Atomically ingest stackDirtyTop into stackDirtyMid.
@@ -117,7 +84,7 @@ OUTER:
 		var stackDirtyMidPrev *segmentStack
 		var stackDirtyBase *segmentStack
 
-		stackDirtyMid, _, _, prevLenDirtyMid, prevLenDirtyTop :=
+		stackDirtyMid, _, _, _, _ :=
 			m.snapshot(snapshotSkipClean|snapshotSkipDirtyBase,
 				func(ss *segmentStack) {
 					// m.stackDirtyMid takes 1 refs, and
@@ -148,129 +115,15 @@ OUTER:
 
 		startTime := time.Now()
 
-		if len(stackDirtyMid.a) > 1 {
-			newTopLevel := 0
-
-			if !mergeAll {
-				// If we have not been asked to merge all segments,
-				// then heuristically calc a newTopLevel.
-				newTopLevel = stackDirtyMid.calcTargetTopLevel()
-			}
-
-			if newTopLevel <= 0 {
-				atomic.AddUint64(&m.stats.TotMergerAll, 1)
-			}
-
-			atomic.AddUint64(&m.stats.TotMergerInternalBeg, 1)
-
-			mergedStackDirtyMid, err :=
-				stackDirtyMid.merge(newTopLevel, stackDirtyBase)
-			if err != nil {
-				atomic.AddUint64(&m.stats.TotMergerInternalErr, 1)
-
-				m.Logf("collection: runMerger stackDirtyMid.merge,"+
-					" newTopLevel: %d, err: %v", newTopLevel, err)
-
-				m.OnError(err)
-
-				continue OUTER
-			}
-
-			atomic.AddUint64(&m.stats.TotMergerInternalEnd, 1)
-
-			stackDirtyMid.Close()
-
-			mergedStackDirtyMid.addRef()
-			stackDirtyMid = mergedStackDirtyMid
-
-			m.m.Lock()
-			stackDirtyMidPrev = m.stackDirtyMid
-			m.stackDirtyMid = mergedStackDirtyMid
-			m.m.Unlock()
-
-			stackDirtyMidPrev.Close()
-		} else {
-			atomic.AddUint64(&m.stats.TotMergerInternalSkip, 1)
+		mergerWasOk := m.mergerMain(stackDirtyMid, stackDirtyBase, mergeAll)
+		if !mergerWasOk {
+			continue OUTER
 		}
-
-		stackDirtyBase.Close()
-
-		lenDirtyMid := len(stackDirtyMid.a)
-		if lenDirtyMid > 0 {
-			topDirtyMid := stackDirtyMid.a[lenDirtyMid-1]
-
-			m.Logf("collection: runMerger,"+
-				" dirtyTop prev height: %2d,"+
-				" dirtyMid height: %2d (%2d),"+
-				" dirtyMid top # entries: %d",
-				prevLenDirtyTop, lenDirtyMid, lenDirtyMid-prevLenDirtyMid,
-				topDirtyMid.Len())
-		}
-
-		stackDirtyMid.Close()
 
 		// ---------------------------------------------
 		// Notify persister.
 
-		if m.options.LowerLevelUpdate != nil {
-			m.m.Lock()
-
-			if m.stackDirtyBase == nil &&
-				m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
-				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
-
-				m.stackDirtyBase = m.stackDirtyMid
-				m.stackDirtyMid = nil
-
-				prevLowerLevelSnapshot := m.stackDirtyBase.lowerLevelSnapshot
-				m.stackDirtyBase.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
-				if prevLowerLevelSnapshot != nil {
-					prevLowerLevelSnapshot.decRef()
-				}
-
-				if m.waitDirtyOutgoingCh != nil {
-					close(m.waitDirtyOutgoingCh)
-				}
-				m.waitDirtyOutgoingCh = make(chan struct{})
-
-				m.stackDirtyBaseCond.Broadcast()
-			} else {
-				atomic.AddUint64(&m.stats.TotMergerLowerLevelNotifySkip, 1)
-			}
-
-			var waitDirtyOutgoingCh chan struct{}
-
-			if m.options.MaxDirtyOps > 0 ||
-				m.options.MaxDirtyKeyValBytes > 0 {
-				cs := CollectionStats{}
-
-				m.statsSegmentsLOCKED(&cs)
-
-				if cs.CurDirtyOps > m.options.MaxDirtyOps ||
-					cs.CurDirtyBytes > m.options.MaxDirtyKeyValBytes {
-					waitDirtyOutgoingCh = m.waitDirtyOutgoingCh
-				}
-			}
-
-			m.m.Unlock()
-
-			if waitDirtyOutgoingCh != nil {
-				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingBeg, 1)
-
-				select {
-				case <-m.stopCh:
-					atomic.AddUint64(&m.stats.TotMergerWaitOutgoingStop, 1)
-					return
-
-				case <-waitDirtyOutgoingCh:
-					// NO-OP.
-				}
-
-				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingEnd, 1)
-			} else {
-				atomic.AddUint64(&m.stats.TotMergerWaitOutgoingSkip, 1)
-			}
-		}
+		m.mergerNotifyPersister()
 
 		// ---------------------------------------------
 
@@ -293,4 +146,186 @@ OUTER:
 	// TODO: Dynamically calc'ed soft max dirty top height, for
 	// read-heavy (favor lower) versus write-heavy (favor higher)
 	// situations?
+}
+
+// ------------------------------------------------------
+
+// mergerWaitForWork() is a helper method that blocks until there's
+// either pings or incoming segments (from ExecuteBatch()) of work for
+// the merger.
+func (m *collection) mergerWaitForWork(pings []ping) (
+	stopped, mergeAll bool, pingsOut []ping) {
+	var waitDirtyIncomingCh chan struct{}
+
+	m.m.Lock()
+
+	if m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0 {
+		m.waitDirtyIncomingCh = make(chan struct{})
+		waitDirtyIncomingCh = m.waitDirtyIncomingCh
+	}
+
+	m.m.Unlock()
+
+	if waitDirtyIncomingCh != nil {
+		atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
+
+		select {
+		case <-m.stopCh:
+			atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
+			return true, mergeAll, pings
+
+		case ping := <-m.pingMergerCh:
+			pings = append(pings, ping)
+			if ping.kind == "mergeAll" {
+				mergeAll = true
+			}
+
+		case <-waitDirtyIncomingCh:
+			// NO-OP.
+		}
+
+		atomic.AddUint64(&m.stats.TotMergerWaitIncomingEnd, 1)
+	} else {
+		atomic.AddUint64(&m.stats.TotMergerWaitIncomingSkip, 1)
+	}
+
+	pings, mergeAll = receivePings(m.pingMergerCh, pings, "mergeAll", mergeAll)
+
+	return false, mergeAll, pings
+}
+
+// ------------------------------------------------------
+
+// mergerMain() is a helper method that performs the merging work on
+// the stackDirtyMid and swaps the merged result into the collection.
+func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
+	mergeAll bool) (ok bool) {
+	if stackDirtyMid != nil && len(stackDirtyMid.a) > 1 {
+		newTopLevel := 0
+
+		if !mergeAll {
+			// If we have not been asked to merge all segments,
+			// then heuristically calc a newTopLevel.
+			newTopLevel = stackDirtyMid.calcTargetTopLevel()
+		}
+
+		if newTopLevel <= 0 {
+			atomic.AddUint64(&m.stats.TotMergerAll, 1)
+		}
+
+		atomic.AddUint64(&m.stats.TotMergerInternalBeg, 1)
+
+		mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel, stackDirtyBase)
+		if err != nil {
+			atomic.AddUint64(&m.stats.TotMergerInternalErr, 1)
+
+			m.Logf("collection: mergerMain stackDirtyMid.merge,"+
+				" newTopLevel: %d, err: %v", newTopLevel, err)
+
+			m.OnError(err)
+
+			stackDirtyMid.Close()
+			stackDirtyBase.Close()
+
+			return false
+		}
+
+		atomic.AddUint64(&m.stats.TotMergerInternalEnd, 1)
+
+		stackDirtyMid.Close()
+
+		mergedStackDirtyMid.addRef()
+		stackDirtyMid = mergedStackDirtyMid
+
+		m.m.Lock()
+		stackDirtyMidPrev := m.stackDirtyMid
+		m.stackDirtyMid = mergedStackDirtyMid
+		m.m.Unlock()
+
+		stackDirtyMidPrev.Close()
+	} else {
+		atomic.AddUint64(&m.stats.TotMergerInternalSkip, 1)
+	}
+
+	stackDirtyBase.Close()
+
+	lenDirtyMid := len(stackDirtyMid.a)
+	if lenDirtyMid > 0 {
+		topDirtyMid := stackDirtyMid.a[lenDirtyMid-1]
+
+		m.Logf("collection: mergerMain, dirtyMid height: %2d,"+
+			" dirtyMid top # entries: %d", lenDirtyMid, topDirtyMid.Len())
+	}
+
+	stackDirtyMid.Close()
+
+	return true
+}
+
+// ------------------------------------------------------
+
+// mergerNotifyPersister() is a helper method that notifies the
+// optional persister goroutine that there's a dirty segment stack
+// that needs persistence.
+func (m *collection) mergerNotifyPersister() {
+	if m.options.LowerLevelUpdate == nil {
+		return
+	}
+
+	m.m.Lock()
+
+	if m.stackDirtyBase == nil &&
+		m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
+		atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
+
+		m.stackDirtyBase = m.stackDirtyMid
+		m.stackDirtyMid = nil
+
+		prevLowerLevelSnapshot := m.stackDirtyBase.lowerLevelSnapshot
+		m.stackDirtyBase.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
+		if prevLowerLevelSnapshot != nil {
+			prevLowerLevelSnapshot.decRef()
+		}
+
+		if m.waitDirtyOutgoingCh != nil {
+			close(m.waitDirtyOutgoingCh)
+		}
+		m.waitDirtyOutgoingCh = make(chan struct{})
+
+		m.stackDirtyBaseCond.Broadcast()
+	} else {
+		atomic.AddUint64(&m.stats.TotMergerLowerLevelNotifySkip, 1)
+	}
+
+	var waitDirtyOutgoingCh chan struct{}
+
+	if m.options.MaxDirtyOps > 0 || m.options.MaxDirtyKeyValBytes > 0 {
+		cs := CollectionStats{}
+
+		m.statsSegmentsLOCKED(&cs)
+
+		if cs.CurDirtyOps > m.options.MaxDirtyOps ||
+			cs.CurDirtyBytes > m.options.MaxDirtyKeyValBytes {
+			waitDirtyOutgoingCh = m.waitDirtyOutgoingCh
+		}
+	}
+
+	m.m.Unlock()
+
+	if waitDirtyOutgoingCh != nil {
+		atomic.AddUint64(&m.stats.TotMergerWaitOutgoingBeg, 1)
+
+		select {
+		case <-m.stopCh:
+			atomic.AddUint64(&m.stats.TotMergerWaitOutgoingStop, 1)
+			return
+
+		case <-waitDirtyOutgoingCh:
+			// NO-OP.
+		}
+
+		atomic.AddUint64(&m.stats.TotMergerWaitOutgoingEnd, 1)
+	} else {
+		atomic.AddUint64(&m.stats.TotMergerWaitOutgoingSkip, 1)
+	}
 }

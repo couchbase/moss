@@ -947,7 +947,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	}()
 
 	fmtStr := <-logCh
-	if !strings.HasPrefix(fmtStr, "collection: runMerger, dirtyTop") {
+	if !strings.HasPrefix(fmtStr, "collection: mergerMain,") {
 		t.Errorf("expected a fmt str, got: %s", fmtStr)
 	}
 
