@@ -46,6 +46,9 @@ import (
 // be satisfied by the pre-allocated buffer.
 var ErrAllocTooLarge = errors.New("alloc-too-large")
 
+// ErrCanceled is used when an operation has been canceled.
+var ErrCanceled = errors.New("canceled")
+
 // ErrClosed is returned when the collection is already closed.
 var ErrClosed = errors.New("closed")
 
@@ -119,6 +122,11 @@ type CollectionOptions struct {
 	// reaches MaxPreMergerBatches, then ExecuteBatch() will block to
 	// allow the merger to catch up.
 	MaxPreMergerBatches int
+
+	// MergerCancelCheckEvery is the number of ops the merger will
+	// perform before it checks to see if a merger operation was
+	// canceled.
+	MergerCancelCheckEvery int
 
 	// MaxDirtyOps, when greater than zero, is the max number of dirty
 	// (unpersisted) ops allowed before ExecuteBatch() blocks to allow
@@ -199,11 +207,12 @@ var EventKindBatchExecute = EventKind(6)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
-	MergeOperator:       nil,
-	MinMergePercentage:  0.8,
-	MaxPreMergerBatches: 10,
-	Debug:               0,
-	Log:                 nil,
+	MergeOperator:          nil,
+	MinMergePercentage:     0.8,
+	MaxPreMergerBatches:    10,
+	MergerCancelCheckEvery: 1024 * 1024,
+	Debug: 0,
+	Log:   nil,
 }
 
 // A Batch is a set of mutations that will be incorporated atomically

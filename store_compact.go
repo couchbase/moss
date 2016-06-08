@@ -129,7 +129,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 		return err
 	}
 
-	err = ss.mergeInto(0, len(ss.a), compactWriter, nil, false)
+	err = ss.mergeInto(0, len(ss.a), compactWriter, nil, false, nil)
 	if err != nil {
 		return onError(err)
 	}
