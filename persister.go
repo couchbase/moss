@@ -135,5 +135,4 @@ OUTER:
 	// TODO: WaitForMerger() also considers stackClean?
 	// TODO: Track popular Get() keys?
 	// TODO: Track shadowing during merges for writes.
-	// TODO: Consider our own simple storage format?
 }
