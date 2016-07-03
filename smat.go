@@ -582,7 +582,7 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 		smatLog(prefix, "LowerLevelUpdate... higher: %+v\n", higher)
 		smatLog(prefix, "LowerLevelUpdate... higher.a: %+v\n", higher.(*segmentStack).a)
 
-		concern := CompactionAllow // TODO: try testing compaciton concern CompactionForce?
+		concern := CompactionAllow // TODO: try testing compaction concern CompactionForce?
 
 		ss, err := store.Persist(higher, StorePersistOptions{
 			CompactionConcern: concern,
