@@ -64,7 +64,7 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 		return nil, err
 	}
 
-	err = ss.mergeInto(newTopLevel, len(ss.a), mergedSegment, base, true, nil)
+	err = ss.mergeInto(newTopLevel, len(ss.a), mergedSegment, base, true, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 }
 
 func (ss *segmentStack) mergeInto(minSegmentLevel, maxSegmentHeight int,
-	dest SegmentMutator, base *segmentStack, optimizeTail bool,
+	dest SegmentMutator, base *segmentStack, includeDeletions, optimizeTail bool,
 	cancelCh chan error) error {
 	cancelCheckEvery := ss.options.MergerCancelCheckEvery
 	if cancelCheckEvery <= 0 {
@@ -90,7 +90,7 @@ func (ss *segmentStack) mergeInto(minSegmentLevel, maxSegmentHeight int,
 	}
 
 	iter, err := ss.startIterator(nil, nil, IteratorOptions{
-		IncludeDeletions: true,
+		IncludeDeletions: includeDeletions,
 		SkipLowerLevel:   true,
 		MinSegmentLevel:  minSegmentLevel,
 		MaxSegmentHeight: maxSegmentHeight,

@@ -909,3 +909,123 @@ func TestOpenStoreCollection(t *testing.T) {
 		t.Errorf("expected store2 refs to be 0, got: %d", store2.refs)
 	}
 }
+
+func TestStoreCompactionDeletions(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	counts := map[EventKind]int{}
+
+	persistedCh := make(chan struct{})
+	doneCh := make(chan struct{}, 1)
+
+	storeOptions := StoreOptions{
+		CollectionOptions: CollectionOptions{
+			MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+			OnEvent: func(event Event) {
+				mu.Lock()
+				counts[event.Kind]++
+				mu.Unlock()
+
+				if event.Kind == EventKindPersisterProgress {
+					<-persistedCh
+				}
+
+				if event.Kind == EventKindClose {
+					doneCh <- struct{}{}
+				}
+			},
+		},
+	}
+
+	spo := StorePersistOptions{CompactionConcern: CompactionForce}
+
+	store, m, err := OpenStoreCollection(tmpDir, storeOptions, spo)
+	if err != nil {
+		t.Errorf("OpenStoreCollection err: %v", err)
+	}
+
+	for j := 0; j < 10; j++ {
+		b, _ := m.NewBatch(0, 0)
+		for i := 0; i < 100; i++ {
+			xs := fmt.Sprintf("%d", i)
+			x := []byte(xs)
+			if j%2 == 0 {
+				b.Set(x, x)
+			} else {
+				b.Del(x)
+			}
+		}
+		err = m.ExecuteBatch(b, WriteOptions{})
+		if err != nil {
+			t.Errorf("expected exec batch to work")
+		}
+		b.Close()
+
+		persistedCh <- struct{}{}
+	}
+
+	close(persistedCh)
+
+	// Helper function to test that a collection is logically empty
+	// from Get()'s and iteration.
+	testEmpty := func(m Collection, includeDeletions bool) {
+		ss, err := m.Snapshot()
+		if ss == nil || err != nil {
+			t.Errorf("expected no err")
+		}
+
+		for i := 0; i < 100; i++ {
+			xs := fmt.Sprintf("%d", i)
+			v, err := ss.Get([]byte(xs), ReadOptions{})
+			if err != nil || v != nil {
+				t.Errorf("expected no keys")
+			}
+		}
+
+		itr, err := ss.StartIterator(nil, nil, IteratorOptions{
+			IncludeDeletions: includeDeletions,
+		})
+		if err != nil || itr == nil {
+			t.Errorf("expected no err iterator")
+		}
+		entryEx, k, v, err := itr.CurrentEx()
+		if err != ErrIteratorDone {
+			t.Errorf("expected empty iterator")
+		}
+		if entryEx.Operation != 0 || k != nil || v != nil {
+			t.Errorf("expected empty iterator currentEx")
+		}
+
+		ss.Close()
+	}
+
+	testEmpty(m, false)
+
+	go m.Close()
+	<-doneCh
+
+	store.Close()
+
+	store2, m2, err := OpenStoreCollection(tmpDir, storeOptions, spo)
+	if err != nil || store2 == nil || m2 == nil {
+		t.Errorf("expected reopen store to work")
+	}
+
+	testEmpty(m2, true)
+	testEmpty(m2, false)
+
+	go m2.Close()
+	<-doneCh
+
+	// Check from stats that the store is physically empty.
+	snapshot2, _ := store2.Snapshot()
+	stats2 := snapshot2.(*Footer).ss.Stats()
+	if stats2.CurOps != 0 {
+		t.Errorf("expected no ops, got: %#v", stats2)
+	}
+	snapshot2.Close()
+
+	store2.Close()
+}
