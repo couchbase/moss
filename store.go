@@ -25,7 +25,6 @@ import (
 	"time"
 )
 
-// TODO: Handle endian'ness properly.
 // TODO: Better version parsers / checkers / handling.
 
 // --------------------------------------------------------
@@ -36,7 +35,7 @@ var STORE_SUFFIX = ".moss" // File name suffix.
 var STORE_ENDIAN = binary.LittleEndian
 var STORE_PAGE_SIZE = 4096
 
-var STORE_VERSION = uint32(2)
+var STORE_VERSION = uint32(3)
 var STORE_MAGIC_BEG []byte = []byte("0m1o2s")
 var STORE_MAGIC_END []byte = []byte("3s4p5s")
 
@@ -105,8 +104,9 @@ type StorePersistOptions struct {
 // Header represents the JSON stored at the head of a file, where the
 // file header bytes should be less than STORE_PAGE_SIZE length.
 type Header struct {
-	Version   uint32 // The file format / STORE_VERSION.
-	CreatedAt string
+	Version       uint32 // The file format / STORE_VERSION.
+	CreatedAt     string
+	CreatedEndian string // The endian() of the file creator.
 }
 
 // Footer represents a footer record persisted in a file, and
@@ -199,6 +199,12 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 		file, err := options.OpenFile(path.Join(dir, fnames[i]), os.O_RDWR, 0600)
 		if err != nil {
 			continue
+		}
+
+		err = checkHeader(file)
+		if err != nil {
+			file.Close()
+			return nil, err
 		}
 
 		footer, err := ReadFooter(&options, file) // The footer owns the file on success.
@@ -396,8 +402,9 @@ func (s *Store) createNextFileLOCKED() (string, File, error) {
 
 func (s *Store) persistHeader(file File) error {
 	buf, err := json.Marshal(Header{
-		Version:   STORE_VERSION,
-		CreatedAt: time.Now().Format(time.RFC3339),
+		Version:       STORE_VERSION,
+		CreatedAt:     time.Now().Format(time.RFC3339),
+		CreatedEndian: endian(),
 	})
 	if err != nil {
 		return err
@@ -415,6 +422,41 @@ func (s *Store) persistHeader(file File) error {
 	}
 	if n != len(str) {
 		return fmt.Errorf("store: could not write full header")
+	}
+
+	return nil
+}
+
+func checkHeader(file File) error {
+	buf := make([]byte, STORE_PAGE_SIZE)
+
+	n, err := file.ReadAt(buf, int64(0))
+	if err != nil {
+		return err
+	}
+	if n != len(buf) {
+		return fmt.Errorf("store: readHeader too short")
+	}
+
+	lines := strings.Split(string(buf), "\n")
+	if len(lines) < 2 {
+		return fmt.Errorf("store: readHeader not enough lines")
+	}
+	if lines[0] != "moss-data-store:" {
+		return fmt.Errorf("store: readHeader wrong file prefix")
+	}
+
+	hdr := Header{}
+	err = json.Unmarshal([]byte(lines[1]), &hdr)
+	if err != nil {
+		return err
+	}
+	if hdr.Version != STORE_VERSION {
+		return fmt.Errorf("store: readHeader wrong version")
+	}
+	if hdr.CreatedEndian != endian() {
+		return fmt.Errorf("store: readHeader endian of file was: %s, need: %s",
+			hdr.CreatedEndian, endian())
 	}
 
 	return nil

@@ -246,7 +246,7 @@ func TestSimpleStore(t *testing.T) {
 
 	store2, err := OpenStore(tmpDir, StoreOptions{})
 	if err != nil || store2 == nil {
-		t.Errorf("expected open store2 to work")
+		t.Errorf("expected open store2 to work, err: %v", err)
 	}
 
 	if store2.nextFNameSeq != 2 {

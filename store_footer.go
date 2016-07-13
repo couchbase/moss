@@ -248,3 +248,13 @@ func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	}
 	return &iteratorWrapper{iter: iter, closer: f.fref}, nil
 }
+
+// --------------------------------------------------------------
+
+func endian() string { // See golang-nuts / how-to-tell-endian-ness-of-machine,
+	var x uint32 = 0x01020304
+	if *(*byte)(unsafe.Pointer(&x)) == 0x01 {
+		return "big"
+	}
+	return "little"
+}
