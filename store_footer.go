@@ -223,8 +223,8 @@ func (f *Footer) Close() error {
 func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	f.fref.AddRef()
 	rv, err := f.ss.Get(key, readOptions)
-	if err == nil {
-		rv = append([]byte(nil), rv...) // Copy.
+	if err == nil && rv != nil {
+		rv = append(make([]byte, 0, len(rv)), rv...) // Copy.
 	}
 	f.fref.DecRef()
 	return rv, err
