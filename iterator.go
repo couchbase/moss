@@ -213,7 +213,7 @@ func (iter *iterator) Next() error {
 			err := iter.lowerLevelIter.Next()
 			if err == nil {
 				next.k, next.v, err = iter.lowerLevelIter.Current()
-				if err == nil {
+				if err == nil && len(iter.cursors) > 1 {
 					heap.Fix(iter, 0)
 				}
 			}
@@ -233,7 +233,7 @@ func (iter *iterator) Next() error {
 					iter.ss.a[next.ssIndex].GetOperationKeyVal(next.pos)
 				if next.op == 0 {
 					heap.Pop(iter)
-				} else {
+				} else if len(iter.cursors) > 1 {
 					heap.Fix(iter, 0)
 				}
 			}
