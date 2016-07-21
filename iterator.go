@@ -22,7 +22,7 @@ import (
 type iterator struct {
 	ss *segmentStack
 
-	cursors []*cursor // The len(cursors) <= len(ss.a).
+	cursors []*cursor // The len(cursors) <= len(ss.a) (+1 when lowerLevelIter).
 
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
@@ -68,7 +68,19 @@ func (ss *segmentStack) StartIterator(
 		iteratorOptions.MaxSegmentHeight = len(ss.a)
 	}
 
-	return ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
+	iter, err := ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(iter.cursors) == 1 &&
+		iter.cursors[0].ssIndex == -1 &&
+		iter.cursors[0].pos == -1 {
+		// Optimization to return lowerLevelIter directly if that's all we have.
+		return iter.lowerLevelIter, nil
+	}
+
+	return iter, nil
 }
 
 // startIterator() returns a new iterator on the given segmentStack.
