@@ -14,9 +14,7 @@ package moss
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"sort"
-	"unsafe"
 )
 
 // BASIC_SEGMENT_KIND is persisted.
@@ -381,13 +379,10 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 	}
 	pos := finfo.Size()
 
-	kvsSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&seg.kvs))
-
-	var kvsBuf []byte
-	kvsBufSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBuf))
-	kvsBufSliceHeader.Data = kvsSliceHeader.Data
-	kvsBufSliceHeader.Len = kvsSliceHeader.Len * 8
-	kvsBufSliceHeader.Cap = kvsSliceHeader.Cap * 8
+	kvsBuf, err := Uint64SliceToByteSlice(seg.kvs)
+	if err != nil {
+		return rv, err
+	}
 
 	kvsPos := pageAlign(pos)
 	bufPos := pageAlign(kvsPos + int64(len(kvsBuf)))

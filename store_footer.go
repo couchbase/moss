@@ -16,7 +16,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"unsafe"
 
 	"github.com/edsrzf/mmap-go"
@@ -189,12 +188,10 @@ func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, e
 
 		if sloc.KvsBytes > 0 {
 			kvsBytes := mm[sloc.KvsOffset : sloc.KvsOffset+sloc.KvsBytes]
-			kvsBytesSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBytes))
-
-			kvsSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvs))
-			kvsSliceHeader.Data = kvsBytesSliceHeader.Data
-			kvsSliceHeader.Len = kvsBytesSliceHeader.Len / 8
-			kvsSliceHeader.Cap = kvsSliceHeader.Len
+			kvs, err = ByteSliceToUint64Slice(kvsBytes)
+			if err != nil {
+				return nil, err
+			}
 
 			if sloc.BufBytes > 0 {
 				buf = mm[sloc.BufOffset : sloc.BufOffset+sloc.BufBytes]

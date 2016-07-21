@@ -15,8 +15,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"reflect"
-	"unsafe"
 )
 
 type CompactionConcern int // See StorePersistOptions.CompactionConcern.
@@ -227,13 +225,10 @@ func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
 	}
 
 	pair := []uint64{opKlVl, uint64(keyStart)}
-	pairSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&pair))
-
-	var kvsBuf []byte
-	kvsBufSliceHeader := (*reflect.SliceHeader)(unsafe.Pointer(&kvsBuf))
-	kvsBufSliceHeader.Data = pairSliceHeader.Data
-	kvsBufSliceHeader.Len = pairSliceHeader.Len * 8
-	kvsBufSliceHeader.Cap = pairSliceHeader.Cap * 8
+	kvsBuf, err := Uint64SliceToByteSlice(pair)
+	if err != nil {
+		return err
+	}
 
 	_, err = cw.kvsWriter.Write(kvsBuf)
 	if err != nil {
