@@ -255,7 +255,7 @@ func (iter *iterator) Next() error {
 			return ErrIteratorDone
 		}
 
-		if !bytes.Equal(iter.cursors[0].k, lastK) {
+		if !iteratorBytesEqual(iter.cursors[0].k, lastK) {
 			if !iter.iteratorOptions.IncludeDeletions &&
 				iter.cursors[0].op == OperationDel {
 				return iter.Next()
@@ -266,6 +266,20 @@ func (iter *iterator) Next() error {
 	}
 
 	return ErrIteratorDone
+}
+
+func iteratorBytesEqual(a, b []byte) bool {
+	i := len(a)
+	if i != len(b) {
+		return false
+	}
+	for i > 0 { // Optimization to compare right-hand-side of keys first.
+		i--
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Current returns ErrIteratorDone if the iterator is done.
