@@ -23,16 +23,25 @@ import (
 	"time"
 )
 
+const LARGE_PRIME = int64(9576890767)
+
 type benchStoreSpec struct {
 	numItems, keySize, valSize, batchSize int
+
+	randomLoad bool // When true, use repeatably random-like keys; otherwise, sequential load.
 
 	accesses []benchStoreSpecAccess
 }
 
 type benchStoreSpecAccess struct {
-	domain    int
-	ops       int
-	batchSize int
+	after      string // Run this access test after this given phase.
+	kind       string // The kind of access: "w" (writes), "r" (reads), "" (neither).
+	domainFrom int    // The domain of the test, from keys numbered domainFrom to domainTo.
+	domainTo   int
+	ops        int     // The number of ops for the access test.
+	random     bool    // Whether to use repeatably random-like keys for the ops.
+	pctGet     float32 // The pecentage of ops that should be GET's.
+	batchSize  int
 }
 
 func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100(b *testing.B) {
@@ -41,11 +50,17 @@ func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100(b *testing.B) {
 	})
 }
 
-func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_ACCESSES_domain100K_ops200K_batchSize100(b *testing.B) {
+func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_randomLoad(b *testing.B) {
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100, randomLoad: true,
+	})
+}
+
+func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_ACCESSES_afterLoad_domainTo100K_ops200K_batchSize100(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{domain: 100000, ops: 200000, batchSize: 100},
+			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 200000, batchSize: 100},
 		},
 	})
 }
@@ -68,17 +83,53 @@ func BenchmarkStore_numItems10M_keySize20_valSize100_batchSize10000(b *testing.B
 	})
 }
 
+func BenchmarkStore_numItems20M_keySize16_valSize0_batchSize10000_randomLoad(b *testing.B) { // Similar to Nitro VLDB test.
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 20000000, keySize: 16, valSize: 0, batchSize: 10000, randomLoad: true,
+		accesses: []benchStoreSpecAccess{
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+		},
+	})
+}
+
+func BenchmarkStore_numItems20M_keySize32_valSize0_batchSize10000_randomLoad(b *testing.B) { // Similar to Nitro VLDB test.
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 20000000, keySize: 32, valSize: 0, batchSize: 10000, randomLoad: true,
+		accesses: []benchStoreSpecAccess{
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+		},
+	})
+}
+
+func BenchmarkStore_numItems20M_keySize64_valSize0_batchSize10000_randomLoad(b *testing.B) { // Similar to Nitro VLDB test.
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 20000000, keySize: 64, valSize: 0, batchSize: 10000, randomLoad: true,
+		accesses: []benchStoreSpecAccess{
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+		},
+	})
+}
+
+func BenchmarkStore_numItems20M_keySize128_valSize0_batchSize10000_randomLoad(b *testing.B) { // Similar to Nitro VLDB test.
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 20000000, keySize: 128, valSize: 0, batchSize: 10000, randomLoad: true,
+		accesses: []benchStoreSpecAccess{
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+		},
+	})
+}
+
 func BenchmarkStore_numItems50M_keySize20_valSize100_batchSize10000(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 50000000, keySize: 20, valSize: 100, batchSize: 10000,
 	})
 }
 
-func BenchmarkStore_numItems50M_keySize20_valSize100_batchSize10000_ACCESSES_domain100K_ops1M_batchSize10K(b *testing.B) {
+func BenchmarkStore_numItems50M_keySize20_valSize100_batchSize10000_ACCESSES_domainTo100K_ops1M_batchSize10K(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 50000000, keySize: 20, valSize: 100, batchSize: 10000,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{domain: 100000, ops: 1000000, batchSize: 10000},
+			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 1000000, batchSize: 10000},
 		},
 	})
 }
@@ -86,6 +137,9 @@ func BenchmarkStore_numItems50M_keySize20_valSize100_batchSize10000_ACCESSES_dom
 func BenchmarkStore_numItems100M_keySize20_valSize100_batchSize10000(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 100000000, keySize: 20, valSize: 100, batchSize: 10000,
+		accesses: []benchStoreSpecAccess{
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+		},
 	})
 }
 
@@ -153,7 +207,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	var phaseRBytes int64
 	var phaseWBytes int64
 
-	phase := func(phaseName, phaseKind string, f func()) {
+	phaseDo := func(phaseName, phaseKind string, addToCumulative bool, f func()) {
 		phaseWOps = 0
 		phaseROps = 0
 
@@ -166,19 +220,21 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 		phaseMSecs := phaseEndTime.Sub(phaseBegTime).Nanoseconds() / 1000000.0
 
-		cumMSecs += phaseMSecs
-		if strings.Index(phaseKind, "w") >= 0 {
-			cumWMSecs += phaseMSecs
-		}
-		if strings.Index(phaseKind, "r") >= 0 {
-			cumRMSecs += phaseMSecs
-		}
+		if addToCumulative {
+			cumMSecs += phaseMSecs
+			if strings.Index(phaseKind, "w") >= 0 {
+				cumWMSecs += phaseMSecs
+			}
+			if strings.Index(phaseKind, "r") >= 0 {
+				cumRMSecs += phaseMSecs
+			}
 
-		cumWOps += phaseWOps
-		cumROps += phaseROps
+			cumWOps += phaseWOps
+			cumROps += phaseROps
 
-		cumWBytes += phaseWBytes
-		cumRBytes += phaseRBytes
+			cumWBytes += phaseWBytes
+			cumRBytes += phaseRBytes
+		}
 
 		var phaseWOpsPerSec int64
 		var phaseROpsPerSec int64
@@ -207,7 +263,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 			cumRKBPerSec = 1000 * cumRBytes / cumRMSecs / 1024
 		}
 
-		fmt.Printf("   %s time: %8d (ms), phase %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s, cum %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s\n",
+		fmt.Printf("   %6s time: %8d (ms), phase %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s, cum %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s\n",
 			phaseName,
 			phaseMSecs,
 			phaseWOpsPerSec,
@@ -220,9 +276,88 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 			cumRKBPerSec)
 	}
 
+	phase := func(phaseName, phaseKind string, f func()) {
+		phaseDo(phaseName, phaseKind, true, f)
+
+		for accessi, access := range spec.accesses {
+			if access.after == phaseName {
+				phaseDo("access", access.kind, false, func() {
+					fmt.Printf("   access %d: %+v\n", accessi, access)
+
+					batch, err := coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
+					if err != nil {
+						b.Fatal(err)
+					}
+
+					ss, err := coll.Snapshot()
+					if err != nil {
+						b.Fatal(err)
+					}
+
+					pos := int64(0)
+					domainSize64 := int64(access.domainTo - access.domainFrom)
+
+					for i := 0; i < access.ops; i++ {
+						clearBuf(buf)
+						binary.PutVarint(buf, pos+int64(access.domainFrom))
+
+						if access.random {
+							pos = pos + LARGE_PRIME
+						} else {
+							pos++
+						}
+						pos = pos % domainSize64
+
+						if float32(i%100)/100.0 < access.pctGet {
+							v, err := ss.Get(buf[0:spec.keySize], ReadOptions{})
+							if err != nil {
+								b.Fatal(err)
+							}
+
+							phaseROps++
+							phaseRBytes += int64(spec.keySize + len(v))
+						} else {
+							err = batch.Set(buf[0:spec.keySize], buf[0:spec.valSize])
+							if err != nil {
+								b.Fatal(err)
+							}
+
+							phaseWOps++
+							phaseWBytes += int64(spec.keySize + spec.valSize)
+
+							if i%access.batchSize == 0 {
+								err = coll.ExecuteBatch(batch, WriteOptions{})
+								if err != nil {
+									b.Fatal(err)
+								}
+
+								batch.Close()
+
+								batch, err = coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
+								if err != nil {
+									b.Fatal(err)
+								}
+
+								ss.Close()
+
+								ss, err = coll.Snapshot()
+								if err != nil {
+									b.Fatal(err)
+								}
+							}
+						}
+					}
+
+					batch.Close()
+					ss.Close()
+				})
+			}
+		}
+	}
+
 	// ------------------------------------------------
 
-	phase("  open", "", func() {
+	phase("open", "", func() {
 		store, coll, err = OpenStoreCollection(tmpDir, so, spo)
 		if err != nil {
 			b.Fatal(err)
@@ -231,14 +366,24 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	phase("  load", "w", func() {
+	phase("load", "w", func() {
 		batch, err := coll.NewBatch(spec.batchSize, spec.batchSize*(spec.keySize+spec.valSize))
 		if err != nil {
 			b.Fatal(err)
 		}
 
+		pos := int64(0)
+		numItems64 := int64(spec.numItems)
+
 		for i := 0; i < spec.numItems; i++ {
-			binary.PutVarint(buf, int64(i))
+			clearBuf(buf)
+			binary.PutVarint(buf, pos)
+
+			if spec.randomLoad {
+				pos = (pos + LARGE_PRIME) % numItems64
+			} else {
+				pos++
+			}
 
 			err = batch.Set(buf[0:spec.keySize], buf[0:spec.valSize])
 			if err != nil {
@@ -266,50 +411,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	for _, access := range spec.accesses {
-		phase("access", "w", func() {
-			batch, err := coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
-			if err != nil {
-				b.Fatal(err)
-			}
-
-			for i, k := 0, 0; i < access.ops; i++ {
-				if k > access.domain {
-					k = 0
-				}
-
-				binary.PutVarint(buf, int64(k))
-
-				err = batch.Set(buf[0:spec.keySize], buf[0:spec.valSize])
-				if err != nil {
-					b.Fatal(err)
-				}
-
-				phaseWOps++
-				phaseWBytes += int64(spec.keySize + spec.valSize)
-
-				if i%access.batchSize == 0 {
-					err = coll.ExecuteBatch(batch, WriteOptions{})
-					if err != nil {
-						b.Fatal(err)
-					}
-
-					batch.Close()
-
-					batch, err = coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
-					if err != nil {
-						b.Fatal(err)
-					}
-				}
-
-				k++
-			}
-		})
-	}
-
-	// ------------------------------------------------
-
-	phase(" drain", "w", func() {
+	phase("drain", "w", func() {
 		for {
 			stats, err := coll.Stats()
 			if err != nil {
@@ -339,7 +441,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	phase(" close", "", func() {
+	phase("close", "", func() {
 		coll.Close()
 		store.Close()
 	})
@@ -355,7 +457,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	phase("  iter", "r", func() {
+	phase("iter", "r", func() {
 		ss, err := coll.Snapshot()
 		if err != nil {
 			b.Fatal(err)
@@ -397,7 +499,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	phase(" close", "", func() {
+	phase("close", "", func() {
 		coll.Close()
 		store.Close()
 	})
@@ -420,4 +522,10 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	fmt.Printf("  file size: %d (mb), amplification: %.3f\n",
 		fileInfo.Size()/1000000.0,
 		float64(fileInfo.Size())/float64(int64(spec.numItems)*int64((spec.keySize+spec.valSize))))
+}
+
+func clearBuf(buf []byte) {
+	for i := 0; i < len(buf); i++ {
+		buf[i] = 0
+	}
 }
