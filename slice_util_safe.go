@@ -40,3 +40,9 @@ func ByteSliceToUint64Slice(in []byte) ([]uint64, error) {
 	}
 	return out, nil
 }
+
+// --------------------------------------------------------------
+
+func endian() string {
+	return "unknown" // Need unsafe package to tell endian'ess.
+}
