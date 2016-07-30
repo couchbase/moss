@@ -114,8 +114,8 @@ type Header struct {
 type Footer struct {
 	SegmentLocs []SegmentLoc // Older SegmentLoc's come first.
 
-	fref *FileRef     `json:"-"`
-	ss   segmentStack `json:"-"`
+	fref *FileRef
+	ss   segmentStack
 }
 
 // SegmentLoc represents a persisted segment.

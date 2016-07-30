@@ -543,7 +543,7 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 		t.Errorf("expected larger seq")
 	}
 	if seq != int64(numBatches) {
-		t.Errorf("expected seq: %s to equal numBatches: %s", seq, numBatches)
+		t.Errorf("expected seq: %d to equal numBatches: %d", seq, numBatches)
 	}
 
 	// --------------------
