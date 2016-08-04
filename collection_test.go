@@ -40,14 +40,22 @@ func TestNewCollection(t *testing.T) {
 func TestNewCollectionCloseEvents(t *testing.T) {
 	events := map[EventKind]int{}
 	durations := map[EventKind]time.Duration{}
-	m, err := NewCollection(CollectionOptions{
+
+	co := CollectionOptions{
 		OnEvent: func(e Event) {
 			events[e.Kind]++
 			durations[e.Kind] += e.Duration
 		},
-	})
+	}
+
+	m, err := NewCollection(co)
 	if err != nil || m == nil {
 		t.Errorf("expected moss")
+	}
+
+	co2 := m.Options()
+	if co2.OnEvent == nil {
+		t.Errorf("expected non-nil on-event")
 	}
 
 	err = m.Start()
