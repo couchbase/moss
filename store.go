@@ -541,7 +541,17 @@ func OpenStoreCollection(dir string,
 	co := options.CollectionOptions
 	co.LowerLevelInit = storeSnapshotInit
 	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
-		return store.Persist(higher, persistOptions)
+		ss, err := store.Persist(higher, persistOptions)
+		if err != nil {
+			return nil, err
+		}
+
+		if storeSnapshotInit != nil {
+			storeSnapshotInit.Close()
+			storeSnapshotInit = nil
+		}
+
+		return ss, err
 	}
 
 	coll, err := NewCollection(co)
