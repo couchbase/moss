@@ -58,7 +58,7 @@ func (s *Store) persistFooter(file File, footer *Footer) error {
 
 // --------------------------------------------------------
 
-// ReadFooter reads the Footer from a file.
+// ReadFooter reads the last valid Footer from a file.
 func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 	finfo, err := file.Stat()
 	if err != nil {
@@ -128,7 +128,7 @@ func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
 				}
 				if version != STORE_VERSION {
 					return nil, fmt.Errorf("store: version mismatch, "+
-						"current version: %v != found version: %v", STORE_VERSION, version)
+						"current: %v != found: %v", STORE_VERSION, version)
 				}
 
 				var length0 uint32
@@ -137,15 +137,22 @@ func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
 				}
 				if length0 != length {
 					return nil, fmt.Errorf("store: length mismatch, "+
-						"wanted length: %v != found length: %v", length0, length)
+						"wanted: %v != found: %v", length0, length)
 				}
 
-				m := &Footer{fref: &FileRef{file: file, refs: 1}}
-				if err := json.Unmarshal(data[2*lenMagicBeg+4+4:], m); err != nil {
+				f := &Footer{refs: 1}
+
+				err = json.Unmarshal(data[2*lenMagicBeg+4+4:], f)
+				if err != nil {
 					return nil, err
 				}
 
-				return loadFooterSegments(options, m, file)
+				err = f.loadSegments(options, &FileRef{file: file, refs: 1})
+				if err != nil {
+					return nil, err
+				}
+
+				return f, nil
 			} // Else, perhaps file was unlucky in having STORE_MAGIC_END's.
 		} // Else, perhaps a persist file was stored in a file.
 
@@ -155,78 +162,182 @@ func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
 
 // --------------------------------------------------------
 
-// loadFooterSegments mmap()'s the segments that the footer points at.
-func loadFooterSegments(options *StoreOptions, f *Footer, file File) (*Footer, error) {
-	if f.ss.a != nil {
-		return f, nil
+// loadSegments() loads the segments of a footer, if not already
+// loaded.  The FileRef will be owned by the footer on success.
+func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) error {
+	if f.ss != nil && f.ss.a != nil {
+		return nil
 	}
 
-	osFile := ToOsFile(file)
+	osFile := ToOsFile(fref.file)
 	if osFile == nil {
-		return nil, fmt.Errorf("store: loadFooterSegments convert to os.File error")
+		return fmt.Errorf("store: loadFooterSegments convert to os.File error")
 	}
 
 	mm, err := mmap.Map(osFile, mmap.RDONLY, 0)
 	if err != nil {
-		return nil, fmt.Errorf("store: loadFooterSegments mmap.Map(), err: %v", err)
+		return fmt.Errorf("store: loadFooterSegments mmap.Map(), err: %v", err)
 	}
 
-	f.fref.OnBeforeClose(func() { mm.Unmap() })
+	mref := &mmapRef{fref: fref, mm: mm, refs: 1}
 
-	f.ss.a = make([]Segment, len(f.SegmentLocs))
+	err = f.loadSegmentsFromMRef(&options.CollectionOptions, mref)
+	if err != nil {
+		mm.Unmap()
+
+		return err
+	}
+
+	return nil
+}
+
+// loadSegmentsFromMRef() loads footer's segments via the provided
+// mmapRef.  The mmapRef will be owned by the footer on success.
+func (f *Footer) loadSegmentsFromMRef(options *CollectionOptions,
+	mref *mmapRef) (err error) {
+	a := make([]Segment, len(f.SegmentLocs))
+
 	for i := range f.SegmentLocs {
 		sloc := &f.SegmentLocs[i]
 
 		segmentLoader, exists := SegmentLoaders[sloc.Kind]
 		if !exists || segmentLoader == nil {
-			return nil, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
+			return fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
 		}
 
 		var kvs []uint64
 		var buf []byte
 
 		if sloc.KvsBytes > 0 {
-			kvsBytes := mm[sloc.KvsOffset : sloc.KvsOffset+sloc.KvsBytes]
+			kvsBytes := mref.mm[sloc.KvsOffset : sloc.KvsOffset+sloc.KvsBytes]
 			kvs, err = ByteSliceToUint64Slice(kvsBytes)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if sloc.BufBytes > 0 {
-				buf = mm[sloc.BufOffset : sloc.BufOffset+sloc.BufBytes]
+				buf = mref.mm[sloc.BufOffset : sloc.BufOffset+sloc.BufBytes]
 			}
 		}
 
 		seg, err := segmentLoader(sloc, kvs, buf)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		f.ss.a[i] = seg
+		a[i] = seg
 	}
-	f.ss.refs = 1
-	f.ss.options = &options.CollectionOptions
 
-	return f, nil
+	f.ss = &segmentStack{options: options, a: a, refs: 1}
+
+	f.mref = mref
+
+	return nil
 }
+
+// --------------------------------------------------------
 
 func (f *Footer) Close() error {
-	return f.fref.DecRef()
+	f.DecRef()
+	return nil
 }
 
-// Get retrieves a val from the Snapshot, and will return nil val
-// if the entry does not exist in the Snapshot.
+func (f *Footer) AddRef() {
+	f.m.Lock()
+	f.refs++
+	f.m.Unlock()
+}
+
+func (f *Footer) DecRef() {
+	f.m.Lock()
+	f.refs--
+	if f.refs <= 0 {
+		f.mref.DecRef()
+		f.mref = nil
+		f.ss = nil
+	}
+	f.m.Unlock()
+}
+
+// --------------------------------------------------------
+
+// mrefSegmentStack() returns the current mmapRef and segmentStack for
+// a footer.  The caller must DecRef() the returned mmapRef.
+func (f *Footer) mrefSegmentStack() (*mmapRef, *segmentStack) {
+	f.m.Lock()
+
+	mref := f.mref.AddRef()
+	ss := f.ss
+
+	f.m.Unlock()
+
+	return mref, ss
+}
+
+// mrefRefresh provides a newer, latest mmapRef to the chain of
+// footers.  This allows older footers (perhaps still being used by
+// slow readers) to drop their old mmap's and switch to the latest
+// mmap's, which should reduce the number of mmap's in concurrent use.
+//
+// Also, mrefRefresh will clip the chain of footers when there are no
+// references to older footers.
+func (f *Footer) mrefRefresh(mrefNew *mmapRef) int {
+	if f == nil {
+		return 0
+	}
+
+	f.m.Lock()
+
+	refs := f.refs
+	if refs > 0 {
+		mrefOld := f.mref
+		if mrefOld != nil {
+			err := f.loadSegmentsFromMRef(f.ss.options, mrefNew)
+			if err == nil {
+				mrefNew.AddRef()
+				mrefOld.DecRef()
+			}
+		}
+	}
+
+	prevFooter := f.prevFooter
+
+	f.m.Unlock()
+
+	prevRefs := prevFooter.mrefRefresh(mrefNew)
+	if prevRefs <= 0 {
+		f.m.Lock()
+		f.prevFooter = nil // Clip the chain of footers.
+		f.m.Unlock()
+	}
+
+	// Handle the case when there are runs of old footers with zero
+	// refs, but there are even older footers with non-zero refs.
+	if refs < prevRefs {
+		refs = prevRefs
+	}
+
+	return refs
+}
+
+// --------------------------------------------------------
+
+// Get retrieves a val from the footer, and will return nil val
+// if the entry does not exist in the footer.
 func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
-	f.fref.AddRef()
-	rv, err := f.ss.Get(key, readOptions)
+	mref, ss := f.mrefSegmentStack()
+
+	rv, err := ss.Get(key, readOptions)
 	if err == nil && rv != nil {
 		rv = append(make([]byte, 0, len(rv)), rv...) // Copy.
 	}
-	f.fref.DecRef()
+
+	mref.DecRef()
+
 	return rv, err
 }
 
-// StartIterator returns a new Iterator instance on this Snapshot.
+// StartIterator returns a new Iterator instance on this footer.
 //
 // On success, the returned Iterator will be positioned so that
 // Iterator.Current() will either provide the first entry in the
@@ -236,11 +347,13 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 // and an endKeyExcl of nil means the logical "top-most" possible key.
 func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
-	f.fref.AddRef()
-	iter, err := f.ss.StartIterator(startKeyIncl, endKeyExcl, iteratorOptions)
+	mref, ss := f.mrefSegmentStack()
+
+	iter, err := ss.StartIterator(startKeyIncl, endKeyExcl, iteratorOptions)
 	if err != nil {
-		f.fref.DecRef()
+		mref.DecRef()
 		return nil, err
 	}
-	return &iteratorWrapper{iter: iter, closer: f.fref}, nil
+
+	return &iteratorWrapper{iter: iter, closer: mref}, nil
 }

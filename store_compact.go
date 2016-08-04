@@ -42,15 +42,20 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	if err != nil {
 		return false, err
 	}
-	defer footer.Close()
+
+	defer footer.DecRef()
+
+	mref, ss := footer.mrefSegmentStack()
+
+	defer mref.DecRef()
 
 	if compactionConcern == CompactionAllow {
-		if len(footer.ss.a) >= 2 {
+		if ss != nil && len(ss.a) >= 2 {
 			totUpperLen := 0
-			for i := 1; i < len(footer.ss.a)-1; i++ {
-				totUpperLen += footer.ss.a[i].Len()
+			for i := 1; i < len(ss.a)-1; i++ {
+				totUpperLen += ss.a[i].Len()
 			}
-			pct := float64(totUpperLen) / float64(footer.ss.a[0].Len())
+			pct := float64(totUpperLen) / float64(ss.a[0].Len())
 			if pct >= s.options.CompactionPercentage {
 				compactionConcern = CompactionForce
 			}
@@ -66,10 +71,10 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		return false, err
 	}
 
-	if footer.fref != nil {
-		finfo, err := footer.fref.file.Stat()
+	if mref != nil && mref.fref != nil {
+		finfo, err := mref.fref.file.Stat()
 		if err == nil && len(finfo.Name()) > 0 {
-			footer.fref.OnAfterClose(func() {
+			mref.fref.OnAfterClose(func() {
 				os.Remove(path.Join(s.dir, finfo.Name()))
 			})
 		}
@@ -79,7 +84,10 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 }
 
 func (s *Store) compact(footer *Footer, higher Snapshot) error {
-	ss := &footer.ss
+	mref, ss := footer.mrefSegmentStack()
+
+	defer mref.DecRef()
+
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)
 		if !ok {
@@ -87,11 +95,13 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 		}
 		ssHigher.ensureSorted(0, len(ssHigher.a)-1)
 
+		ssOrig := ss
+
 		ss = &segmentStack{
-			options: ss.options,
-			a:       make([]Segment, 0, len(footer.ss.a)+len(ssHigher.a)),
+			options: ssOrig.options,
+			a:       make([]Segment, 0, len(ssOrig.a)+len(ssHigher.a)),
 		}
-		ss.a = append(ss.a, footer.ss.a...)
+		ss.a = append(ss.a, ssOrig.a...)
 		ss.a = append(ss.a, ssHigher.a...)
 	}
 
@@ -147,6 +157,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 	}
 
 	compactFooter := &Footer{
+		refs: 1,
 		SegmentLocs: []SegmentLoc{
 			SegmentLoc{
 				Kind:       BASIC_SEGMENT_KIND,
@@ -160,7 +171,6 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 				TotValByte: compactWriter.totValByte,
 			},
 		},
-		fref: frefCompact,
 	}
 
 	if err = s.persistFooter(fileCompact, compactFooter); err != nil {
@@ -184,7 +194,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 	s.m.Unlock()
 
 	if footerPrev != nil {
-		footerPrev.fref.DecRef()
+		footerPrev.DecRef()
 	}
 
 	return nil

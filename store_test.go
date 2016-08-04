@@ -568,7 +568,7 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 	if store2.footer == nil {
 		t.Errorf("expected nextFNameseq to be seq+1")
 	}
-	if store2.footer.fref.refs != 1 {
+	if store2.footer.mref.refs != 1 {
 		t.Errorf("expected store2.footer.fref.refs == 1")
 	}
 	if len(store2.footer.SegmentLocs) != 1 {

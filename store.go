@@ -114,8 +114,12 @@ type Header struct {
 type Footer struct {
 	SegmentLocs []SegmentLoc // Older SegmentLoc's come first.
 
-	fref *FileRef
-	ss   segmentStack
+	m    sync.Mutex // Protects the fields that follow.
+	refs int
+	mref *mmapRef
+	ss   *segmentStack
+
+	prevFooter *Footer // For tracking a chain of footer records.
 }
 
 // SegmentLoc represents a persisted segment.
@@ -182,8 +186,12 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 	}
 
 	if len(fnames) <= 0 {
-		emptyFooter := &Footer{}
-		emptyFooter.ss.options = &options.CollectionOptions
+		emptyFooter := &Footer{
+			refs: 1,
+			ss: &segmentStack{
+				options: &options.CollectionOptions,
+			},
+		}
 
 		return &Store{
 			dir:          dir,
@@ -207,7 +215,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 			return nil, err
 		}
 
-		footer, err := ReadFooter(&options, file) // The footer owns the file on success.
+		footer, err := ReadFooter(&options, file) // Footer owns file on success.
 		if err != nil {
 			file.Close()
 			continue
@@ -241,7 +249,7 @@ func (s *Store) snapshot() (*Footer, error) {
 	s.m.Lock()
 	footer := s.footer
 	if footer != nil {
-		footer.fref.AddRef()
+		footer.AddRef()
 	}
 	s.m.Unlock()
 	return footer, nil
@@ -284,20 +292,15 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return s.Snapshot()
 	}
 
-	// If we weren't compacted, perform a normal persist operation.
+	// If no dirty higher items, we're still clean, so just snapshot.
 	if higher == nil {
 		return s.Snapshot()
 	}
+
 	ss, ok := higher.(*segmentStack)
 	if !ok {
 		return nil, fmt.Errorf("store: can only persist segmentStack")
 	}
-	return s.persistSegmentStack(ss)
-}
-
-func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
-	ss.addRef()
-	defer ss.decRef()
 
 	fref, file, err := s.startOrReuseFile()
 	if err != nil {
@@ -330,27 +333,38 @@ func (s *Store) persistSegmentStack(ss *segmentStack) (Snapshot, error) {
 		segmentLocs = append(segmentLocs, segmentLoc)
 	}
 
-	footer, err := loadFooterSegments(s.options,
-		&Footer{SegmentLocs: segmentLocs, fref: fref}, file)
+	footer := &Footer{refs: 1, SegmentLocs: segmentLocs}
+
+	err = footer.loadSegments(s.options, fref)
 	if err != nil {
 		fref.DecRef()
 		return nil, err
 	}
 
-	if err = s.persistFooter(file, footer); err != nil {
-		fref.DecRef()
+	err = s.persistFooter(file, footer)
+	if err != nil {
+		footer.DecRef()
 		return nil, err
 	}
 
+	mref, _ := footer.mrefSegmentStack()
+
+	footer.AddRef() // One ref-count will be held by the store.
+
 	s.m.Lock()
-	footerPrev := s.footer
+	footer.prevFooter = s.footer
+	prevFooter := s.footer
 	s.footer = footer
-	s.footer.fref.AddRef() // One ref-count held by store.
 	s.m.Unlock()
 
-	if footerPrev != nil {
-		footerPrev.fref.DecRef()
+	if prevFooter != nil {
+		prevFooter.DecRef()
+
+		// Inform the previous footers of the latest mmap handle.
+		prevFooter.mrefRefresh(mref)
 	}
+
+	mref.DecRef()
 
 	return footer, nil // The other ref-count returned to caller.
 }
@@ -363,8 +377,16 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if s.footer != nil && s.footer.fref != nil {
-		return s.footer.fref, s.footer.fref.AddRef(), nil
+	if s.footer != nil {
+		mref, _ := s.footer.mrefSegmentStack()
+		if mref != nil {
+			fref := mref.fref
+			file := fref.AddRef()
+
+			mref.DecRef()
+
+			return fref, file, nil
+		}
 	}
 
 	return s.startFileLOCKED()
