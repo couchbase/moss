@@ -197,3 +197,197 @@ func TestMMapRef(t *testing.T) {
 
 	mrefsCheck(0)
 }
+
+func TestRefCounting(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	counts := map[EventKind]int{}
+	eventWaiters := map[EventKind]chan bool{}
+
+	co := CollectionOptions{
+		OnEvent: func(event Event) {
+			mu.Lock()
+			counts[event.Kind]++
+			eventWaiter := eventWaiters[event.Kind]
+			mu.Unlock()
+			if eventWaiter != nil {
+				eventWaiter <- true
+			}
+		},
+	}
+
+	store, m, err := OpenStoreCollection(tmpDir, StoreOptions{
+		CollectionOptions:    co,
+		CompactionPercentage: 10000.0,
+	}, StorePersistOptions{
+		CompactionConcern: CompactionAllow,
+	})
+	if err != nil || m == nil || store == nil {
+		t.Errorf("expected open empty store collection to work")
+	}
+
+	checkRefs := func(f *Footer, frefs, mrefs int, cb func(), msg string) {
+		f.m.Lock()
+
+		if f.refs != frefs {
+			t.Errorf("%s - expected footer.refs to be %d, got: %d",
+				msg, frefs, f.refs)
+		}
+
+		if f.mref != nil {
+			f.mref.m.Lock()
+
+			if f.mref.refs != mrefs {
+				t.Errorf("%s - expected mrefs to be %d, got: %d",
+					msg, mrefs, f.mref.refs)
+			}
+
+			if cb != nil {
+				cb()
+			}
+
+			f.mref.m.Unlock()
+		} else if mrefs > 0 {
+			t.Errorf("%s - expected footer.mref to be %d, but nil mref",
+				msg, mrefs)
+		}
+
+		f.m.Unlock()
+	}
+
+	store.m.Lock()
+	checkRefs(store.footer, 2, 0, nil, "new, empty store")
+	store.m.Unlock()
+
+	writeHello := func() {
+		b, _ := m.NewBatch(0, 0)
+		b.Set([]byte("hello"), []byte("world"))
+		err = m.ExecuteBatch(b, WriteOptions{})
+		if err != nil {
+			t.Errorf("expected exec batch to work")
+		}
+		b.Close()
+	}
+
+	writeHello()
+
+	waitUntilClean := func() error {
+		for {
+			stats, err := m.Stats()
+			if err != nil {
+				return err
+			}
+
+			if stats.CurDirtyOps <= 0 &&
+				stats.CurDirtyBytes <= 0 &&
+				stats.CurDirtySegments <= 0 {
+				break
+			}
+
+			time.Sleep(time.Millisecond)
+		}
+
+		return nil
+	}
+
+	waitUntilClean()
+
+	store.m.Lock()
+	checkRefs(store.footer, 2, 1, nil, "after 1st batch persisted")
+	store.m.Unlock()
+
+	ss0, err := store.Snapshot()
+	if err != nil {
+		t.Errorf("expected no err on snapshot")
+	}
+
+	f0, ok := ss0.(*Footer)
+	if !ok {
+		t.Errorf("expected Footer")
+	}
+
+	store.m.Lock()
+	checkRefs(store.footer, 3, 1, nil, "after 1st batch persisted")
+	store.m.Unlock()
+
+	for i := 0; i < 10; i++ {
+		writeHello()
+		waitUntilClean()
+	}
+
+	store.m.Lock()
+
+	if f0 == store.footer {
+		t.Errorf("expected curr footer to be different than f0")
+	}
+
+	checkRefs(store.footer, 2, 2, nil, "after nth batch persisted")
+
+	fx := store.footer
+	for fx.prevFooter != nil {
+		fx = fx.prevFooter
+	}
+	if fx != f0 {
+		t.Errorf("expected fx to be same as oldest snapshot/footer")
+	}
+
+	store.m.Unlock()
+
+	var mref *mmapRef
+
+	checkRefs(f0, 1, 2, func() {
+		mref = f0.mref
+		if f0.prevFooter != nil {
+			t.Errorf("expected oldest footer to have nil prevFooter")
+		}
+	}, "oldest footer check")
+
+	// ----------------------------------------
+
+	ss0.Close() // Close the first, oldest snapshot.
+
+	store.m.Lock()
+	checkRefs(store.footer, 2, 1, nil, "after oldest snapshot closed")
+	store.m.Unlock()
+
+	checkRefs(f0, 0, 0, nil, "oldest footer after ss0.Close()")
+
+	mref.m.Lock()
+	if mref.refs != 1 {
+		t.Errorf("expected 1")
+	}
+	mref.m.Unlock()
+
+	// ----------------------------------------
+
+	m.Close()
+
+	var fLast *Footer
+
+	store.m.Lock()
+	fLast = store.footer
+	checkRefs(store.footer, 1, 1, nil, "after collection Close()'ed")
+	store.m.Unlock()
+
+	mref.m.Lock()
+	if mref.refs != 1 {
+		t.Errorf("expected 1")
+	}
+	mref.m.Unlock()
+
+	// ----------------------------------------
+
+	store.Close()
+
+	mref.m.Lock()
+	if mref.refs != 0 {
+		t.Errorf("expected 0 mref.refs after everything closed")
+	}
+	mref.m.Unlock()
+
+	checkRefs(fLast, 0, 0, nil, "last footer after store.Close()")
+
+	checkRefs(f0, 0, 0, nil, "oldest footer after store.Close()")
+}
