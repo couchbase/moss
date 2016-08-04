@@ -534,36 +534,27 @@ func OpenStoreCollection(dir string,
 
 	storeSnapshotInit, err := store.Snapshot()
 	if err != nil {
+		store.Close()
 		return nil, nil, err
 	}
-	storeSnapshotInitWrapper := NewSnapshotWrapper(storeSnapshotInit, store)
 
 	co := options.CollectionOptions
-	co.LowerLevelInit = storeSnapshotInitWrapper
+	co.LowerLevelInit = storeSnapshotInit
 	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
-		ss, err := store.Persist(higher, persistOptions)
-		if err != nil {
-			return nil, err
-		}
-
-		store.AddRef() // Ref-count to be owned by new snapshot wrapper.
-
-		return NewSnapshotWrapper(ss, store), nil
+		return store.Persist(higher, persistOptions)
 	}
 
 	coll, err := NewCollection(co)
 	if err != nil {
-		storeSnapshotInitWrapper.Close()
+		storeSnapshotInit.Close()
 		return nil, nil, err
 	}
 
 	err = coll.Start()
 	if err != nil {
-		storeSnapshotInitWrapper.Close()
+		storeSnapshotInit.Close()
 		return nil, nil, err
 	}
-
-	store.AddRef() // Ref-count owned by caller.
 
 	return store, coll, nil
 }

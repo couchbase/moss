@@ -12,9 +12,12 @@
 package moss
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/edsrzf/mmap-go"
 )
@@ -64,4 +67,133 @@ func TestMultipleMMapsOnSameFile(t *testing.T) {
 	}
 
 	f.Close()
+}
+
+func TestMMapRef(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	counts := map[EventKind]int{}
+	eventWaiters := map[EventKind]chan bool{}
+
+	co := CollectionOptions{
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+		OnEvent: func(event Event) {
+			mu.Lock()
+			counts[event.Kind]++
+			eventWaiter := eventWaiters[event.Kind]
+			mu.Unlock()
+			if eventWaiter != nil {
+				eventWaiter <- true
+			}
+		},
+	}
+
+	store, m, err := OpenStoreCollection(tmpDir, StoreOptions{
+		CollectionOptions: co,
+	}, StorePersistOptions{})
+	if err != nil || m == nil || store == nil {
+		t.Errorf("expected open empty store collection to work")
+	}
+
+	b, _ := m.NewBatch(0, 0)
+	for i := 0; i < 1000; i++ {
+		xs := fmt.Sprintf("%d", i)
+		x := []byte(xs)
+		b.Set(x, x)
+	}
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected exec batch to work")
+	}
+	b.Close()
+
+	waitUntilClean := func() error {
+		for {
+			stats, err := m.Stats()
+			if err != nil {
+				return err
+			}
+
+			if stats.CurDirtyOps <= 0 &&
+				stats.CurDirtyBytes <= 0 &&
+				stats.CurDirtySegments <= 0 {
+				break
+			}
+
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		return nil
+	}
+
+	waitUntilClean()
+
+	store.m.Lock()
+
+	if store.refs != 1 {
+		t.Errorf("expected 1 store ref, got: %d", store.refs)
+	}
+
+	footer := store.footer
+	if footer == nil {
+		t.Errorf("expected footer")
+	}
+
+	footer.m.Lock()
+	if footer.refs != 2 {
+		t.Errorf("expected 2 footer ref, : got: %d", footer.refs)
+	}
+
+	mref := footer.mref
+	if mref == nil {
+		t.Errorf("expected mref")
+	}
+
+	mrefsCheck := func(expected int) {
+		mref.m.Lock()
+		if mref.refs != expected {
+			t.Errorf("expected mref.refs to be %d, got: %d", expected, mref.refs)
+		}
+		mref.m.Unlock()
+	}
+
+	mrefsCheck(1)
+
+	rv := mref.AddRef()
+
+	mrefsCheck(2)
+
+	if rv != mref {
+		t.Errorf("expected rv == mref")
+	}
+
+	if mref.DecRef() != nil {
+		t.Errorf("expected mref.DecRef to be nil")
+	}
+
+	mrefsCheck(1)
+
+	footer.m.Unlock()
+
+	store.m.Unlock()
+
+	m.Close()
+
+	store.Close()
+
+	footer.m.Lock()
+	if footer.refs != 0 {
+		t.Errorf("expected footer refs to be 0, got: %d", footer.refs)
+	}
+	footer.m.Unlock()
+
+	store.m.Lock()
+	if store.refs != 0 {
+		t.Errorf("expected store refs to be 0, got: %d", footer.refs)
+	}
+	store.m.Unlock()
+
+	mrefsCheck(0)
 }
