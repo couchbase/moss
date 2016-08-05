@@ -361,7 +361,7 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 		prevFooter.DecRef()
 
 		// Inform the previous footers of the latest mmap handle.
-		prevFooter.mrefRefresh(mref)
+		footer.mrefRefreshPrevFooter(prevFooter, mref)
 	}
 
 	mref.DecRef()

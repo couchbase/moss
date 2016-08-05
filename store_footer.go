@@ -279,11 +279,11 @@ func (f *Footer) mrefSegmentStack() (*mmapRef, *segmentStack) {
 // slow readers) to drop their old mmap's and switch to the latest
 // mmap's, which should reduce the number of mmap's in concurrent use.
 //
-// Also, mrefRefresh will clip the chain of footers when there are no
-// references to older footers.
-func (f *Footer) mrefRefresh(mrefNew *mmapRef) int {
+// Also, mrefRefresh will splice out old footers from the chain that
+// have no more references.
+func (f *Footer) mrefRefresh(mrefNew *mmapRef) *Footer {
 	if f == nil {
-		return 0
+		return nil
 	}
 
 	f.m.Lock()
@@ -304,20 +304,24 @@ func (f *Footer) mrefRefresh(mrefNew *mmapRef) int {
 
 	f.m.Unlock()
 
-	prevRefs := prevFooter.mrefRefresh(mrefNew)
-	if prevRefs <= 0 {
+	prevFooterRefreshed := f.mrefRefreshPrevFooter(prevFooter, mrefNew)
+	if refs <= 0 {
+		return prevFooterRefreshed
+	}
+
+	return f
+}
+
+func (f *Footer) mrefRefreshPrevFooter(prevFooter *Footer,
+	mrefNew *mmapRef) *Footer {
+	prevFooterRefreshed := prevFooter.mrefRefresh(mrefNew)
+	if prevFooterRefreshed != prevFooter {
 		f.m.Lock()
-		f.prevFooter = nil // Clip the chain of footers.
+		f.prevFooter = prevFooterRefreshed // Splice the chain.
 		f.m.Unlock()
 	}
 
-	// Handle the case when there are runs of old footers with zero
-	// refs, but there are even older footers with non-zero refs.
-	if refs < prevRefs {
-		refs = prevRefs
-	}
-
-	return refs
+	return prevFooterRefreshed
 }
 
 // --------------------------------------------------------

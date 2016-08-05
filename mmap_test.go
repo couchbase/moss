@@ -228,6 +228,8 @@ func TestRefCounting(t *testing.T) {
 		t.Errorf("expected open empty store collection to work")
 	}
 
+	// ---------------------------------------------
+
 	checkRefs := func(f *Footer, frefs, mrefs int, cb func(), msg string) {
 		f.m.Lock()
 
@@ -257,10 +259,6 @@ func TestRefCounting(t *testing.T) {
 		f.m.Unlock()
 	}
 
-	store.m.Lock()
-	checkRefs(store.footer, 2, 0, nil, "new, empty store")
-	store.m.Unlock()
-
 	writeHello := func() {
 		b, _ := m.NewBatch(0, 0)
 		b.Set([]byte("hello"), []byte("world"))
@@ -270,8 +268,6 @@ func TestRefCounting(t *testing.T) {
 		}
 		b.Close()
 	}
-
-	writeHello()
 
 	waitUntilClean := func() error {
 		for {
@@ -292,11 +288,55 @@ func TestRefCounting(t *testing.T) {
 		return nil
 	}
 
-	waitUntilClean()
+	countFooters := func() (*Footer, int) {
+		fx := store.footer
+		fxNum := 1
+		for fx.prevFooter != nil {
+			fx = fx.prevFooter
+			fxNum++
+		}
+		return fx, fxNum
+	}
+
+	// ---------------------------------------------
 
 	store.m.Lock()
-	checkRefs(store.footer, 2, 1, nil, "after 1st batch persisted")
+
+	checkRefs(store.footer, 2, 0, nil, "new, empty store")
+
+	_, numFooters := countFooters()
+	if numFooters != 1 {
+		t.Errorf("expected only 1 footer before 1st batch, got: %d",
+			numFooters)
+	}
+
 	store.m.Unlock()
+
+	// ---------------------------------------------
+
+	writeHello()
+
+	waitUntilClean()
+
+	// ---------------------------------------------
+
+	store.m.Lock()
+
+	checkRefs(store.footer, 2, 1, nil, "after 1st batch persisted")
+
+	_, numFooters = countFooters()
+	if numFooters != 2 {
+		// Two footers expected because the oldest, "empty" footer is
+		// still in the chain at this point, since the mrefRefresh() /
+		// splicing runs before the DecRef of the
+		// initial-lower-level-snapshot.
+		t.Errorf("expected 2 footers after 1st batch, got: %d",
+			numFooters)
+	}
+
+	store.m.Unlock()
+
+	// ---------------------------------------------
 
 	ss0, err := store.Snapshot()
 	if err != nil {
@@ -309,7 +349,19 @@ func TestRefCounting(t *testing.T) {
 	}
 
 	store.m.Lock()
+
 	checkRefs(store.footer, 3, 1, nil, "after 1st batch persisted")
+
+	oldestFooter, numFooters := countFooters()
+	if numFooters != 2 {
+		t.Errorf("expected only 2 footers after 1st ss")
+	}
+	if oldestFooter == f0 {
+		// Expecting oldest footer to be the original "empty"
+		// footer right now.
+		t.Errorf("expected oldest footer to not be f0")
+	}
+
 	store.m.Unlock()
 
 	for i := 0; i < 10; i++ {
@@ -325,12 +377,13 @@ func TestRefCounting(t *testing.T) {
 
 	checkRefs(store.footer, 2, 2, nil, "after nth batch persisted")
 
-	fx := store.footer
-	for fx.prevFooter != nil {
-		fx = fx.prevFooter
-	}
-	if fx != f0 {
+	oldestFooter, numFooters = countFooters()
+	if oldestFooter != f0 {
 		t.Errorf("expected fx to be same as oldest snapshot/footer")
+	}
+	if numFooters != 3 {
+		t.Errorf("expected only 3 footers in chain after many batches,"+
+			" got: %d", numFooters)
 	}
 
 	store.m.Unlock()
@@ -349,7 +402,17 @@ func TestRefCounting(t *testing.T) {
 	ss0.Close() // Close the first, oldest snapshot.
 
 	store.m.Lock()
+
 	checkRefs(store.footer, 2, 1, nil, "after oldest snapshot closed")
+
+	_, numFooters = countFooters()
+	if numFooters != 3 {
+		// The reason why is a persistence cycle hasn't run yet
+		// that can cleanup the footer chain of unused footers.
+		t.Errorf("expected 3 footers still in chain after ss0 closed,"+
+			" got %d", numFooters)
+	}
+
 	store.m.Unlock()
 
 	checkRefs(f0, 0, 0, nil, "oldest footer after ss0.Close()")
