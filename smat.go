@@ -441,11 +441,11 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 	smatLog(prefix, "iteratorNext: %p, %#v\n", iter, iter)
 	smatLog(prefix, "iteratorNext.ss: %p, %#v\n", iter.(*iterator).ss, iter.(*iterator).ss)
 	smatLog(prefix, "iteratorNext.llIter: %#v\n", iter.(*iterator).lowerLevelIter)
-	iw, ok := iter.(*iterator).lowerLevelIter.(*iteratorWrapper)
+	lli, ok := iter.(*iterator).lowerLevelIter.(*iterator)
 	if ok {
-		smatLog(prefix, "iteratorNext.llIter.iter: %#v\n", iw.iter)
+		smatLog(prefix, "iteratorNext.llIter: %#v\n", lli)
 
-		iss := iw.iter.(*iterator).ss
+		iss := lli.ss
 		itr, _ := iss.StartIterator(nil, nil, IteratorOptions{})
 		smatLog(prefix, "iteratorNext check itr: %p, %#v\n", itr, itr)
 		i := 0

@@ -14,6 +14,7 @@ package moss
 import (
 	"bytes"
 	"container/heap"
+	"io"
 )
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
@@ -27,9 +28,11 @@ type iterator struct {
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
 
-	iteratorOptions IteratorOptions
-
 	lowerLevelIter Iterator // May be nil.
+
+	closer io.Closer
+
+	iteratorOptions IteratorOptions
 }
 
 // A cursor rerpresents a logical entry position inside a segment in a
@@ -205,6 +208,11 @@ func (iter *iterator) Close() error {
 	if iter.lowerLevelIter != nil {
 		iter.lowerLevelIter.Close()
 		iter.lowerLevelIter = nil
+	}
+
+	if iter.closer != nil {
+		iter.closer.Close()
+		iter.closer = nil
 	}
 
 	return nil

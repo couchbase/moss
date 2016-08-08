@@ -359,5 +359,10 @@ func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 		return nil, err
 	}
 
-	return &iteratorWrapper{iter: iter, closer: mref}, nil
+	iter2, ok := iter.(*iterator)
+	if ok {
+		iter2.closer = mref
+	}
+
+	return iter, nil
 }
