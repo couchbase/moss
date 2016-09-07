@@ -179,6 +179,14 @@ func TestMMap(t *testing.T) {
 }
 
 func TestSimpleStore(t *testing.T) {
+	testSimpleStore(t, false)
+}
+
+func TestSimpleStoreSync(t *testing.T) {
+	testSimpleStore(t, true)
+}
+
+func testSimpleStore(t *testing.T, sync bool) {
 	tmpDir, _ := ioutil.TempDir("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
@@ -198,7 +206,7 @@ func TestSimpleStore(t *testing.T) {
 
 	// ------------------------------------------------------
 
-	llss, err := store.Persist(ss, StorePersistOptions{})
+	llss, err := store.Persist(ss, StorePersistOptions{NoSync: !sync})
 	if err != nil || llss == nil {
 		t.Errorf("expected persist to work")
 	}

@@ -96,6 +96,12 @@ var DefaultStoreOptions = StoreOptions{
 
 // StorePersistOptions are provided to Store.Persist().
 type StorePersistOptions struct {
+	// NoSync means do not perform a file sync at the end of
+	// persistence (before returning from the Store.Persist() method).
+	// Using NoSync of true might provide better performance, but at
+	// the cost of data safety.
+	NoSync bool
+
 	// CompactionConcern controls whether compaction is allowed or
 	// forced as part of persistence.
 	CompactionConcern CompactionConcern
@@ -341,10 +347,26 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return nil, err
 	}
 
+	if !persistOptions.NoSync {
+		err = file.Sync()
+		if err != nil {
+			footer.DecRef()
+			return nil, err
+		}
+	}
+
 	err = s.persistFooter(file, footer)
 	if err != nil {
 		footer.DecRef()
 		return nil, err
+	}
+
+	if !persistOptions.NoSync {
+		err = file.Sync()
+		if err != nil {
+			footer.DecRef()
+			return nil, err
+		}
 	}
 
 	mref, _ := footer.mrefSegmentStack()
