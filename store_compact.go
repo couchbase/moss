@@ -66,7 +66,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		return false, nil
 	}
 
-	err = s.compact(footer, higher)
+	err = s.compact(footer, higher, persistOptions)
 	if err != nil {
 		return false, err
 	}
@@ -83,7 +83,8 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	return true, nil
 }
 
-func (s *Store) compact(footer *Footer, higher Snapshot) error {
+func (s *Store) compact(footer *Footer, higher Snapshot,
+	persistOptions StorePersistOptions) error {
 	mref, ss := footer.mrefSegmentStack()
 
 	defer mref.DecRef()
@@ -173,12 +174,26 @@ func (s *Store) compact(footer *Footer, higher Snapshot) error {
 		},
 	}
 
-	if err = s.persistFooter(fileCompact, compactFooter); err != nil {
+	sync := !persistOptions.NoSync
+	if !sync {
+		sync = s.options != nil && s.options.CompactionSync
+	}
+
+	if sync {
+		err = fileCompact.Sync()
+		if err != nil {
+			return onError(err)
+		}
+	}
+
+	err = s.persistFooter(fileCompact, compactFooter)
+	if err != nil {
 		return onError(err)
 	}
 
-	if s.options != nil && s.options.CompactionSync {
-		if err = fileCompact.Sync(); err != nil {
+	if sync {
+		err = fileCompact.Sync()
+		if err != nil {
 			return onError(err)
 		}
 	}
