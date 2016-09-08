@@ -59,6 +59,9 @@ type Store struct {
 	refs         int
 	footer       *Footer
 	nextFNameSeq int64
+
+	totPersists    uint64
+	totCompactions uint64
 }
 
 // StoreOptions are provided to OpenStore().
@@ -377,6 +380,7 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 	footer.prevFooter = s.footer
 	prevFooter := s.footer
 	s.footer = footer
+	s.totPersists++
 	s.m.Unlock()
 
 	if prevFooter != nil {

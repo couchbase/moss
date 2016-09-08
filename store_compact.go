@@ -206,6 +206,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 	s.m.Lock()
 	footerPrev := s.footer
 	s.footer = footerReady // Owns the frefCompact ref-count.
+	s.totCompactions++
 	s.m.Unlock()
 
 	if footerPrev != nil {

@@ -80,6 +80,23 @@ func TestOpenEmptyStore(t *testing.T) {
 
 	s.Options() // It should not panic.
 
+	sstats, err := s.Stats()
+	if err != nil {
+		t.Errorf("expected no stats err")
+	}
+	if sstats == nil {
+		t.Errorf("expected non-nil stats")
+	}
+	if sstats["num_bytes_used_disk"].(uint64) != 0 {
+		t.Errorf("expected 0 stats to start")
+	}
+	if sstats["total_persists"].(uint64) != 0 {
+		t.Errorf("expected 0 stats to start")
+	}
+	if sstats["total_compactions"].(uint64) != 0 {
+		t.Errorf("expected 0 stats to start")
+	}
+
 	ss, err := s.Snapshot()
 	if err != nil || ss == nil {
 		t.Errorf("expected snapshot, no err")
@@ -240,6 +257,20 @@ func testSimpleStore(t *testing.T, sync bool) {
 
 	if llss.Close() != nil {
 		t.Errorf("expected llss close to work")
+	}
+
+	sstats, err := store.Stats()
+	if err != nil {
+		t.Errorf("expected no stats err")
+	}
+	if sstats == nil {
+		t.Errorf("expected non-nil stats")
+	}
+	if sstats["num_bytes_used_disk"].(uint64) <= 0 {
+		t.Errorf("expected >0 num_bytes_used_disk")
+	}
+	if sstats["total_persists"].(uint64) <= 0 {
+		t.Errorf("expected >0 total_persists")
 	}
 
 	if store.Close() != nil {
