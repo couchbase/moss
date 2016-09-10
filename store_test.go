@@ -204,15 +204,88 @@ func TestSimpleStoreSync(t *testing.T) {
 }
 
 func testSimpleStore(t *testing.T, sync bool) {
+	testSimpleStoreEx(t, "basic", nil,
+		StoreOptions{},
+		StorePersistOptions{NoSync: !sync},
+		CollectionOptions{}, 2)
+}
+
+func TestSimpleStoreCleanupBadFiles(t *testing.T) {
+	testSimpleStoreCleanupBadFiles(t, "cleanupBadFiles", true)
+}
+
+func TestSimpleStoreKeepBadFiles(t *testing.T) {
+	testSimpleStoreCleanupBadFiles(t, "cleanupBadFiles(false)", false)
+}
+
+func testSimpleStoreCleanupBadFiles(t *testing.T,
+	label string,
+	cleanupBadFiles bool) {
+	testSimpleStoreEx(t, label, map[string]func(string){
+		"beforeReopen": func(tmpDir string) {
+			// Create some junk files that should be removed automatically.
+			s := &Store{
+				dir:          tmpDir,
+				nextFNameSeq: 100,
+				options: &StoreOptions{
+					OpenFile: func(name string, flag int, perm os.FileMode) (File, error) {
+						return os.OpenFile(name, flag, perm)
+					},
+				},
+			}
+
+			fref, file, err := s.startFileLOCKED()
+			if err != nil || file == nil {
+				t.Errorf("expected startFileLocked to work, err: %v", err)
+			}
+			fref.DecRef()
+
+			fref, file, err = s.startFileLOCKED()
+			if err != nil || file == nil {
+				t.Errorf("expected startFileLocked to work, err: %v", err)
+			}
+			fref.DecRef()
+		},
+		"done": func(tmpDir string) {
+			fileInfos, err := ioutil.ReadDir(tmpDir)
+			if err != nil {
+				t.Errorf("expected readdir to work, err: %v", err)
+			}
+
+			if cleanupBadFiles {
+				// All the junk files should have been removed automatically already.
+				if len(fileInfos) != 1 {
+					t.Errorf("expected only 1 file, saw: %v", fileInfos)
+				}
+			} else {
+				if len(fileInfos) != 3 {
+					t.Errorf("expected 3 files, saw: %v", fileInfos)
+				}
+			}
+		},
+	},
+		StoreOptions{KeepFiles: !cleanupBadFiles},
+		StorePersistOptions{},
+		CollectionOptions{},
+		102)
+}
+
+func testSimpleStoreEx(t *testing.T,
+	label string,
+	callbacks map[string]func(string),
+	storeOptions StoreOptions,
+	storePersistOptions StorePersistOptions,
+	collectionOptions CollectionOptions,
+	expectedNextFNameSeq int64) {
 	tmpDir, _ := ioutil.TempDir("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
-	store, err := OpenStore(tmpDir, StoreOptions{})
+	store, err := OpenStore(tmpDir, storeOptions)
 	if err != nil || store == nil {
 		t.Errorf("expected open empty store to work")
 	}
 
-	coll, _ := NewCollection(CollectionOptions{})
+	coll, _ := NewCollection(collectionOptions)
 	coll.Start()
 
 	b, _ := coll.NewBatch(0, 0)
@@ -223,7 +296,7 @@ func testSimpleStore(t *testing.T, sync bool) {
 
 	// ------------------------------------------------------
 
-	llss, err := store.Persist(ss, StorePersistOptions{NoSync: !sync})
+	llss, err := store.Persist(ss, storePersistOptions)
 	if err != nil || llss == nil {
 		t.Errorf("expected persist to work")
 	}
@@ -283,13 +356,23 @@ func testSimpleStore(t *testing.T, sync bool) {
 
 	// ------------------------------------------------------
 
-	store2, err := OpenStore(tmpDir, StoreOptions{})
+	if callbacks != nil {
+		cb := callbacks["beforeReopen"]
+		if cb != nil {
+			cb(tmpDir)
+		}
+	}
+
+	// ------------------------------------------------------
+
+	store2, err := OpenStore(tmpDir, storeOptions)
 	if err != nil || store2 == nil {
 		t.Errorf("expected open store2 to work, err: %v", err)
 	}
 
-	if store2.nextFNameSeq != 2 {
-		t.Errorf("expected store2 nextFNameSeq to be 2")
+	if store2.nextFNameSeq != expectedNextFNameSeq {
+		t.Errorf("expected store nextFNameSeq to be %d, got: %d, label: %s",
+			expectedNextFNameSeq, store2.nextFNameSeq, label)
 	}
 
 	llss2, err := store2.Snapshot()
@@ -330,6 +413,15 @@ func testSimpleStore(t *testing.T, sync bool) {
 
 	if store2.refs != 0 {
 		t.Errorf("expected 0 refs")
+	}
+
+	// ------------------------------------------------------
+
+	if callbacks != nil {
+		cb := callbacks["done"]
+		if cb != nil {
+			cb(tmpDir)
+		}
 	}
 }
 

@@ -91,6 +91,11 @@ type StoreOptions struct {
 	// Log is a callback invoked when store needs to log a debug
 	// message.  Optional, may be nil.
 	Log func(format string, a ...interface{}) `json:"-"`
+
+	// KeepFiles means that unused, obsoleted files will not be
+	// removed during OpenStore().  Keeping old files might be useful
+	// when diagnosing file corruption cases.
+	KeepFiles bool
 }
 
 var DefaultStoreOptions = StoreOptions{
@@ -228,6 +233,13 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 		if err != nil {
 			file.Close()
 			continue
+		}
+
+		if !options.KeepFiles {
+			err := removeFiles(dir, append(fnames[0:i], fnames[i+1:]...))
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return &Store{
@@ -593,4 +605,15 @@ func OpenStoreCollection(dir string,
 	}
 
 	return store, coll, nil
+}
+
+func removeFiles(dir string, fnames []string) error {
+	for _, fname := range fnames {
+		err := os.Remove(path.Join(dir, fname))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
