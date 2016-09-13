@@ -238,6 +238,7 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 		if !options.KeepFiles {
 			err := removeFiles(dir, append(fnames[0:i], fnames[i+1:]...))
 			if err != nil {
+				footer.Close()
 				return nil, err
 			}
 		}
@@ -438,7 +439,9 @@ func (s *Store) startFileLOCKED() (*FileRef, File, error) {
 
 	if err = s.persistHeader(file); err != nil {
 		file.Close()
+
 		os.Remove(path.Join(s.dir, fname))
+
 		return nil, nil, err
 	}
 
