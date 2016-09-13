@@ -357,8 +357,6 @@ func TestRefCounting(t *testing.T) {
 		t.Errorf("expected only 2 footers after 1st ss")
 	}
 	if oldestFooter == f0 {
-		// Expecting oldest footer to be the original "empty"
-		// footer right now.
 		t.Errorf("expected oldest footer to not be f0")
 	}
 
@@ -372,14 +370,14 @@ func TestRefCounting(t *testing.T) {
 	store.m.Lock()
 
 	if f0 == store.footer {
-		t.Errorf("expected curr footer to be different than f0")
+		t.Errorf("expected curr footer to be != f0 after many mutations")
 	}
 
-	checkRefs(store.footer, 2, 2, nil, "after nth batch persisted")
+	checkRefs(store.footer, 2, 1, nil, "after nth batch persisted")
 
 	oldestFooter, numFooters = countFooters()
 	if oldestFooter != f0 {
-		t.Errorf("expected fx to be same as oldest snapshot/footer")
+		t.Errorf("expected f0 to be same as oldest snapshot/footer")
 	}
 	if numFooters != 3 {
 		t.Errorf("expected only 3 footers in chain after many batches,"+
@@ -390,7 +388,7 @@ func TestRefCounting(t *testing.T) {
 
 	var mref *mmapRef
 
-	checkRefs(f0, 1, 2, func() {
+	checkRefs(f0, 1, 1, func() {
 		mref = f0.mref
 		if f0.prevFooter != nil {
 			t.Errorf("expected oldest footer to have nil prevFooter")
@@ -418,8 +416,8 @@ func TestRefCounting(t *testing.T) {
 	checkRefs(f0, 0, 0, nil, "oldest footer after ss0.Close()")
 
 	mref.m.Lock()
-	if mref.refs != 1 {
-		t.Errorf("expected 1")
+	if mref.refs != 0 {
+		t.Errorf("expected mref.refs 0, got: %d", mref.refs)
 	}
 	mref.m.Unlock()
 
@@ -435,8 +433,8 @@ func TestRefCounting(t *testing.T) {
 	store.m.Unlock()
 
 	mref.m.Lock()
-	if mref.refs != 1 {
-		t.Errorf("expected 1")
+	if mref.refs != 0 {
+		t.Errorf("expected mref.refs 0, got: %d", mref.refs)
 	}
 	mref.m.Unlock()
 

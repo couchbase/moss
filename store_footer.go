@@ -289,7 +289,7 @@ func (f *Footer) mrefRefresh(mrefNew *mmapRef) *Footer {
 	f.m.Lock()
 
 	refs := f.refs
-	if refs > 0 {
+	if refs > 1 {
 		mrefOld := f.mref
 		if mrefOld != nil {
 			err := f.loadSegmentsFromMRef(f.ss.options, mrefNew)
