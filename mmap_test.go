@@ -454,3 +454,61 @@ func TestRefCounting(t *testing.T) {
 
 	checkRefs(f0, 0, 0, nil, "oldest footer after store.Close()")
 }
+
+// ---------------------------------------------
+
+// SKIPPED because segfault isn't caught by recover()
+func SKIPPED_TestAccessAfterUnmap(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossMMap")
+	defer os.RemoveAll(tmpDir)
+
+	f, err := os.Create(tmpDir + string(os.PathSeparator) + "test.file")
+	if err != nil {
+		t.Errorf("expected open file to work, err: %v", err)
+	}
+
+	defer f.Close()
+
+	offset := 1024 * 1024 * 1024 // 1 GB.
+
+	f.WriteAt([]byte("hello"), int64(offset))
+
+	var mm mmap.MMap
+
+	mm, err = mmap.Map(f, mmap.RDONLY, 0)
+	if err != nil {
+		t.Errorf("expected mmap to work, err: %v", err)
+	}
+
+	x := mm[offset : offset+5]
+
+	if string(x) != "hello" {
+		t.Errorf("expected hello")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered in f", r)
+		} else {
+			t.Errorf("expected recover from panic")
+		}
+	}()
+
+	mm.Unmap()
+
+	/*
+			The following access of x results in a segfault, like...
+
+				unexpected fault address 0x4060c000
+				fatal error: fault
+				[signal 0xb code=0x1 addr=0x4060c000 pc=0xb193f]
+
+		    The recover() machinery doesn't handle this situation, however,
+		    as it's not a normal kind of panic()
+	*/
+	if x[0] != 'h' {
+		t.Errorf("expected h, but actually expected a segfault")
+	}
+
+	t.Errorf("expected segfault, but instead unmmapped mem access worked")
+}
