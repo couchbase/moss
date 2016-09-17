@@ -76,14 +76,7 @@ func (ss *segmentStack) StartIterator(
 		return nil, err
 	}
 
-	if len(iter.cursors) == 1 &&
-		iter.cursors[0].ssIndex == -1 &&
-		iter.cursors[0].pos == -1 {
-		// Optimization to return lowerLevelIter directly if that's all we have.
-		return iter.lowerLevelIter, nil
-	}
-
-	return iter, nil
+	return iter.optimize()
 }
 
 // startIterator() returns a new iterator on the given segmentStack.
@@ -364,4 +357,38 @@ func (iter *iterator) Pop() interface{} {
 	x := iter.cursors[n-1]
 	iter.cursors = iter.cursors[0 : n-1]
 	return x
+}
+
+// --------------------------------------------
+
+// The optimize method tries to optimize an iterator.  For example,
+// when there's only a single segment, then the heap can be avoided by
+// using a simpler, faster iteratorSingle implementation.
+func (iter *iterator) optimize() (Iterator, error) {
+	if len(iter.cursors) != 1 {
+		return iter, nil
+	}
+
+	cur := iter.cursors[0]
+
+	if cur.ssIndex == -1 && cur.pos == -1 {
+		// Optimization to return lowerLevelIter directly.
+		return iter.lowerLevelIter, nil
+	}
+
+	seg, ok := iter.ss.a[cur.ssIndex].(*segment)
+	if !ok || seg == nil {
+		return iter, nil
+	}
+
+	return &iteratorSingle{
+		s:       seg,
+		posEnd:  cur.posEnd,
+		pos:     cur.pos,
+		op:      cur.op,
+		k:       cur.k,
+		v:       cur.v,
+		closer:  iter.closer,
+		options: iter.ss.options,
+	}, nil
 }

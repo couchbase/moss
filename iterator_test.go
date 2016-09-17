@@ -215,3 +215,90 @@ func TestIteratorMergeOps_MB19667(t *testing.T) {
 	// of ":C:D".
 	checkVal(":A:B:C:D")
 }
+
+func TestIteratorSingleMergeOp(t *testing.T) {
+	testIteratorSingleMergeOp(t, []string{"A"}, ":A")
+}
+
+func TestIteratorSingleMergeOp2(t *testing.T) {
+	testIteratorSingleMergeOp(t, []string{"A", "B"}, ":A:B")
+}
+
+func testIteratorSingleMergeOp(t *testing.T,
+	mergeVals []string, expectVal string) {
+	var mlock sync.Mutex
+
+	events := map[EventKind]int{}
+
+	mo := &MergeOperatorStringAppend{Sep: ":"}
+
+	m, err := NewCollection(CollectionOptions{
+		MergeOperator: mo,
+		OnEvent: func(e Event) {
+			mlock.Lock()
+			events[e.Kind]++
+			mlock.Unlock()
+		},
+	})
+	if err != nil || m == nil {
+		t.Errorf("expected moss")
+	}
+	mc := m.(*collection)
+
+	err = m.Start()
+	if err != nil {
+		t.Errorf("expected Start ok")
+	}
+
+	mergeVal := func(v string) {
+		b, err := m.NewBatch(0, 0)
+		if err != nil || b == nil {
+			t.Errorf("expected b ok")
+		}
+		b.Merge([]byte("a"), []byte(v))
+		err = m.ExecuteBatch(b, WriteOptions{})
+		if err != nil {
+			t.Errorf("expected execute batch ok")
+		}
+	}
+
+	for _, mv := range mergeVals {
+		mergeVal(mv)
+	}
+
+	mc.NotifyMerger("mergeAll", true)
+
+	checkVal := func(expected string) {
+		ss, err := m.Snapshot()
+		if err != nil {
+			t.Errorf("expected ss ok")
+		}
+		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		if err != nil || iter == nil {
+			t.Errorf("expected iter")
+		}
+		_, ok := iter.(*iteratorSingle)
+		if !ok {
+			t.Errorf("expected iteratorSingle")
+		}
+		k, v, err := iter.Current()
+		if err != nil {
+			t.Errorf("expected current")
+		}
+		if string(k) != "a" {
+			t.Errorf("expected current key a")
+		}
+		if string(v) != expected {
+			t.Errorf("expected current val expected: %v, got: %v", expected, v)
+		}
+		if iter.Next() != ErrIteratorDone {
+			t.Errorf("expected only 1 value in iterator")
+		}
+		v, err = ss.Get([]byte("a"), ReadOptions{})
+		if err != nil || string(v) != expected {
+			t.Errorf("expected %s, got: %s, err: %v", expected, v, err)
+		}
+	}
+
+	checkVal(expectVal)
+}

@@ -532,9 +532,8 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 					testi, test, test.expErr, err)
 			}
 
-			itr := itrObj.(*iterator)
-
-			if false {
+			itr, ok := itrObj.(*iterator)
+			if false && ok {
 				fmt.Printf("  itr: %#v, %s, %s\n", itr, startKey, endKey)
 				for i, b := range itr.ss.a {
 					fmt.Printf("    batch: %d %#v\n", i, b)
@@ -552,7 +551,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 			var gotEntries []string
 
 			for {
-				entryEx, gotK, gotV, gotErr := itr.CurrentEx()
+				entryEx, gotK, gotV, gotErr := itrObj.CurrentEx()
 
 				gotOp := entryEx.Operation
 
@@ -577,7 +576,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 
 				gotEntries = append(gotEntries, s)
 
-				gotErr = itr.Next()
+				gotErr = itrObj.Next()
 				if gotErr == ErrIteratorDone {
 					break
 				}
@@ -593,7 +592,7 @@ func testOpsBatchSize1(t *testing.T, m Collection) {
 					testi, test, expEntries, gotEntries)
 			}
 
-			err = itr.Close()
+			err = itrObj.Close()
 			if err != nil {
 				t.Errorf("expected Close ok")
 			}
@@ -1072,9 +1071,8 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 					testi, test, test.expErr, err)
 			}
 
-			itr := itrObj.(*iterator)
-
-			if false {
+			itr, ok := itrObj.(*iterator)
+			if false && ok {
 				fmt.Printf("  itr: %#v, %s, %s\n", itr, startKey, endKey)
 				for i, b := range itr.ss.a {
 					fmt.Printf("    batch: %d %#v\n", i, b)
@@ -1093,7 +1091,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 
 			if test.op == "itr" {
 				for {
-					entryEx, gotK, gotV, gotErr := itr.CurrentEx()
+					entryEx, gotK, gotV, gotErr := itrObj.CurrentEx()
 
 					gotOp := entryEx.Operation
 
@@ -1121,7 +1119,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 
 					gotEntries = append(gotEntries, s)
 
-					gotErr = itr.Next()
+					gotErr = itrObj.Next()
 					if gotErr == ErrIteratorDone {
 						break
 					}
@@ -1132,7 +1130,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 				}
 			} else { // test.op == "Itr (uses public Current() API)
 				for {
-					gotK, gotV, gotErr := itr.Current()
+					gotK, gotV, gotErr := itrObj.Current()
 
 					// fmt.Printf("    curr: %s %s %v\n",
 					//     gotK, gotV, gotErr)
@@ -1149,7 +1147,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 
 					gotEntries = append(gotEntries, s)
 
-					gotErr = itr.Next()
+					gotErr = itrObj.Next()
 					if gotErr == ErrIteratorDone {
 						break
 					}
@@ -1166,7 +1164,7 @@ func runOpTests(t *testing.T, m Collection, tests []opTest) {
 					testi, test, expEntries, gotEntries)
 			}
 
-			err = itr.Close()
+			err = itrObj.Close()
 			if err != nil {
 				t.Errorf("expected Close ok")
 			}
