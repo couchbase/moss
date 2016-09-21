@@ -59,6 +59,10 @@ func (i *TestPersisterIterator) Next() error {
 	return nil
 }
 
+func (i *TestPersisterIterator) SeekTo(seekToKey []byte) error {
+	return naiveSeekTo(i, seekToKey)
+}
+
 func (i *TestPersisterIterator) Current() ([]byte, []byte, error) {
 	if i.pos >= len(i.keys) {
 		return nil, nil, ErrIteratorDone
@@ -542,6 +546,10 @@ func (i *testPersisterIterator) Next() error {
 		return ErrIteratorDone
 	}
 	return nil
+}
+
+func (i *testPersisterIterator) SeekTo(seekToKey []byte) error {
+	return naiveSeekTo(i, seekToKey)
 }
 
 func (i *testPersisterIterator) Current() ([]byte, []byte, error) {

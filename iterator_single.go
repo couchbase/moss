@@ -55,6 +55,10 @@ func (iter *iteratorSingle) Next() error {
 	return nil
 }
 
+func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
+	return naiveSeekTo(iter, seekToKey)
+}
+
 // Current returns ErrIteratorDone if the iterator is done.
 // Otherwise, Current() returns the current key and val, which should
 // be treated as immutable or read-only.  The key and val bytes will

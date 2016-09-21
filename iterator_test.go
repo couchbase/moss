@@ -12,6 +12,7 @@
 package moss
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -301,4 +302,105 @@ func testIteratorSingleMergeOp(t *testing.T,
 	}
 
 	checkVal(expectVal)
+}
+
+func TestIteratorSeekTo(t *testing.T) {
+	m, _ := NewCollection(CollectionOptions{})
+
+	m.Start()
+
+	batch, err := m.NewBatch(0, 0)
+	if err != nil {
+		t.Errorf("expected ok")
+	}
+
+	b := batch.(*segment)
+
+	// Insert 1, 3, 5, 7, 9
+	for i := 1; i <= 9; i += 2 {
+		x := []byte(fmt.Sprintf("%d", i))
+		b.Set(x, x)
+	}
+
+	m.ExecuteBatch(b, WriteOptions{})
+
+	ss, err := m.Snapshot()
+	if err != nil {
+		t.Errorf("expected no snapshot err, got: %v", err)
+	}
+
+	itr, err := ss.StartIterator(nil, nil, IteratorOptions{})
+	if err != nil {
+		t.Errorf("expected no itr err, got: %v", err)
+	}
+
+	err = itr.SeekTo([]byte("0"))
+	if err == ErrIteratorDone {
+		t.Errorf("expected done, got: %v", err)
+	}
+
+	gotk, _, err := itr.Current()
+	if err != nil {
+		t.Errorf("expected no Current err, got: %v", err)
+	}
+
+	expectedk := "1"
+	if expectedk != string(gotk) {
+		t.Errorf("expected: %s, gotk: %s", expectedk, string(gotk))
+	}
+
+	for i := 0; i < 2; i++ {
+		err = itr.SeekTo([]byte("1"))
+		if err == ErrIteratorDone {
+			t.Errorf("expected done, got: %v", err)
+		}
+
+		gotk, _, err := itr.Current()
+		if err != nil {
+			t.Errorf("expected no Current err, got: %v", err)
+		}
+
+		expectedk := "1"
+		if expectedk != string(gotk) {
+			t.Errorf("expected: %s, gotk: %s", expectedk, string(gotk))
+		}
+	}
+
+	for i := 1; i < 10; i++ {
+		k := []byte(fmt.Sprintf("%d", i))
+
+		err = itr.SeekTo(k)
+		if err != nil {
+			t.Errorf("expected no SeekTo err, got: %v", err)
+		}
+
+		gotk, _, err := itr.Current()
+		if err != nil {
+			t.Errorf("expected no Current err, got: %v", err)
+		}
+
+		expected := i
+		if i%2 == 0 {
+			expected = i + 1
+		}
+
+		expectedk := fmt.Sprintf("%d", expected)
+		if expectedk != string(gotk) {
+			t.Errorf("i: %d, expected: %s, gotk: %s", i, expectedk, string(gotk))
+		}
+	}
+
+	err = itr.SeekTo([]byte("999"))
+	if err != ErrIteratorDone {
+		t.Errorf("expected done, got: %v", err)
+	}
+
+	err = itr.SeekTo([]byte("999"))
+	if err != ErrIteratorDone {
+		t.Errorf("expected done, got: %v", err)
+	}
+
+	itr.Close()
+	ss.Close()
+	m.Close()
 }

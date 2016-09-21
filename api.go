@@ -292,6 +292,14 @@ type Iterator interface {
 	// return ErrIteratorDone if the Iterator is done.
 	Next() error
 
+	// SeekTo moves the Iterator to the lowest key-val entry whose key
+	// is >= the given seekToKey, and will return ErrIteratorDone if
+	// the Iterator is done.
+	//
+	// The SeekTo() method only supports forward iteration, with
+	// unspecified behavior if the seekToKey is < the current key.
+	SeekTo(seekToKey []byte) error
+
 	// Current returns ErrIteratorDone if the iterator is done.
 	// Otherwise, Current() returns the current key and val, which
 	// should be treated as immutable or read-only.  The key and val

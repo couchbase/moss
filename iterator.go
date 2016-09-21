@@ -283,6 +283,28 @@ func iteratorBytesEqual(a, b []byte) bool {
 	return true
 }
 
+func (iter *iterator) SeekTo(seekToKey []byte) error {
+	return naiveSeekTo(iter, seekToKey)
+}
+
+func naiveSeekTo(iter Iterator, seekToKey []byte) error {
+	for {
+		key, _, err := iter.Current()
+		if err != nil {
+			return err
+		}
+
+		if bytes.Compare(seekToKey, key) <= 0 {
+			return nil
+		}
+
+		err = iter.Next()
+		if err != nil {
+			return err
+		}
+	}
+}
+
 // Current returns ErrIteratorDone if the iterator is done.
 // Otherwise, Current() returns the current key and val, which should
 // be treated as immutable or read-only.  The key and val bytes will
