@@ -12,6 +12,7 @@
 package moss
 
 import (
+	"bytes"
 	"io"
 )
 
@@ -57,6 +58,26 @@ func (iter *iteratorSingle) Next() error {
 }
 
 func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
+	key, _, err := iter.Current()
+	if err != nil && err != ErrIteratorDone {
+		return err
+	}
+
+	if key != nil {
+		cmp := bytes.Compare(seekToKey, key)
+		if cmp == 0 {
+			return nil
+		}
+
+		if cmp > 0 {
+			// Try a loop of naive Next()'s for several attempts.
+			err = naiveSeekTo(iter, seekToKey, DefaultNaiveSeekToMaxTries)
+			if err != ErrMaxTries {
+				return err
+			}
+		}
+	}
+
 	iter.op = 0
 	iter.k = nil
 	iter.v = nil

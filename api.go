@@ -56,6 +56,10 @@ var ErrClosed = errors.New("closed")
 // range of the iterator or the end of the collection.
 var ErrIteratorDone = errors.New("iterator-done")
 
+// ErrMaxTries is returned when a max number of tries or attempts for
+// some operation has been reached.
+var ErrMaxTries = errors.New("max-tries")
+
 // ErrMergeOperatorNil is returned if a merge operation is performed
 // without specifying a MergeOperator in the CollectionOptions.
 var ErrMergeOperatorNil = errors.New("merge-operator-nil")

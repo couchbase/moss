@@ -17,6 +17,11 @@ import (
 	"io"
 )
 
+// DefaultNaiveSeekToMaxTries is the max number of attempts a forward
+// SeekTo() will loop on basic Next()'s before giving up and starting
+// a binary search for a given seekToKey.
+var DefaultNaiveSeekToMaxTries = 100
+
 // An iterator tracks a min-heap "scan-line" of cursors through a
 // segmentStack.  Iterator implements the sort.Interface and
 // heap.Interface on its cursors.
@@ -285,22 +290,28 @@ func iteratorBytesEqual(a, b []byte) bool {
 
 func (iter *iterator) SeekTo(seekToKey []byte) error {
 	key, _, err := iter.Current()
-	if err != nil {
+	if err != nil && err != ErrIteratorDone {
 		return err
 	}
 
-	cmp := bytes.Compare(seekToKey, key)
-	if cmp == 0 {
-		return nil
+	if key != nil {
+		cmp := bytes.Compare(seekToKey, key)
+		if cmp == 0 {
+			return nil
+		}
+
+		if cmp > 0 {
+			// Try a loop of naive Next()'s for several attempts.
+			err = naiveSeekTo(iter, seekToKey, DefaultNaiveSeekToMaxTries)
+			if err != ErrMaxTries {
+				return err
+			}
+		}
 	}
 
-	if cmp > 0 {
-		return naiveSeekTo(iter, seekToKey)
-	}
-
-	// The seekToKey is before our current position, so start a brand
-	// new iterator to replace our current iterator, bounded by the
-	// startKeyInclusive.
+	// The seekToKey is before our current position, or we gave up on
+	// the naiveSeekTo(), so start a brand new iterator to replace our
+	// current iterator, bounded by the startKeyInclusive.
 	//
 	if bytes.Compare(seekToKey, iter.startKeyInclusive) < 0 {
 		seekToKey = iter.startKeyInclusive
@@ -318,11 +329,15 @@ func (iter *iterator) SeekTo(seekToKey []byte) error {
 	iter.cursors = iterNew.cursors
 	iter.lowerLevelIter = iterNew.lowerLevelIter
 
-	return iterOld.Close()
+	iterOld.Close()
+
+	_, _, err = iter.Current()
+
+	return err
 }
 
-func naiveSeekTo(iter Iterator, seekToKey []byte) error {
-	for {
+func naiveSeekTo(iter Iterator, seekToKey []byte, maxTries int) error {
+	for i := 0; maxTries <= 0 || i < maxTries; i++ {
 		key, _, err := iter.Current()
 		if err != nil {
 			return err
@@ -337,6 +352,8 @@ func naiveSeekTo(iter Iterator, seekToKey []byte) error {
 			return err
 		}
 	}
+
+	return ErrMaxTries
 }
 
 // Current returns ErrIteratorDone if the iterator is done.

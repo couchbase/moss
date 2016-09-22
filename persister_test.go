@@ -60,7 +60,7 @@ func (i *TestPersisterIterator) Next() error {
 }
 
 func (i *TestPersisterIterator) SeekTo(seekToKey []byte) error {
-	return naiveSeekTo(i, seekToKey)
+	return naiveSeekTo(i, seekToKey, 0)
 }
 
 func (i *TestPersisterIterator) Current() ([]byte, []byte, error) {
@@ -549,7 +549,7 @@ func (i *testPersisterIterator) Next() error {
 }
 
 func (i *testPersisterIterator) SeekTo(seekToKey []byte) error {
-	return naiveSeekTo(i, seekToKey)
+	return naiveSeekTo(i, seekToKey, 0)
 }
 
 func (i *testPersisterIterator) Current() ([]byte, []byte, error) {
