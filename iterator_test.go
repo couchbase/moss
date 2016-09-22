@@ -305,24 +305,63 @@ func testIteratorSingleMergeOp(t *testing.T,
 }
 
 func TestIteratorSeekTo(t *testing.T) {
+	testIteratorSeekTo(t, true, true, nil, nil)
+	testIteratorSeekTo(t, true, true, []byte("1"), nil)
+	testIteratorSeekTo(t, true, true, []byte("1"), []byte("900"))
+	testIteratorSeekTo(t, true, true, nil, []byte("900"))
+
+	testIteratorSeekTo(t, true, false, nil, nil)
+	testIteratorSeekTo(t, true, false, []byte("1"), nil)
+	testIteratorSeekTo(t, true, false, []byte("1"), []byte("900"))
+	testIteratorSeekTo(t, true, false, nil, []byte("900"))
+
+	testIteratorSeekTo(t, false, true, nil, nil)
+	testIteratorSeekTo(t, false, true, []byte("1"), nil)
+	testIteratorSeekTo(t, false, true, []byte("1"), []byte("900"))
+	testIteratorSeekTo(t, false, true, nil, []byte("900"))
+
+	testIteratorSeekTo(t, false, false, nil, nil)
+	testIteratorSeekTo(t, false, false, []byte("1"), nil)
+	testIteratorSeekTo(t, false, false, []byte("1"), []byte("900"))
+	testIteratorSeekTo(t, false, false, nil, []byte("900"))
+}
+
+func testIteratorSeekTo(t *testing.T, startEarly, oneBatch bool,
+	startKey, endKey []byte) {
 	m, _ := NewCollection(CollectionOptions{})
 
-	m.Start()
-
-	batch, err := m.NewBatch(0, 0)
-	if err != nil {
-		t.Errorf("expected ok")
+	if startEarly {
+		m.Start()
 	}
 
-	b := batch.(*segment)
+	if oneBatch {
+		// Insert 1, 3, 5, 7, 9
+		batch, _ := m.NewBatch(0, 0)
+		for i := 1; i <= 9; i += 2 {
+			x := []byte(fmt.Sprintf("%d", i))
+			batch.Set(x, x)
+		}
+		m.ExecuteBatch(batch, WriteOptions{})
+		batch.Close()
+	} else {
+		// Insert 1, 3, 5
+		batch, _ := m.NewBatch(0, 0)
+		for i := 1; i <= 5; i += 2 {
+			x := []byte(fmt.Sprintf("%d", i))
+			batch.Set(x, x)
+		}
+		m.ExecuteBatch(batch, WriteOptions{})
+		batch.Close()
 
-	// Insert 1, 3, 5, 7, 9
-	for i := 1; i <= 9; i += 2 {
-		x := []byte(fmt.Sprintf("%d", i))
-		b.Set(x, x)
+		// Insert 7, 9
+		batch, _ = m.NewBatch(0, 0)
+		for i := 7; i <= 9; i += 2 {
+			x := []byte(fmt.Sprintf("%d", i))
+			batch.Set(x, x)
+		}
+		m.ExecuteBatch(batch, WriteOptions{})
+		batch.Close()
 	}
-
-	m.ExecuteBatch(b, WriteOptions{})
 
 	ss, err := m.Snapshot()
 	if err != nil {
@@ -398,6 +437,10 @@ func TestIteratorSeekTo(t *testing.T) {
 	err = itr.SeekTo([]byte("999"))
 	if err != ErrIteratorDone {
 		t.Errorf("expected done, got: %v", err)
+	}
+
+	if !startEarly {
+		m.Start()
 	}
 
 	itr.Close()

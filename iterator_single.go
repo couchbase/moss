@@ -21,6 +21,7 @@ import (
 // implementation, iteratorSingle doesn't have any heap operations.
 type iteratorSingle struct {
 	s      *segment
+	posBeg int
 	posEnd int // Found via endKeyExclusive, or the segment length.
 	pos    int // Logical entry position into segment.
 
@@ -56,7 +57,21 @@ func (iter *iteratorSingle) Next() error {
 }
 
 func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
-	return naiveSeekTo(iter, seekToKey)
+	iter.op = 0
+	iter.k = nil
+	iter.v = nil
+
+	iter.pos = iter.s.FindStartKeyInclusivePos(seekToKey)
+	if iter.pos < iter.posBeg {
+		iter.pos = iter.posBeg
+	}
+	if iter.pos >= iter.posEnd {
+		return ErrIteratorDone
+	}
+
+	iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
+
+	return nil
 }
 
 // Current returns ErrIteratorDone if the iterator is done.

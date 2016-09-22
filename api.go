@@ -294,10 +294,11 @@ type Iterator interface {
 
 	// SeekTo moves the Iterator to the lowest key-val entry whose key
 	// is >= the given seekToKey, and will return ErrIteratorDone if
-	// the Iterator is done.
-	//
-	// The SeekTo() method only supports forward iteration, with
-	// unspecified behavior if the seekToKey is < the current key.
+	// the Iterator is done.  SeekTo() will respect the
+	// startKeyInclusive/endKeyExclusive bounds, if any, that were
+	// specified with StartIterator().  Seeking to before the
+	// startKeyInclusive will end up on the first key.  Seeking to or
+	// after the endKeyExclusive will result in ErrIteratorDone.
 	SeekTo(seekToKey []byte) error
 
 	// Current returns ErrIteratorDone if the iterator is done.

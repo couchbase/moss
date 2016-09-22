@@ -67,10 +67,6 @@ type cursor struct {
 func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
-	if iteratorOptions.MaxSegmentHeight <= 0 {
-		iteratorOptions.MaxSegmentHeight = len(ss.a)
-	}
-
 	iter, err := ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 	if err != nil {
 		return nil, err
@@ -98,6 +94,10 @@ func (ss *segmentStack) StartIterator(
 func (ss *segmentStack) startIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (*iterator, error) {
+	if iteratorOptions.MaxSegmentHeight <= 0 {
+		iteratorOptions.MaxSegmentHeight = len(ss.a)
+	}
+
 	iter := &iterator{
 		ss:      ss,
 		cursors: make([]*cursor, 0, len(ss.a)+1),
@@ -284,7 +284,41 @@ func iteratorBytesEqual(a, b []byte) bool {
 }
 
 func (iter *iterator) SeekTo(seekToKey []byte) error {
-	return naiveSeekTo(iter, seekToKey)
+	key, _, err := iter.Current()
+	if err != nil {
+		return err
+	}
+
+	cmp := bytes.Compare(seekToKey, key)
+	if cmp == 0 {
+		return nil
+	}
+
+	if cmp > 0 {
+		return naiveSeekTo(iter, seekToKey)
+	}
+
+	// The seekToKey is before our current position, so start a brand
+	// new iterator to replace our current iterator, bounded by the
+	// startKeyInclusive.
+	//
+	if bytes.Compare(seekToKey, iter.startKeyInclusive) < 0 {
+		seekToKey = iter.startKeyInclusive
+	}
+
+	iterNew, err := iter.ss.startIterator(seekToKey,
+		iter.endKeyExclusive, iter.iteratorOptions)
+	if err != nil {
+		return err
+	}
+
+	iterOld := *iter // Clone current iterator before overwriting it.
+	iterOld.closer = nil
+
+	iter.cursors = iterNew.cursors
+	iter.lowerLevelIter = iterNew.lowerLevelIter
+
+	return iterOld.Close()
 }
 
 func naiveSeekTo(iter Iterator, seekToKey []byte) error {
@@ -405,6 +439,7 @@ func (iter *iterator) optimize() (Iterator, error) {
 
 	return &iteratorSingle{
 		s:       seg,
+		posBeg:  cur.pos,
 		posEnd:  cur.posEnd,
 		pos:     cur.pos,
 		op:      cur.op,
