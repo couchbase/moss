@@ -46,6 +46,10 @@ import (
 // be satisfied by the pre-allocated buffer.
 var ErrAllocTooLarge = errors.New("alloc-too-large")
 
+// ErrAlreadyInitialized is returned when initialization was
+// attempted on an already initialized object.
+var ErrAlreadyInitialized = errors.New("already-initialized")
+
 // ErrCanceled is used when an operation has been canceled.
 var ErrCanceled = errors.New("canceled")
 
@@ -67,6 +71,9 @@ var ErrMergeOperatorNil = errors.New("merge-operator-nil")
 // ErrMergeOperatorFullMergeFailed is returned when the provided
 // MergeOperator fails during the FullMerge operations.
 var ErrMergeOperatorFullMergeFailed = errors.New("merge-operator-full-merge-failed")
+
+// ErrUnexpected is returned on an unexpected situation.
+var ErrUnexpected = errors.New("unexpected")
 
 // ErrUnimplemented is returned when an unimplemented feature has been
 // used.

@@ -17,6 +17,13 @@ import (
 	"sync"
 )
 
+// An InitCloser holds onto an io.Closer, and is used for chaining
+// io.Closer's.  That is, we often want the closing of one resource to
+// close related resources.
+type InitCloser interface {
+	InitCloser(io.Closer) error
+}
+
 // The File interface is implemented by os.File.  App specific
 // implementations may add concurrency, caching, stats, fuzzing, etc.
 type File interface {

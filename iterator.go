@@ -216,6 +216,14 @@ func (iter *iterator) Close() error {
 	return nil
 }
 
+func (iter *iterator) InitCloser(closer io.Closer) error {
+	if iter.closer != nil {
+		return ErrAlreadyInitialized
+	}
+	iter.closer = closer
+	return nil
+}
+
 // Next returns ErrIteratorDone if the iterator is done.
 func (iter *iterator) Next() error {
 	if len(iter.cursors) <= 0 {

@@ -45,6 +45,14 @@ func (iter *iteratorSingle) Close() error {
 	return nil
 }
 
+func (iter *iteratorSingle) InitCloser(closer io.Closer) error {
+	if iter.closer != nil {
+		return ErrAlreadyInitialized
+	}
+	iter.closer = closer
+	return nil
+}
+
 // Next returns ErrIteratorDone if the iterator is done.
 func (iter *iteratorSingle) Next() error {
 	iter.pos++
