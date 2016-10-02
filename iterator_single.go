@@ -33,6 +33,8 @@ type iteratorSingle struct {
 	closer io.Closer
 
 	options *CollectionOptions
+
+	iteratorOptions IteratorOptions
 }
 
 // Close must be invoked to release resources.
@@ -61,6 +63,10 @@ func (iter *iteratorSingle) Next() error {
 	}
 
 	iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
+	if !iter.iteratorOptions.IncludeDeletions &&
+		iter.op == OperationDel {
+		return iter.Next()
+	}
 
 	return nil
 }
@@ -99,6 +105,10 @@ func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
 	}
 
 	iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
+	if !iter.iteratorOptions.IncludeDeletions &&
+		iter.op == OperationDel {
+		return iter.Next()
+	}
 
 	return nil
 }

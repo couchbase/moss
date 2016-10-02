@@ -472,5 +472,7 @@ func (iter *iterator) optimize() (Iterator, error) {
 		v:       cur.v,
 		closer:  iter.closer,
 		options: iter.ss.options,
+
+		iteratorOptions: iter.iteratorOptions,
 	}, nil
 }
