@@ -1,8 +1,8 @@
 moss
 ----
 
-moss provides a simple, ordered key-val collection data structure as a
-100% golang library.
+moss provides a simple, fast, persistable, ordered key-val collection
+implementation as a 100% golang library.
 
 moss stands for "memory-oriented sorted segments".
 
@@ -19,8 +19,11 @@ Features
   for write-heavy use cases (e.g., updating counters)
 * concurrent readers and writers don't block each other
 * optional, advanced API's to avoid extra memory copying
+* optional lower-level storage implementation, using
+  an append-only design for writes and mmap() for reads
 * optional persistence hooks to allow write-back caching to a
-  lower-level storage implementation
+  lower-level storage implementation that advanced users may wish to
+  provide (e.g., you can hook moss up to leveldb, sqlite, etc)
 * 100% go implementation
 * unit tests
 
@@ -42,6 +45,7 @@ Example
 
     batch.Set([]byte("car-0"), []byte("tesla"))
     batch.Set([]byte("car-1"), []byte("honda"))
+
     err = c.ExecuteBatch(batch, moss.WriteOptions{})
 
     ss, err := c.Snapshot()
@@ -51,6 +55,11 @@ Example
 
     val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
     valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
+
+For persistence, you can use...
+
+    store, collection, err := moss.OpenStoreCollection(directoryPath,
+        moss.StoreOptions{}, moss.StorePersistOptions{})
 
 Design
 ======
