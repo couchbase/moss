@@ -33,6 +33,8 @@ type iterator struct {
 	startKeyInclusive []byte
 	endKeyExclusive   []byte
 
+	prefixLen int
+
 	lowerLevelIter Iterator // May be nil.
 
 	closer io.Closer
@@ -103,12 +105,20 @@ func (ss *segmentStack) startIterator(
 		iteratorOptions.MaxSegmentHeight = len(ss.a)
 	}
 
+	prefixLen := 0
+	if len(startKeyInclusive) > 0 &&
+		len(endKeyExclusive) > 0 {
+		prefixLen = sharedPrefixLen(startKeyInclusive, endKeyExclusive)
+	}
+
 	iter := &iterator{
 		ss:      ss,
 		cursors: make([]*cursor, 0, len(ss.a)+1),
 
 		startKeyInclusive: startKeyInclusive,
 		endKeyExclusive:   endKeyExclusive,
+
+		prefixLen: prefixLen,
 
 		iteratorOptions: iteratorOptions,
 	}
@@ -412,7 +422,9 @@ func (iter *iterator) Len() int {
 }
 
 func (iter *iterator) Less(i, j int) bool {
-	c := bytes.Compare(iter.cursors[i].k, iter.cursors[j].k)
+	a := iter.cursors[i].k[iter.prefixLen:]
+	b := iter.cursors[j].k[iter.prefixLen:]
+	c := bytes.Compare(a, b)
 	if c < 0 {
 		return true
 	}
@@ -475,4 +487,19 @@ func (iter *iterator) optimize() (Iterator, error) {
 
 		iteratorOptions: iter.iteratorOptions,
 	}, nil
+}
+
+// --------------------------------------------
+
+// sharedPrefixLen returns the length of the prefix shared by a and b,
+// which can might be 0 length.
+func sharedPrefixLen(a, b []byte) int {
+	i := 0
+	for i < len(a) && i < len(b) {
+		if a[i] != b[i] {
+			return i
+		}
+		i++
+	}
+	return i
 }

@@ -447,3 +447,37 @@ func testIteratorSeekTo(t *testing.T, startEarly, oneBatch bool,
 	ss.Close()
 	m.Close()
 }
+
+func TestSharedPrefixLen(t *testing.T) {
+	if sharedPrefixLen(nil, []byte("hi")) != 0 {
+		t.Errorf("not matched")
+	}
+	if sharedPrefixLen([]byte("hi"), nil) != 0 {
+		t.Errorf("not matched")
+	}
+	if sharedPrefixLen(nil, nil) != 0 {
+		t.Errorf("not matched")
+	}
+
+	tests := []struct {
+		a, b string
+		exp  int
+	}{
+		{"x", "", 0},
+		{"", "x", 0},
+		{"x", "x", 1},
+		{"x", "xy", 1},
+		{"xy", "x", 1},
+		{"x", "xx", 1},
+		{"xx", "x", 1},
+		{"xx", "xx", 2},
+		{"xx", "xxy", 2},
+		{"xxy", "xx", 2},
+	}
+
+	for _, test := range tests {
+		if sharedPrefixLen([]byte(test.a), []byte(test.b)) != test.exp {
+			t.Errorf("didn't match on test: %#v", test)
+		}
+	}
+}
