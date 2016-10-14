@@ -34,9 +34,26 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	totCompactions := s.totCompactions
 	s.m.Unlock()
 
+	footer, err := s.snapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	numSegments := 0
+	if footer != nil {
+		footer.m.Lock()
+		if footer.ss != nil {
+			numSegments = len(footer.ss.a)
+		}
+		footer.m.Unlock()
+	}
+
+	footer.Close()
+
 	return map[string]interface{}{
 		"num_bytes_used_disk": numBytesUsedDisk,
 		"total_persists":      totPersists,
 		"total_compactions":   totCompactions,
+		"num_segments":        numSegments,
 	}, nil
 }
