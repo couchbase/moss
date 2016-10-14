@@ -439,29 +439,33 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 	iterMirror := c.iteratorMirrors[i]
 
 	smatLog(prefix, "iteratorNext: %p, %#v\n", iter, iter)
-	smatLog(prefix, "iteratorNext.ss: %p, %#v\n", iter.(*iterator).ss, iter.(*iterator).ss)
-	smatLog(prefix, "iteratorNext.llIter: %#v\n", iter.(*iterator).lowerLevelIter)
-	lli, ok := iter.(*iterator).lowerLevelIter.(*iterator)
-	if ok {
-		smatLog(prefix, "iteratorNext.llIter: %#v\n", lli)
 
-		iss := lli.ss
-		itr, _ := iss.StartIterator(nil, nil, IteratorOptions{})
-		smatLog(prefix, "iteratorNext check itr: %p, %#v\n", itr, itr)
-		i := 0
-		for {
-			ik, iv, err := itr.Current()
-			smatLog(prefix, "== iteratorNext, check itr i: %d, k: %s, v: %s, err: %v\n", i, ik, iv, err)
-			if err == ErrIteratorDone {
-				break
+	iteratorActual, ok := iter.(*iterator)
+	if ok {
+		smatLog(prefix, "iteratorNext.ss: %p, %#v\n", iteratorActual.ss, iteratorActual.ss)
+		smatLog(prefix, "iteratorNext.llIter: %#v\n", iteratorActual.lowerLevelIter)
+		lli, ok := iteratorActual.lowerLevelIter.(*iterator)
+		if ok {
+			smatLog(prefix, "iteratorNext.llIter: %#v\n", lli)
+
+			iss := lli.ss
+			itr, _ := iss.StartIterator(nil, nil, IteratorOptions{})
+			smatLog(prefix, "iteratorNext check itr: %p, %#v\n", itr, itr)
+			i := 0
+			for {
+				ik, iv, err := itr.Current()
+				smatLog(prefix, "== iteratorNext, check itr i: %d, k: %s, v: %s, err: %v\n", i, ik, iv, err)
+				if err == ErrIteratorDone {
+					break
+				}
+				err = itr.Next()
+				if err == ErrIteratorDone {
+					break
+				}
+				i++
 			}
-			err = itr.Next()
-			if err == ErrIteratorDone {
-				break
-			}
-			i++
+			itr.Close()
 		}
-		itr.Close()
 	}
 
 	err = iter.Next()

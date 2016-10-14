@@ -26,6 +26,7 @@ Features
   provide (e.g., you can hook moss up to leveldb, sqlite, etc)
 * 100% go implementation
 * unit tests
+* fuzz tests via go-fuzz & smat (github.com/mschoch/smat)
 
 License
 =======
