@@ -50,15 +50,30 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	defer mref.DecRef()
 
 	if compactionConcern == CompactionAllow {
+		totUpperLen := 0
 		if ss != nil && len(ss.a) >= 2 {
-			totUpperLen := 0
-			for i := 1; i < len(ss.a)-1; i++ {
+			for i := 1; i < len(ss.a); i++ {
 				totUpperLen += ss.a[i].Len()
 			}
-			pct := float64(totUpperLen) / float64(ss.a[0].Len())
-			if pct >= s.options.CompactionPercentage {
-				compactionConcern = CompactionForce
+		}
+
+		if higher != nil {
+			higherSS, ok := higher.(*segmentStack)
+			if ok {
+				higherStats := higherSS.Stats()
+				if higherStats != nil {
+					totUpperLen += int(higherStats.CurOps)
+				}
 			}
+		}
+
+		var pct float64
+		if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
+			pct = float64(totUpperLen) / float64(ss.a[0].Len())
+		}
+
+		if pct >= s.options.CompactionPercentage {
+			compactionConcern = CompactionForce
 		}
 	}
 
