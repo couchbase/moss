@@ -67,13 +67,15 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 			}
 		}
 
-		var pct float64
-		if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
-			pct = float64(totUpperLen) / float64(ss.a[0].Len())
-		}
+		if totUpperLen > 0 {
+			var pct float64
+			if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
+				pct = float64(totUpperLen) / float64(ss.a[0].Len())
+			}
 
-		if pct >= s.options.CompactionPercentage {
-			compactionConcern = CompactionForce
+			if pct >= s.options.CompactionPercentage {
+				compactionConcern = CompactionForce
+			}
 		}
 	}
 
