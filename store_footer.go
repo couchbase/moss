@@ -209,6 +209,14 @@ func (f *Footer) loadSegmentsFromMRef(options *CollectionOptions,
 		var buf []byte
 
 		if sloc.KvsBytes > 0 {
+			if sloc.KvsOffset > uint64(len(mref.mm)) ||
+				sloc.KvsOffset+sloc.KvsBytes > uint64(len(mref.mm)) {
+				return fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
+					" len(mref.mm): %d, sloc: %+v, footer: %+v,"+
+					" f.SegmentLocs: %+v, i: %d, options: %v",
+					len(mref.mm), sloc, f, f.SegmentLocs, i, options)
+			}
+
 			kvsBytes := mref.mm[sloc.KvsOffset : sloc.KvsOffset+sloc.KvsBytes]
 			kvs, err = ByteSliceToUint64Slice(kvsBytes)
 			if err != nil {
@@ -216,6 +224,14 @@ func (f *Footer) loadSegmentsFromMRef(options *CollectionOptions,
 			}
 
 			if sloc.BufBytes > 0 {
+				if sloc.BufOffset > uint64(len(mref.mm)) ||
+					sloc.BufOffset+sloc.BufBytes > uint64(len(mref.mm)) {
+					return fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
+						" len(mref.mm): %d, sloc: %+v, footer: %+v,"+
+						" f.SegmentLocs: %+v, i: %d, options: %v",
+						len(mref.mm), sloc, f, f.SegmentLocs, i, options)
+				}
+
 				buf = mref.mm[sloc.BufOffset : sloc.BufOffset+sloc.BufBytes]
 			}
 		}
