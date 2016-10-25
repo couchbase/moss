@@ -24,5 +24,5 @@ To run the smat tests for moss...
 
 3.  Run go-fuzz:
 ```
-    go-fuzz -bin=./moss-fuzz.zip -workdir=workdir/ -timeout=200
+    go-fuzz -bin=./moss-fuzz.zip -workdir=workdir/ -timeout=2000
 ```

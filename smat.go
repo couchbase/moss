@@ -27,6 +27,12 @@ import (
 
 var smatDebug = false
 
+var smatCompactionSync = true
+
+var smatCompactionConcern = CompactionAllow
+
+// ------------------------------------------------
+
 func smatLog(prefix, format string, args ...interface{}) {
 	if smatDebug {
 		fmt.Print(prefix)
@@ -563,7 +569,7 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
 	}
 
-	compactionSync := false // TODO: try testing sync true?
+	compactionSync := smatCompactionSync
 
 	store, err := OpenStore(c.tmpDir, StoreOptions{
 		CollectionOptions: co,
@@ -586,10 +592,8 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 		smatLog(prefix, "LowerLevelUpdate... higher: %+v\n", higher)
 		smatLog(prefix, "LowerLevelUpdate... higher.a: %+v\n", higher.(*segmentStack).a)
 
-		concern := CompactionAllow // TODO: try testing compaction concern CompactionForce?
-
 		ss, err := store.Persist(higher, StorePersistOptions{
-			CompactionConcern: concern,
+			CompactionConcern: smatCompactionConcern,
 		})
 
 		if err != nil {

@@ -51,6 +51,7 @@ var smatActionSeqs = []smat.ActionSeq{
 		smat.ActionID('>'),
 		smat.ActionID('i'),
 		smat.ActionID('h'),
+		smat.ActionID('$'),
 		smat.ActionID('g'),
 	},
 }
