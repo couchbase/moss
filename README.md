@@ -12,6 +12,7 @@ Features
 ========
 
 * ordered key-val collection API
+* 100% go implementation
 * key range iterators
 * snapshots provide for isolated reads
 * atomic mutations via a batch API
@@ -20,13 +21,15 @@ Features
 * concurrent readers and writers don't block each other
 * optional, advanced API's to avoid extra memory copying
 * optional lower-level storage implementation, using
-  an append-only design for writes and mmap() for reads
+  an append-only design for writes and mmap() for reads,
+  with configurable compaction policy; see: OpenStoreCollection()
 * optional persistence hooks to allow write-back caching to a
   lower-level storage implementation that advanced users may wish to
   provide (e.g., you can hook moss up to leveldb, sqlite, etc)
-* 100% go implementation
+* event callbacks allow the monitoring of asynchronous tasks
 * unit tests
-* fuzz tests via go-fuzz & smat (github.com/mschoch/smat)
+* fuzz tests via go-fuzz & smat (github.com/mschoch/smat);
+  see README-smat.md
 
 License
 =======
@@ -93,6 +96,11 @@ Snapshot is also a similarly cheap operation by cloning the stack.
 Limitations and considerations
 ==============================
 
+NOTE: Keys in a Batch must be unique.  That is, myBatch.Set("x",
+"foo"); myBatch.Set("x", "bar") is not supported.  Applications that
+do not naturally meet this requirement might maintain their own
+map[key]val data structures to ensure this uniqueness constraint.
+
 Max key length is 2^24 (24 bits used to track key length).
 
 Max val length is 2^28 (28 bits used to track val length).
@@ -118,3 +126,8 @@ an Iterator for a long time can hold onto a lot of resources.  Worst
 case is the reader's Snapshot or Iterator may delay the reclaimation
 of large, old segments, where incoming mutations have obsoleted the
 immutable segments that the reader is still holding onto.
+
+Performance
+===========
+
+Please try `go test -bench=.` for some basic performance tests.

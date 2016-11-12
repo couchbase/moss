@@ -18,8 +18,8 @@ import (
 )
 
 // DefaultNaiveSeekToMaxTries is the max number of attempts a forward
-// SeekTo() will loop on basic Next()'s before giving up and starting
-// a binary search for a given seekToKey.
+// iterator.SeekTo() will loop using simple Next()'s before giving up
+// and starting a binary search for a given, forward seekToKey.
 var DefaultNaiveSeekToMaxTries = 100
 
 // An iterator tracks a min-heap "scan-line" of cursors through a

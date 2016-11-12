@@ -11,14 +11,17 @@
 
 // Package moss stands for "memory-oriented sorted segments", and
 // provides a data structure that manages an ordered Collection of
-// key-val entries.
+// key-val entries, with optional persistence.
 //
-// The design is similar to a (much) simplified LSM tree, in that
-// there is a stack of sorted key-val arrays or "segments".  To
-// incorporate the next Batch (see: ExecuteBatch()), we sort the
-// incoming Batch of key-val mutations into a "segment" and atomically
-// push the new segment onto the stack.  A higher segment in the stack
-// will shadow entries of the same key from lower segments.
+// The design is similar to a simplified LSM tree (log structured
+// merge tree), but is more like a "LSM array", in that a stack of
+// immutable, sorted key-val arrays or "segments" is maintained.  When
+// there's an incoming Batch of key-val mutations (see:
+// ExecuteBatch()), the Batch, which is an array of key-val mutations,
+// is sorted in-place and becomes an immutable "segment".  Then, the
+// segment is atomically pushed onto a stack of segment pointers.  A
+// higher segment in the stack will shadow mutations of the same key
+// from lower segments.
 //
 // Separately, an asynchronous goroutine (the "merger") will
 // continuously merge N sorted segments to keep stack height low.
@@ -30,10 +33,43 @@
 // Iterations when the stack height is > 1 are implementing using a
 // N-way heap merge.
 //
+// A Batch and a segment is actually two arrays: a byte array of
+// contiguous key-val entries; and an uint64 array of entry offsets
+// and key-val lengths that refer to the previous key-val entries byte
+// array.
+//
 // In this design, stacks are treated as immutable via a copy-on-write
 // approach whenever a stack is "modified".  So, readers and writers
 // essentially don't block each other, and taking a Snapshot is also a
-// similarly cheap operation by cloning a stack.
+// relatively simple operation of atomically cloning the stack of
+// segment pointers.
+//
+// Of note: mutations are only supported through Batch operations,
+// which acknowledges the common practice of using batching to achieve
+// higher write performance and embraces it.  Additionally, higher
+// performance can be attained by using the batch memory
+// pre-allocation parameters and the Batch.Alloc() API, allowing
+// applications to serialize keys and vals directly into memory
+// maintained by a batch, which can avoid extra memory copying.
+//
+// IMPORTANT: The keys in a Batch must be unique.  That is,
+// myBatch.Set("x", "foo"); myBatch.Set("x", "bar") is not supported.
+// Applications that do not naturally meet this requirement might
+// maintain their own map[key]val data structures to ensure this
+// uniqueness constraint.
+//
+// An optional, asynchronous persistence goroutine (the "persister")
+// can drain mutations to a lower level, ordered key-value storage
+// layer.  An optional, built-in storage layer ("mossStore") is
+// available, that will asynchronously write segments to the end of a
+// file (append only design), with reads performed using mmap(), and
+// with user controllable compaction configuration.  See:
+// OpenStoreCollection().
+//
+// NOTE: the mossStore persistence design does not currently support
+// moving files created on one machine endian'ness type to another
+// machine with a different endian'ness type.
+
 package moss
 
 import (
@@ -192,27 +228,27 @@ type Event struct {
 // EventKind represents an event code for OnEvent() callbacks.
 type EventKind int
 
-// EventKindCloseStart is used when a collection.Close() has begun.
+// EventKindCloseStart is fired when a collection.Close() has begun.
 // The closing might take awhile to complete and an EventKindClose
 // will follow later.
 var EventKindCloseStart = EventKind(1)
 
-// EventKindClose is used when a collection has been fully closed.
+// EventKindClose is fired when a collection has been fully closed.
 var EventKindClose = EventKind(2)
 
-// EventKindMergerProgress is used when the merger has compeleted a
+// EventKindMergerProgress is fired when the merger has completed a
 // round of merge processing.
 var EventKindMergerProgress = EventKind(3)
 
-// EventKindPersisterProgress is used when the persister had completed
-// a round of persistence processing.
+// EventKindPersisterProgress is fired when the persister has
+// completed a round of persistence processing.
 var EventKindPersisterProgress = EventKind(4)
 
-// EventKindBatchExecuteStart is used when a collection is starting
+// EventKindBatchExecuteStart is fired when a collection is starting
 // to execute a batch.
 var EventKindBatchExecuteStart = EventKind(5)
 
-// EventKindBatchExecute is used when a collection has finished
+// EventKindBatchExecute is fired when a collection has finished
 // executing a batch.
 var EventKindBatchExecute = EventKind(6)
 
@@ -227,7 +263,12 @@ var DefaultCollectionOptions = CollectionOptions{
 }
 
 // A Batch is a set of mutations that will be incorporated atomically
-// into a Collection.
+// into a Collection.  NOTE: the keys in a Batch must be unique.
+//
+// Concurrent Batch's are allowed, but to avoid races, concurrent
+// Batches should only be used by concurrent goroutines that can
+// ensure the mutation keys are partitioned or non-overlapping between
+// Batch instances.
 type Batch interface {
 	// Close must be invoked to release resources.
 	Close() error
@@ -289,7 +330,7 @@ type Snapshot interface {
 	//
 	// A startKeyInclusive of nil means the logical "bottom-most"
 	// possible key and an endKeyExclusive of nil means the logical
-	// "top-most" possible key.
+	// key that's above the "top-most" possible key.
 	StartIterator(startKeyInclusive, endKeyExclusive []byte,
 		iteratorOptions IteratorOptions) (Iterator, error)
 }
@@ -374,14 +415,14 @@ type EntryEx struct {
 	Operation uint64
 }
 
-// OperationSet replaces the value associated with the key
+// OperationSet replaces the value associated with the key.
 const OperationSet = uint64(0x0100000000000000)
 
-// OperationDel removes the value associated with the key
+// OperationDel removes the value associated with the key.
 const OperationDel = uint64(0x0200000000000000)
 
 // OperationMerge merges the new value with the existing value associated with
-// the key, as described by the configured MergeOperator
+// the key, as described by the configured MergeOperator.
 const OperationMerge = uint64(0x0300000000000000)
 
 // A MergeOperator may be implemented by applications that wish to

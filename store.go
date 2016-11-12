@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-// TODO: Better version parsers / checkers / handling.
+// TODO: Improved version parsers / checkers / handling (semver?).
 
 // --------------------------------------------------------
 
@@ -35,7 +35,9 @@ var STORE_SUFFIX = ".moss" // File name suffix.
 var STORE_ENDIAN = binary.LittleEndian
 var STORE_PAGE_SIZE = 4096
 
+// STORE_VERSION must be bumped whenever the file format changes.
 var STORE_VERSION = uint32(3)
+
 var STORE_MAGIC_BEG []byte = []byte("0m1o2s")
 var STORE_MAGIC_END []byte = []byte("3s4p5s")
 
@@ -98,6 +100,8 @@ type StoreOptions struct {
 	KeepFiles bool
 }
 
+// DefaultStoreOptions are the default store options when the
+// application hasn't provided a meaningful configuration value.
 var DefaultStoreOptions = StoreOptions{
 	CompactionBufferPages: 512,
 }
@@ -561,10 +565,10 @@ func pageAlign(pos int64) int64 {
 
 // --------------------------------------------------------
 
-// OpenStoreCollection returns collection based on a persisted store.
-// Updates to the collection will be persisted.  An empty directory
-// results in an empty collection.  Both the store and collection
-// should be closed by the caller.
+// OpenStoreCollection returns collection based on a persisted store
+// in a directory.  Updates to the collection will be persisted.  An
+// empty directory starts an empty collection.  Both the store and
+// collection should be closed by the caller when done.
 func OpenStoreCollection(dir string,
 	options StoreOptions,
 	persistOptions StorePersistOptions) (*Store, Collection, error) {

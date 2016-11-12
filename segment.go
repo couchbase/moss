@@ -17,7 +17,10 @@ import (
 	"sort"
 )
 
-// BASIC_SEGMENT_KIND is persisted.
+// BASIC_SEGMENT_KIND is the code for a basic, persistable segment
+// implementation, which represents a segment as two arrays: an array
+// of contiguous key-val bytes [key0, val0, key1, val1, ... keyN,
+// valN], and an array of offsets plus lengths into the first array.
 var BASIC_SEGMENT_KIND = "a"
 
 func init() {
