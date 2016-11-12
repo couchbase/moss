@@ -69,7 +69,7 @@
 // NOTE: the mossStore persistence design does not currently support
 // moving files created on one machine endian'ness type to another
 // machine with a different endian'ness type.
-
+//
 package moss
 
 import (
