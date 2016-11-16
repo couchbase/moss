@@ -53,6 +53,9 @@ func (s *Store) persistFooter(file File, footer *Footer) error {
 		return fmt.Errorf("store: persistFooter error writing all footerBuf")
 	}
 
+	footer.fileName = finfo.Name()
+	footer.filePos = footerPos
+
 	return nil
 }
 
@@ -64,13 +67,14 @@ func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ScanFooter(options, file, finfo.Size())
+	return ScanFooter(options, file, finfo.Name(), finfo.Size())
 }
 
 // --------------------------------------------------------
 
 // ScanFooter scans a file backwards from the given pos for a valid Footer.
-func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
+func ScanFooter(options *StoreOptions, file File, fileName string,
+	pos int64) (*Footer, error) {
 	footerEnd := make([]byte, footerEndLen)
 	for {
 		for { // Scan backwards for STORE_MAGIC_END, which might be a potential footer.
@@ -140,7 +144,7 @@ func ScanFooter(options *StoreOptions, file File, pos int64) (*Footer, error) {
 						"wanted: %v != found: %v", length0, length)
 				}
 
-				f := &Footer{refs: 1}
+				f := &Footer{refs: 1, fileName: fileName, filePos: offset}
 
 				err = json.Unmarshal(data[2*lenMagicBeg+4+4:], f)
 				if err != nil {

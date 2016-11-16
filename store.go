@@ -137,6 +137,9 @@ type Footer struct {
 	mref *mmapRef
 	ss   *segmentStack
 
+	fileName string // File name; "" when unpersisted.
+	filePos  int64  // Byte offset of footer; <= 0 when unpersisted.
+
 	prevFooter *Footer // For tracking a chain of footer records.
 }
 
