@@ -14,6 +14,7 @@ package moss
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -26,6 +27,10 @@ import (
 )
 
 // TODO: Improved version parsers / checkers / handling (semver?).
+
+// ErrNoValidFooter is returned when a valid footer could not be found
+// in a file.
+var ErrNoValidFooter = errors.New("no-valid-footer")
 
 // --------------------------------------------------------
 

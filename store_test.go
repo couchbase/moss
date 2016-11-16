@@ -1276,3 +1276,162 @@ func TestStoreNilValue(t *testing.T) {
 
 	store2.Close()
 }
+
+func TestStoreSnapshotPrevious(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	counts := map[EventKind]int{}
+	eventWaiters := map[EventKind]chan bool{}
+
+	co := CollectionOptions{
+		MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+		OnEvent: func(event Event) {
+			mu.Lock()
+			counts[event.Kind]++
+			eventWaiter := eventWaiters[event.Kind]
+			mu.Unlock()
+			if eventWaiter != nil {
+				eventWaiter <- true
+			}
+		},
+	}
+
+	store, m, err := OpenStoreCollection(tmpDir, StoreOptions{
+		CollectionOptions: co,
+	}, StorePersistOptions{
+		CompactionConcern: CompactionDisable,
+	})
+	if err != nil || m == nil || store == nil {
+		t.Errorf("expected open empty store collection to work")
+	}
+
+	// Insert 0, 2, 4, 6, 8.
+	b, _ := m.NewBatch(0, 0)
+	for i := 0; i < 10; i += 2 {
+		xs := fmt.Sprintf("%d", i)
+		x := []byte(xs)
+		b.Set(x, x)
+	}
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected exec batch to work")
+	}
+	b.Close()
+
+	checkIterator := func(ss Snapshot, start, delta int) {
+		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		if err != nil {
+			t.Errorf("expected nil iter err, got: %v", err)
+		}
+
+		var lastNextErr error
+
+		for i := start; i < 10; i += delta {
+			if lastNextErr != nil {
+				t.Errorf("expected nil lastNextErr, got: %v", lastNextErr)
+			}
+
+			k, v, err := iter.Current()
+			if err != nil {
+				xs := fmt.Sprintf("%d", i)
+				if string(k) != xs || string(v) != xs {
+					t.Errorf("expected %d, got %s = %s", i, k, v)
+				}
+			}
+
+			lastNextErr = iter.Next()
+		}
+
+		if lastNextErr != ErrIteratorDone {
+			t.Errorf("expected iterator done, got: %v", lastNextErr)
+		}
+
+		iter.Close()
+	}
+
+	waitUntilClean := func() error {
+		for {
+			stats, err := m.Stats()
+			if err != nil {
+				return err
+			}
+
+			if stats.CurDirtyOps <= 0 &&
+				stats.CurDirtyBytes <= 0 &&
+				stats.CurDirtySegments <= 0 {
+				break
+			}
+
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		return nil
+	}
+
+	waitUntilClean()
+
+	ss, err := store.Snapshot()
+	if err != nil {
+		t.Errorf("expected no snapshot err, got: %v", err)
+	}
+
+	checkIterator(ss, 0, 2)
+
+	ss.Close()
+
+	// Insert 1, 3, 5, 7, 9.
+	b, _ = m.NewBatch(0, 0)
+	for i := 1; i < 10; i += 2 {
+		xs := fmt.Sprintf("%d", i)
+		x := []byte(xs)
+		b.Set(x, x)
+	}
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected exec batch to work")
+	}
+	b.Close()
+
+	waitUntilClean()
+
+	ss, err = store.Snapshot()
+	if err != nil {
+		t.Errorf("expected no snapshot err, got: %v", err)
+	}
+
+	checkIterator(ss, 0, 1)
+
+	// ------------------------------------------
+
+	ssPrev, err := store.SnapshotPrevious(ss)
+	if err != nil {
+		t.Errorf("expected SnapshotPrevious nil err, got: %v", err)
+	}
+	if ssPrev == nil {
+		t.Errorf("expected ssPrev, got nil")
+	}
+
+	ss.Close()
+
+	checkIterator(ssPrev, 0, 2)
+
+	// ------------------------------------------
+
+	ssPrevPrev, err := store.SnapshotPrevious(ssPrev)
+	if err != nil {
+		t.Errorf("expected SnapshotPrevious.PrevSnapshot nil err, got: %v", err)
+	}
+	if ssPrevPrev != nil {
+		t.Errorf("expected ssPrevPrev nil, got: %+v", ssPrevPrev)
+	}
+
+	ssPrev.Close()
+
+	// ------------------------------------------
+
+	m.Close()
+
+	store.Close()
+}

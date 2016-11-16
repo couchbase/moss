@@ -79,7 +79,7 @@ func ScanFooter(options *StoreOptions, file File, fileName string,
 	for {
 		for { // Scan backwards for STORE_MAGIC_END, which might be a potential footer.
 			if pos <= int64(footerBegLen+footerEndLen) {
-				return nil, fmt.Errorf("store: no valid footer found")
+				return nil, ErrNoValidFooter
 			}
 			n, err := file.ReadAt(footerEnd, pos-int64(footerEndLen))
 			if err != nil {
