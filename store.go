@@ -375,26 +375,10 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return nil, err
 	}
 
-	if !persistOptions.NoSync {
-		err = file.Sync()
-		if err != nil {
-			footer.DecRef()
-			return nil, err
-		}
-	}
-
-	err = s.persistFooter(file, footer)
+	err = s.persistFooter(file, footer, !persistOptions.NoSync)
 	if err != nil {
 		footer.DecRef()
 		return nil, err
-	}
-
-	if !persistOptions.NoSync {
-		err = file.Sync()
-		if err != nil {
-			footer.DecRef()
-			return nil, err
-		}
 	}
 
 	mref, _ := footer.mrefSegmentStack()

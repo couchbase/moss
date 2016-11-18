@@ -20,7 +20,27 @@ import (
 	"github.com/edsrzf/mmap-go"
 )
 
-func (s *Store) persistFooter(file File, footer *Footer) error {
+func (s *Store) persistFooter(file File, footer *Footer, sync bool) error {
+	if sync {
+		err := file.Sync()
+		if err != nil {
+			return err
+		}
+	}
+
+	err := s.persistFooterUnsynced(file, footer)
+	if err != nil {
+		return err
+	}
+
+	if sync {
+		return file.Sync()
+	}
+
+	return nil
+}
+
+func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 	jBuf, err := json.Marshal(footer)
 	if err != nil {
 		return err
