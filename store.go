@@ -569,10 +569,24 @@ func OpenStoreCollection(dir string,
 		return nil, nil, err
 	}
 
-	storeSnapshotInit, err := store.Snapshot()
+	coll, err := store.OpenCollection(options, persistOptions)
 	if err != nil {
 		store.Close()
 		return nil, nil, err
+	}
+
+	return store, coll, nil
+}
+
+// OpenCollection opens a collection based on a store.  Applications
+// should open at most a single collection per store for performing
+// read/write work.
+func (store *Store) OpenCollection(
+	options StoreOptions,
+	persistOptions StorePersistOptions) (Collection, error) {
+	storeSnapshotInit, err := store.Snapshot()
+	if err != nil {
+		return nil, err
 	}
 
 	co := options.CollectionOptions
@@ -594,16 +608,16 @@ func OpenStoreCollection(dir string,
 	coll, err := NewCollection(co)
 	if err != nil {
 		storeSnapshotInit.Close()
-		return nil, nil, err
+		return nil, err
 	}
 
 	err = coll.Start()
 	if err != nil {
 		storeSnapshotInit.Close()
-		return nil, nil, err
+		return nil, err
 	}
 
-	return store, coll, nil
+	return coll, nil
 }
 
 func removeFiles(dir string, fnames []string) error {
