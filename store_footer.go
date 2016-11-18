@@ -87,13 +87,14 @@ func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ScanFooter(options, file, finfo.Name(), finfo.Size())
+	fref := &FileRef{file: file, refs: 1}
+	return ScanFooter(options, fref, finfo.Name(), finfo.Size())
 }
 
 // --------------------------------------------------------
 
 // ScanFooter scans a file backwards from the given pos for a valid Footer.
-func ScanFooter(options *StoreOptions, file File, fileName string,
+func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 	pos int64) (*Footer, error) {
 	footerEnd := make([]byte, footerEndLen)
 	for {
@@ -101,7 +102,7 @@ func ScanFooter(options *StoreOptions, file File, fileName string,
 			if pos <= int64(footerBegLen+footerEndLen) {
 				return nil, ErrNoValidFooter
 			}
-			n, err := file.ReadAt(footerEnd, pos-int64(footerEndLen))
+			n, err := fref.file.ReadAt(footerEnd, pos-int64(footerEndLen))
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +135,7 @@ func ScanFooter(options *StoreOptions, file File, fileName string,
 			length == uint32(pos-offset) {
 			data := make([]byte, pos-offset-int64(footerEndLen))
 
-			n, err := file.ReadAt(data, offset)
+			n, err := fref.file.ReadAt(data, offset)
 			if err != nil {
 				return nil, err
 			}
@@ -171,7 +172,7 @@ func ScanFooter(options *StoreOptions, file File, fileName string,
 					return nil, err
 				}
 
-				err = f.loadSegments(options, &FileRef{file: file, refs: 1})
+				err = f.loadSegments(options, fref)
 				if err != nil {
 					return nil, err
 				}
