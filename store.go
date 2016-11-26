@@ -132,21 +132,21 @@ type Header struct {
 	CreatedEndian string // The endian() of the file creator.
 }
 
-// Footer represents a footer record persisted in a file, and
+// Footer represents a footer record persisted in a file, and also
 // implements the moss.Snapshot interface.
 type Footer struct {
-	SegmentLocs []SegmentLoc // Older SegmentLoc's come first.
-
 	m    sync.Mutex // Protects the fields that follow.
 	refs int
-	mref *mmapRef
-	ss   *segmentStack
 
-	fileName string // File name; "" when unpersisted.
-	filePos  int64  // Byte offset of footer; <= 0 when unpersisted.
+	SegmentLocs SegmentLocs // Persisted; older SegmentLoc's come first.
 
-	prevFooter *Footer // For tracking a chain of footer records.
+	ss *segmentStack // Ephemeral.
+
+	fileName string // Ephemeral; file name; "" when unpersisted.
+	filePos  int64  // Ephemeral; byte offset of footer; <= 0 when unpersisted.
 }
+
+// --------------------------------------------------------
 
 // SegmentLoc represents a persisted segment.
 type SegmentLoc struct {
@@ -162,10 +162,37 @@ type SegmentLoc struct {
 	TotOpsDel  uint64
 	TotKeyByte uint64
 	TotValByte uint64
+
+	mref *mmapRef // Immutable and ephemeral / non-persisted.
 }
 
 // TotOps returns number of ops in a segment loc.
 func (sloc *SegmentLoc) TotOps() int { return int(sloc.KvsBytes / 8 / 2) }
+
+// --------------------------------------------------------
+
+type SegmentLocs []SegmentLoc
+
+func (slocs SegmentLocs) AddRef() {
+	for _, sloc := range slocs {
+		if sloc.mref != nil {
+			sloc.mref.AddRef()
+		}
+	}
+}
+
+func (slocs SegmentLocs) DecRef() {
+	for _, sloc := range slocs {
+		if sloc.mref != nil {
+			sloc.mref.DecRef()
+		}
+	}
+}
+
+func (slocs SegmentLocs) Close() error {
+	slocs.DecRef()
+	return nil
+}
 
 // --------------------------------------------------------
 
@@ -381,12 +408,9 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return nil, err
 	}
 
-	mref, _ := footer.mrefSegmentStack()
-
 	footer.AddRef() // One ref-count will be held by the store.
 
 	s.m.Lock()
-	footer.prevFooter = s.footer
 	prevFooter := s.footer
 	s.footer = footer
 	s.totPersists++
@@ -394,12 +418,7 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 
 	if prevFooter != nil {
 		prevFooter.DecRef()
-
-		// Inform the previous footers of the latest mmap handle.
-		footer.mrefRefreshPrevFooter(prevFooter, mref)
 	}
-
-	mref.DecRef()
 
 	return footer, nil // The other ref-count returned to caller.
 }
@@ -413,12 +432,12 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 	defer s.m.Unlock()
 
 	if s.footer != nil {
-		mref, _ := s.footer.mrefSegmentStack()
-		if mref != nil {
-			fref := mref.fref
-			file := fref.AddRef()
+		slocs, _ := s.footer.SegmentStack()
+		defer s.footer.DecRef()
 
-			mref.DecRef()
+		if len(slocs) > 0 {
+			fref := slocs[0].mref.fref
+			file := fref.AddRef()
 
 			return fref, file, nil
 		}

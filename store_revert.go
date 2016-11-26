@@ -46,16 +46,25 @@ func (s *Store) SnapshotRevert(revertTo Snapshot) error {
 			" fileNameCurr: %s", revertToFooter.fileName, fileNameCurr)
 	}
 
+	if len(revertToFooter.SegmentLocs) <= 0 {
+		return fmt.Errorf("revert footer slocs <= 0")
+	}
+
+	mref := revertToFooter.SegmentLocs[0].mref
+	if mref == nil || mref.fref == nil || mref.fref.file == nil {
+		return fmt.Errorf("revert footer parts nil")
+	}
+
+	slocs := append(SegmentLocs{}, revertToFooter.SegmentLocs...)
+	slocs.AddRef()
+
 	footer := &Footer{
-		SegmentLocs: revertToFooter.SegmentLocs,
 		refs:        1,
-		mref:        revertToFooter.mref,
+		SegmentLocs: slocs,
 		ss:          revertToFooter.ss,
 	}
 
-	footer.mref.AddRef()
-
-	err := s.persistFooter(footer.mref.fref.file, footer, true)
+	err := s.persistFooter(mref.fref.file, footer, true)
 	if err != nil {
 		footer.DecRef()
 		return err

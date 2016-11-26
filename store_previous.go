@@ -27,30 +27,32 @@ func (s *Store) SnapshotPrevious(ss Snapshot) (Snapshot, error) {
 		return nil, fmt.Errorf("snapshot not a footer")
 	}
 
-	footer.AddRef()
+	slocs, _ := footer.SegmentStack()
 	defer footer.DecRef()
 
-	if footer.mref == nil || footer.mref.fref == nil || footer.mref.fref.file == nil {
-		return nil, fmt.Errorf("footer parts nil")
+	if len(slocs) <= 0 {
+		return nil, nil
 	}
 
-	finfo, err := footer.mref.fref.file.Stat()
+	mref := slocs[0].mref
+	if mref == nil || mref.refs <= 0 {
+		return nil, fmt.Errorf("footer mref nil")
+	}
+
+	fref := mref.fref
+	if fref == nil || fref.refs <= 0 || fref.file == nil {
+		return nil, fmt.Errorf("footer fref nil")
+	}
+
+	finfo, err := fref.file.Stat()
 	if err != nil {
 		return nil, err
 	}
-
-	fref := footer.mref.fref
-	fref.AddRef()
 
 	ssPrev, err := ScanFooter(s.options, fref, finfo.Name(), footer.filePos-1)
 	if err == ErrNoValidFooter {
-		fref.DecRef()
 		return nil, nil
 	}
-	if err != nil {
-		fref.DecRef()
-		return nil, err
-	}
 
-	return ssPrev, nil
+	return ssPrev, err
 }

@@ -663,7 +663,13 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 		t.Errorf("expected read dir to work")
 	}
 	if len(fileInfos) != 1 {
-		t.Errorf("expected only 1 file")
+		fileNames := []string{}
+		for _, fileInfo := range fileInfos {
+			fileNames = append(fileNames,
+				fmt.Sprintf("%s (%d)", fileInfo.Name(), fileInfo.Size()))
+		}
+		t.Errorf("expected only 1 file, got: %d, fileNames; %v",
+			len(fileInfos), fileNames)
 	}
 
 	seq, err := ParseFNameSeq(fileInfos[0].Name())
@@ -699,7 +705,7 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 	if store2.footer == nil {
 		t.Errorf("expected nextFNameseq to be seq+1")
 	}
-	if store2.footer.mref.refs != 1 {
+	if store2.footer.SegmentLocs[0].mref.refs != 1 {
 		t.Errorf("expected store2.footer.fref.refs == 1")
 	}
 	if len(store2.footer.SegmentLocs) != 1 {

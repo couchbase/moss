@@ -45,9 +45,9 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 	defer footer.DecRef()
 
-	mref, ss := footer.mrefSegmentStack()
+	slocs, ss := footer.SegmentStack()
 
-	defer mref.DecRef()
+	defer footer.DecRef()
 
 	if compactionConcern == CompactionAllow {
 		totUpperLen := 0
@@ -88,12 +88,15 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		return false, err
 	}
 
-	if mref != nil && mref.fref != nil {
-		finfo, err := mref.fref.file.Stat()
-		if err == nil && len(finfo.Name()) > 0 {
-			mref.fref.OnAfterClose(func() {
-				os.Remove(path.Join(s.dir, finfo.Name()))
-			})
+	if len(slocs) > 0 {
+		mref := slocs[0].mref
+		if mref != nil && mref.fref != nil {
+			finfo, err := mref.fref.file.Stat()
+			if err == nil && len(finfo.Name()) > 0 {
+				mref.fref.OnAfterClose(func() {
+					os.Remove(path.Join(s.dir, finfo.Name()))
+				})
+			}
 		}
 	}
 
@@ -102,9 +105,9 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 func (s *Store) compact(footer *Footer, higher Snapshot,
 	persistOptions StorePersistOptions) error {
-	mref, ss := footer.mrefSegmentStack()
+	_, ss := footer.SegmentStack()
 
-	defer mref.DecRef()
+	defer footer.DecRef()
 
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)

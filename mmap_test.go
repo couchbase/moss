@@ -146,7 +146,7 @@ func TestMMapRef(t *testing.T) {
 		t.Errorf("expected 2 footer ref, : got: %d", footer.refs)
 	}
 
-	mref := footer.mref
+	mref := footer.SegmentLocs[0].mref
 	if mref == nil {
 		t.Errorf("expected mref")
 	}
@@ -238,19 +238,21 @@ func TestRefCounting(t *testing.T) {
 				msg, frefs, f.refs)
 		}
 
-		if f.mref != nil {
-			f.mref.m.Lock()
+		n := len(f.SegmentLocs)
+		if n > 0 &&
+			f.SegmentLocs[n-1].mref != nil {
+			f.SegmentLocs[n-1].mref.m.Lock()
 
-			if f.mref.refs != mrefs {
+			if f.SegmentLocs[n-1].mref.refs != mrefs {
 				t.Errorf("%s - expected mrefs to be %d, got: %d",
-					msg, mrefs, f.mref.refs)
+					msg, mrefs, f.SegmentLocs[n-1].mref.refs)
 			}
 
 			if cb != nil {
 				cb()
 			}
 
-			f.mref.m.Unlock()
+			f.SegmentLocs[n-1].mref.m.Unlock()
 		} else if mrefs > 0 {
 			t.Errorf("%s - expected footer.mref to be %d, but nil mref",
 				msg, mrefs)
@@ -288,27 +290,11 @@ func TestRefCounting(t *testing.T) {
 		return nil
 	}
 
-	countFooters := func() (*Footer, int) {
-		fx := store.footer
-		fxNum := 1
-		for fx.prevFooter != nil {
-			fx = fx.prevFooter
-			fxNum++
-		}
-		return fx, fxNum
-	}
-
 	// ---------------------------------------------
 
 	store.m.Lock()
 
 	checkRefs(store.footer, 2, 0, nil, "new, empty store")
-
-	_, numFooters := countFooters()
-	if numFooters != 1 {
-		t.Errorf("expected only 1 footer before 1st batch, got: %d",
-			numFooters)
-	}
 
 	store.m.Unlock()
 
@@ -323,16 +309,6 @@ func TestRefCounting(t *testing.T) {
 	store.m.Lock()
 
 	checkRefs(store.footer, 2, 1, nil, "after 1st batch persisted")
-
-	_, numFooters = countFooters()
-	if numFooters != 2 {
-		// Two footers expected because the oldest, "empty" footer is
-		// still in the chain at this point, since the mrefRefresh() /
-		// splicing runs before the DecRef of the
-		// initial-lower-level-snapshot.
-		t.Errorf("expected 2 footers after 1st batch, got: %d",
-			numFooters)
-	}
 
 	store.m.Unlock()
 
@@ -352,13 +328,7 @@ func TestRefCounting(t *testing.T) {
 
 	checkRefs(store.footer, 3, 1, nil, "after 1st batch persisted")
 
-	oldestFooter, numFooters := countFooters()
-	if numFooters != 2 {
-		t.Errorf("expected only 2 footers after 1st ss")
-	}
-	if oldestFooter == f0 {
-		t.Errorf("expected oldest footer to not be f0")
-	}
+	checkRefs(f0, 3, 1, nil, "after 1st batch persisted, against f0")
 
 	store.m.Unlock()
 
@@ -375,24 +345,12 @@ func TestRefCounting(t *testing.T) {
 
 	checkRefs(store.footer, 2, 1, nil, "after nth batch persisted")
 
-	oldestFooter, numFooters = countFooters()
-	if oldestFooter != f0 {
-		t.Errorf("expected f0 to be same as oldest snapshot/footer")
-	}
-	if numFooters != 3 {
-		t.Errorf("expected only 3 footers in chain after many batches,"+
-			" got: %d", numFooters)
-	}
-
 	store.m.Unlock()
 
 	var mref *mmapRef
 
-	checkRefs(f0, 1, 1, func() {
-		mref = f0.mref
-		if f0.prevFooter != nil {
-			t.Errorf("expected oldest footer to have nil prevFooter")
-		}
+	checkRefs(f0, 1, 2, func() {
+		mref = f0.SegmentLocs[0].mref
 	}, "oldest footer check")
 
 	// ----------------------------------------
@@ -403,21 +361,13 @@ func TestRefCounting(t *testing.T) {
 
 	checkRefs(store.footer, 2, 1, nil, "after oldest snapshot closed")
 
-	_, numFooters = countFooters()
-	if numFooters != 3 {
-		// The reason why is a persistence cycle hasn't run yet
-		// that can cleanup the footer chain of unused footers.
-		t.Errorf("expected 3 footers still in chain after ss0 closed,"+
-			" got %d", numFooters)
-	}
-
 	store.m.Unlock()
 
 	checkRefs(f0, 0, 0, nil, "oldest footer after ss0.Close()")
 
 	mref.m.Lock()
-	if mref.refs != 0 {
-		t.Errorf("expected mref.refs 0, got: %d", mref.refs)
+	if mref.refs != 1 {
+		t.Errorf("expected mref.refs 1 after oldest ss closed, got: %d", mref.refs)
 	}
 	mref.m.Unlock()
 
@@ -433,8 +383,8 @@ func TestRefCounting(t *testing.T) {
 	store.m.Unlock()
 
 	mref.m.Lock()
-	if mref.refs != 0 {
-		t.Errorf("expected mref.refs 0, got: %d", mref.refs)
+	if mref.refs != 1 {
+		t.Errorf("expected mref.refs 1 after coll closed, got: %d", mref.refs)
 	}
 	mref.m.Unlock()
 
