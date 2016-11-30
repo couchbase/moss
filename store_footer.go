@@ -239,7 +239,14 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 			nbytes := int(endOffset - begOffset)
 
-			mm, err := mmap.MapRegion(osFile, nbytes, mmap.RDONLY, 0, begOffset)
+			// Some platforms (windows) only support mmap()'ing at an
+			// allocation granularity that's != to a page size, so
+			// calculate the actual offset/nbytes to use.
+			begOffsetActual := pageOffset(begOffset, int64(AllocationGranularity))
+			begOffsetDelta := int(begOffset - begOffsetActual)
+			nbytesActual := nbytes + begOffsetDelta
+
+			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
 				onError()
 				return fmt.Errorf("store: loadSegments mmap.Map(), err: %v", err)
@@ -247,7 +254,9 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
 
-			sloc.mref = &mmapRef{fref: fref, mm: mm, refs: 1}
+			buf := mm[begOffsetDelta : begOffsetDelta+nbytes]
+
+			sloc.mref = &mmapRef{fref: fref, mm: mm, buf: buf, refs: 1}
 
 			mref = sloc.mref
 		}
@@ -264,15 +273,15 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 		var buf []byte
 
 		if sloc.KvsBytes > 0 {
-			if sloc.KvsBytes > uint64(len(mref.mm)) {
+			if sloc.KvsBytes > uint64(len(mref.buf)) {
 				onError()
 				return fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
-					" len(mref.mm): %d, sloc: %+v, footer: %+v,"+
+					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
 					" f.SegmentLocs: %+v, i: %d, options: %v",
-					len(mref.mm), sloc, f, f.SegmentLocs, i, options)
+					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
 			}
 
-			kvsBytes := mref.mm[0:sloc.KvsBytes]
+			kvsBytes := mref.buf[0:sloc.KvsBytes]
 			kvs, err = ByteSliceToUint64Slice(kvsBytes)
 			if err != nil {
 				onError()
@@ -282,15 +291,15 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 		if sloc.BufBytes > 0 {
 			bufStart := sloc.BufOffset - sloc.KvsOffset
-			if bufStart+sloc.BufBytes > uint64(len(mref.mm)) {
+			if bufStart+sloc.BufBytes > uint64(len(mref.buf)) {
 				onError()
 				return fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
-					" len(mref.mm): %d, sloc: %+v, footer: %+v,"+
+					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
 					" f.SegmentLocs: %+v, i: %d, options: %v",
-					len(mref.mm), sloc, f, f.SegmentLocs, i, options)
+					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
 			}
 
-			buf = mref.mm[bufStart : bufStart+sloc.BufBytes]
+			buf = mref.buf[bufStart : bufStart+sloc.BufBytes]
 		}
 
 		seg, err := segmentLoader(sloc, kvs, buf)

@@ -21,6 +21,7 @@ import (
 type mmapRef struct {
 	fref *FileRef
 	mm   mmap.MMap
+	buf  []byte
 	m    sync.Mutex // Protects the fields that follow.
 	refs int
 }
@@ -48,6 +49,8 @@ func (r *mmapRef) DecRef() error {
 	if r.refs <= 0 {
 		r.mm.Unmap()
 		r.mm = nil
+
+		r.buf = nil
 
 		r.fref.DecRef()
 		r.fref = nil
