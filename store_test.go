@@ -43,6 +43,31 @@ func TestPageAlign(t *testing.T) {
 	}
 }
 
+func TestPageOffset(t *testing.T) {
+	p := int64(STORE_PAGE_SIZE)
+
+	tests := []struct {
+		pos, exp int64
+	}{
+		{0, 0},
+		{1, 0},
+		{p - 1, 0},
+		{p, p},
+		{p + 1, p},
+		{2*p - 1, p},
+		{2 * p, 2 * p},
+		{2*p + 1, 2 * p},
+	}
+
+	for testi, test := range tests {
+		got := pageOffset(test.pos, p)
+		if test.exp != got {
+			t.Errorf("expected pageOffset testi: %d, test: %+v, got: %d",
+				testi, test, got)
+		}
+	}
+}
+
 func TestParseFNameSeq(t *testing.T) {
 	s, err := ParseFNameSeq("data-00000fe.moss")
 	if err != nil || s != int64(254) {

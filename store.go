@@ -565,11 +565,22 @@ func FormatFName(seq int64) string {
 
 // --------------------------------------------------------
 
-// pageAlign returns the pos bumped up to multiple of STORE_PAGE_SIZE.
+// pageAlign returns the pos if it's at the start of a page.  Else,
+// pageAlign() returns pos bumped up to the next multiple of
+// STORE_PAGE_SIZE.
 func pageAlign(pos int64) int64 {
 	rem := pos % int64(STORE_PAGE_SIZE)
 	if rem != 0 {
 		return pos + int64(STORE_PAGE_SIZE) - rem
+	}
+	return pos
+}
+
+// pageOffset returns the page offset for a given pos.
+func pageOffset(pos, pageSize int64) int64 {
+	rem := pos % pageSize
+	if rem != 0 {
+		return pos - rem
 	}
 	return pos
 }
