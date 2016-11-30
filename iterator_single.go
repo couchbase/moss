@@ -58,17 +58,17 @@ func (iter *iteratorSingle) InitCloser(closer io.Closer) error {
 // Next returns ErrIteratorDone if the iterator is done.
 func (iter *iteratorSingle) Next() error {
 	iter.pos++
-	if iter.pos >= iter.posEnd {
-		return ErrIteratorDone
-	}
+	if iter.pos < iter.posEnd {
+		iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
+		if iter.op != OperationDel ||
+			iter.iteratorOptions.IncludeDeletions {
+			return nil
+		}
 
-	iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
-	if !iter.iteratorOptions.IncludeDeletions &&
-		iter.op == OperationDel {
 		return iter.Next()
 	}
 
-	return nil
+	return ErrIteratorDone
 }
 
 func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {

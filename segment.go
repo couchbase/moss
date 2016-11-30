@@ -317,16 +317,16 @@ func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
 // logical entry position in the segment.
 func (a *segment) GetOperationKeyVal(pos int) (uint64, []byte, []byte) {
 	x := pos * 2
-	if x >= len(a.kvs) {
-		return 0, nil, nil
+	if x < len(a.kvs) {
+		opklvl := a.kvs[x]
+		kstart := int(a.kvs[x+1])
+		operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
+		vstart := kstart + keyLen
+
+		return operation, a.buf[kstart:vstart], a.buf[vstart : vstart+valLen]
 	}
 
-	opklvl := a.kvs[x]
-	kstart := int(a.kvs[x+1])
-	operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
-	vstart := kstart + keyLen
-
-	return operation, a.buf[kstart:vstart], a.buf[vstart : vstart+valLen]
+	return 0, nil, nil
 }
 
 // ------------------------------------------------------
