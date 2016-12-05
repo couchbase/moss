@@ -20,9 +20,11 @@ Features
   for write-heavy use cases (e.g., updating counters)
 * concurrent readers and writers don't block each other
 * optional, advanced API's to avoid extra memory copying
-* optional lower-level storage implementation, using
-  an append-only design for writes and mmap() for reads,
+* optional lower-level storage implementation, called "mossStore",
+  that uses an append-only design for writes and mmap() for reads,
   with configurable compaction policy; see: OpenStoreCollection()
+* mossStore supports navigating back through previous commit points in
+  read-only fashion, and supports reverting to previous commit points.
 * optional persistence hooks to allow write-back caching to a
   lower-level storage implementation that advanced users may wish to
   provide (e.g., you can hook moss up to leveldb, sqlite, etc)
@@ -93,6 +95,8 @@ copy-on-write approach whenever the stack needs to be "modified".  So,
 multiple readers and writers won't block each other, and taking a
 Snapshot is also a similarly cheap operation by cloning the stack.
 
+See also the DESIGN.md writeup.
+
 Limitations and considerations
 ==============================
 
@@ -131,3 +135,8 @@ Performance
 ===========
 
 Please try `go test -bench=.` for some basic performance tests.
+
+Contributing changes
+====================
+
+Please see the CONTRIBUTING.md document.
