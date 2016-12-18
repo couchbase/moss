@@ -17,8 +17,8 @@ todo / future ideas
 * related, use fake file interface implementation to test file corruptions
 * checksums
 * moss as general purpose k/v store...
-** API for synchronous storage
-** non-batch API
+  * API for synchronous storage
+  * non-batch API
 * benchmarks against other KV stores
 * tool to examine/diagnose mossStore files (e.g., finishing up the "mossScope" tool)
 * incremental compaction, as opposed to the existing full compaction
@@ -27,8 +27,8 @@ todo / future ideas
 * compression (key-prefix?)
 * callback API so apps can hook into compaction (e.g., for TTL expirations)
 * C-based verison of moss?
-** might be named "mossc" (pronounced like "mossy" or "mosque")?
-   or, perhaps cmoss ("sea moss" / "CMOS")?
+  * might be named "mossc" (pronounced like "mossy" or "mosque")?
+    or, perhaps cmoss ("sea moss" / "CMOS")?
 
 incremental compaction
 ======================
