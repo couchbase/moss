@@ -69,12 +69,12 @@ A stack of 5 segments might look like...
 
   Diagram: 1
 
-  Level | Key Range
-      4 | [B, C] <-- most recent segment.
-      3 | [D, I]
-      2 | [F, H]
-      1 | [E, G]
-      0 | [A, J] <-- oldest segment.
+    Level | Key Range
+        4 | [B, C] <-- most recent segment.
+        3 | [D, I]
+        2 | [F, H]
+        1 | [E, G]
+        0 | [A, J] <-- oldest segment.
 
 Switching to a representation where the key ranges take horizontal
 space, the range overlaps amongst those 5 segments becomes more
@@ -82,12 +82,12 @@ apparent...
 
   Diagram: 2
 
-  Level | Key Range
-      4 |   [B-C]               <-- most recent segment.
-      3 |       [D---------I]
-      2 |           [F---H]
-      1 |         [E---G]
-      0 | [A-----------------J] <-- oldest segment.
+    Level | Key Range
+        4 |   [B-C]               <-- most recent segment.
+        3 |       [D---------I]
+        2 |           [F---H]
+        1 |         [E---G]
+        0 | [A-----------------J] <-- oldest segment.
 
 Next, we can flatten the diagrammatic representation into a single row
 (e.g., sorted by key), and also incorporate the level information next
@@ -95,7 +95,7 @@ to each key...
 
   Diagram: 3
 
-  [A0   [B4   C4]   [D3   [E1   [F2   G1]   H2]   I3]   J0]
+    [A0   [B4   C4]   [D3   [E1   [F2   G1]   H2]   I3]   J0]
 
 For lisp folks, that might look like a bunch of nested parens.
 
@@ -105,8 +105,8 @@ and decreasing the depth counter when we see a ']'.
 
   Diagram: 4
 
-           [A0   [B4   C4]   [D3   [E1   [F2   G1]   H2]   I3]   J0]
-  depth: 0     1     2     1     2     3     4     3     2     1     0
+             [A0   [B4   C4]   [D3   [E1   [F2   G1]   H2]   I3]   J0]
+    depth: 0     1     2     1     2     3     4     3     2     1     0
 
 We can easily find the sub-range with the largest depth, in this case,
 F to G which has depth 4.  That sub-range makes a promising candidate
@@ -122,15 +122,15 @@ ranges (sub-range A to E and sub-range H to J), such as...
 
   Diagram: 5
 
-  Level | Key Range
-      7 |           [F-G]       <-- most recent segment.
-      6 |   [B-C]
-      5 |               [H-I]
-      4 |       [D-E]
-      3 |               [H]
-      2 |         [E]
-      1 |               [H---J]
-      0 | [A-------E]           <-- oldest segment.
+    Level | Key Range
+        7 |           [F-G]       <-- most recent segment.
+        6 |   [B-C]
+        5 |               [H-I]
+        4 |       [D-E]
+        3 |               [H]
+        2 |         [E]
+        1 |               [H---J]
+        0 | [A-------E]           <-- oldest segment.
 
 As you can see, [F-G] indeed got shorter depth, but the splitting
 introduced even more levels to the left and right of [F-G].
@@ -143,47 +143,47 @@ and H at the same time, so we end up instead with something like...
 
   Diagram: 6
 
-  Level | Key Range
-      5 |         [E-----H]
-      4 |   [B-C]
-      3 |                 [I]
-      2 |       [D]
-      1 |                 [I-J]
-      0 | [A-----D]
+    Level | Key Range
+        5 |         [E-----H]
+        4 |   [B-C]
+        3 |                 [I]
+        2 |       [D]
+        1 |                 [I-J]
+        0 | [A-----D]
 
 In addition, other sub-ranges that don't overlap with E to H might be
 also concurrently, incrementally compacted.  For example, B to C...
 
   Diagram: 7
 
-  Level | Key Range
-      6 |   [B-C]
-      5 |         [E-----H]
-      4 |                 [I]
-      3 |       [D]
-      2 |                 [I-J]
-      1 |       [D]
-      0 | [A]
+    Level | Key Range
+        6 |   [B-C]
+        5 |         [E-----H]
+        4 |                 [I]
+        3 |       [D]
+        2 |                 [I-J]
+        1 |       [D]
+        0 | [A]
 
 Next, imagine that sub-ranges D and I-to-J are concurrently,
 incrementally compacted, leaving us with...
 
   Diagram: 8
 
-  Level | Key Range
-      4 |                 [I-J]
-      3 |       [D]
-      2 |   [B-C]
-      1 |         [E-----H]
-      0 | [A]
+    Level | Key Range
+        4 |                 [I-J]
+        3 |       [D]
+        2 |   [B-C]
+        1 |         [E-----H]
+        0 | [A]
 
 In this case, some "adjacent range merger" should notice that [B-C]
 and [D] are adjacent and can be trivially merged, leaving us with....
 
-  Diagram: 8
+  Diagram: 9
 
-  Level | Key Range
-      3 |   [B---D]
-      2 |                 [I-J]
-      1 |         [E-----H]
-      0 | [A]
+    Level | Key Range
+        3 |   [B---D]
+        2 |                 [I-J]
+        1 |         [E-----H]
+        0 | [A]
