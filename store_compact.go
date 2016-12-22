@@ -17,20 +17,6 @@ import (
 	"path"
 )
 
-type CompactionConcern int // See StorePersistOptions.CompactionConcern.
-
-// CompactionDisable means no compaction.
-var CompactionDisable = CompactionConcern(0)
-
-// CompactionAllow means compaction decision is automated and based
-// on the configed policy and parameters.
-var CompactionAllow = CompactionConcern(1)
-
-// CompactionForce means compaction should be performed immediately.
-var CompactionForce = CompactionConcern(2)
-
-// --------------------------------------------------------
-
 func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions) (
 	bool, error) {
 	compactionConcern := persistOptions.CompactionConcern

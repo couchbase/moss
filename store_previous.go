@@ -15,13 +15,7 @@ import (
 	"fmt"
 )
 
-// SnapshotPrevious returns the next older, previous snapshot based on
-// a given snapshot, allowing the application to walk backwards into
-// the history of a store at previous points in time.  The given
-// snapshot must come from the same store.  A nil returned snapshot
-// means no previous snapshot is available.  Of note, store
-// compactions will trim previous history from a store.
-func (s *Store) SnapshotPrevious(ss Snapshot) (Snapshot, error) {
+func (s *Store) snapshotPrevious(ss Snapshot) (Snapshot, error) {
 	footer, ok := ss.(*Footer)
 	if !ok {
 		return nil, fmt.Errorf("snapshot not a footer")

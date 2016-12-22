@@ -15,23 +15,7 @@ import (
 	"fmt"
 )
 
-// SnapshotRevert atomically and durably brings the store back to the
-// point-in-time as represented by the revertTo snapshot.
-// SnapshotRevert() should only be passed a snapshot that came from
-// the same store, such as from using Store.Snapshot() or
-// Store.SnapshotPrevious().
-//
-// SnapshotRevert() must not be invoked concurrently with
-// Store.Persist(), so it is recommended that SnapshotRevert() should
-// be invoked only after the collection has been Close()'ed, which
-// helps ensure that you are not racing with concurrent, background
-// persistence goroutines.
-//
-// SnapshotRevert() can fail if the given snapshot is too old,
-// especially w.r.t. compactions.  For example, navigate back to an
-// older snapshot X via SnapshotPrevious().  Then, do a full
-// compaction.  Then, SnapshotRevert(X) will give an error.
-func (s *Store) SnapshotRevert(revertTo Snapshot) error {
+func (s *Store) snapshotRevert(revertTo Snapshot) error {
 	revertToFooter, ok := revertTo.(*Footer)
 	if !ok {
 		return fmt.Errorf("can only revert a footer")

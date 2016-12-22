@@ -14,7 +14,6 @@ package moss
 import (
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -27,12 +26,6 @@ import (
 )
 
 // TODO: Improved version parsers / checkers / handling (semver?).
-
-// ErrNoValidFooter is returned when a valid footer could not be found
-// in a file.
-var ErrNoValidFooter = errors.New("no-valid-footer")
-
-// --------------------------------------------------------
 
 var STORE_PREFIX = "data-" // File name prefix.
 var STORE_SUFFIX = ".moss" // File name suffix.
@@ -56,73 +49,6 @@ var footerBegLen int = lenMagicBeg + lenMagicBeg + 4 + 4
 var footerEndLen int = 8 + 4 + lenMagicEnd + lenMagicEnd
 
 // --------------------------------------------------------
-
-// Store represents data persisted in a directory.
-type Store struct {
-	dir     string
-	options *StoreOptions
-
-	m            sync.Mutex // Protects the fields that follow.
-	refs         int
-	footer       *Footer
-	nextFNameSeq int64
-
-	totPersists    uint64
-	totCompactions uint64
-}
-
-// StoreOptions are provided to OpenStore().
-type StoreOptions struct {
-	// CollectionOptions should be the same as used with
-	// NewCollection().
-	CollectionOptions CollectionOptions
-
-	// CompactionPercentage determines when a compaction will run when
-	// CompactionConcern is CompactionAllowed.  When the percentage of
-	// ops between the non-base level and the base level is greater
-	// than CompactionPercentage, then compaction will be run.
-	CompactionPercentage float64
-
-	// CompactionBufferPages is the number of pages to use for
-	// compaction, where writes are buffered before flushing to disk.
-	CompactionBufferPages int
-
-	// CompactionSync of true means perform a file sync at the end of
-	// compaction for additional safety.
-	CompactionSync bool
-
-	// OpenFile allows apps to optionally provide their own file
-	// opening implementation.  When nil, os.OpenFile() is used.
-	OpenFile OpenFile `json:"-"`
-
-	// Log is a callback invoked when store needs to log a debug
-	// message.  Optional, may be nil.
-	Log func(format string, a ...interface{}) `json:"-"`
-
-	// KeepFiles means that unused, obsoleted files will not be
-	// removed during OpenStore().  Keeping old files might be useful
-	// when diagnosing file corruption cases.
-	KeepFiles bool
-}
-
-// DefaultStoreOptions are the default store options when the
-// application hasn't provided a meaningful configuration value.
-var DefaultStoreOptions = StoreOptions{
-	CompactionBufferPages: 512,
-}
-
-// StorePersistOptions are provided to Store.Persist().
-type StorePersistOptions struct {
-	// NoSync means do not perform a file sync at the end of
-	// persistence (before returning from the Store.Persist() method).
-	// Using NoSync of true might provide better performance, but at
-	// the cost of data safety.
-	NoSync bool
-
-	// CompactionConcern controls whether compaction is allowed or
-	// forced as part of persistence.
-	CompactionConcern CompactionConcern
-}
 
 // Header represents the JSON stored at the head of a file, where the
 // file header bytes should be less than STORE_PAGE_SIZE length.
@@ -148,202 +74,9 @@ type Footer struct {
 
 // --------------------------------------------------------
 
-// SegmentLoc represents a persisted segment.
-type SegmentLoc struct {
-	Kind string // Used as the key for SegmentLoaders.
-
-	KvsOffset uint64 // Byte offset within the file.
-	KvsBytes  uint64 // Number of bytes for the persisted segment.kvs.
-
-	BufOffset uint64 // Byte offset within the file.
-	BufBytes  uint64 // Number of bytes for the persisted segment.buf.
-
-	TotOpsSet  uint64
-	TotOpsDel  uint64
-	TotKeyByte uint64
-	TotValByte uint64
-
-	mref *mmapRef // Immutable and ephemeral / non-persisted.
-}
-
-// TotOps returns number of ops in a segment loc.
-func (sloc *SegmentLoc) TotOps() int { return int(sloc.KvsBytes / 8 / 2) }
-
-// --------------------------------------------------------
-
-type SegmentLocs []SegmentLoc
-
-func (slocs SegmentLocs) AddRef() {
-	for _, sloc := range slocs {
-		if sloc.mref != nil {
-			sloc.mref.AddRef()
-		}
-	}
-}
-
-func (slocs SegmentLocs) DecRef() {
-	for _, sloc := range slocs {
-		if sloc.mref != nil {
-			sloc.mref.DecRef()
-		}
-	}
-}
-
-func (slocs SegmentLocs) Close() error {
-	slocs.DecRef()
-	return nil
-}
-
-// --------------------------------------------------------
-
-// A SegmentLoaderFunc is able to load a segment from a SegmentLoc.
-type SegmentLoaderFunc func(
-	sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, error)
-
-// SegmentLoaders is a registry of available segment loaders, which
-// should be immutable after process init()'ialization.  It is keyed
-// by SegmentLoc.Kind.
-var SegmentLoaders = map[string]SegmentLoaderFunc{}
-
-// --------------------------------------------------------
-
-// OpenStore returns a store instance for a directory.  An empty
-// directory results in an empty store.
-func OpenStore(dir string, options StoreOptions) (*Store, error) {
-	fileInfos, err := ioutil.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var maxFNameSeq int64
-
-	var fnames []string
-	for _, fileInfo := range fileInfos { // Find candidate file names.
-		fname := fileInfo.Name()
-		if strings.HasPrefix(fname, STORE_PREFIX) &&
-			strings.HasSuffix(fname, STORE_SUFFIX) {
-			fnames = append(fnames, fname)
-		}
-
-		fnameSeq, err := ParseFNameSeq(fname)
-		if err == nil && fnameSeq > maxFNameSeq {
-			maxFNameSeq = fnameSeq
-		}
-	}
-
-	if options.OpenFile == nil {
-		options.OpenFile =
-			func(name string, flag int, perm os.FileMode) (File, error) {
-				return os.OpenFile(name, flag, perm)
-			}
-	}
-
-	if len(fnames) <= 0 {
-		emptyFooter := &Footer{
-			refs: 1,
-			ss: &segmentStack{
-				options: &options.CollectionOptions,
-			},
-		}
-
-		return &Store{
-			dir:          dir,
-			options:      &options,
-			refs:         1,
-			footer:       emptyFooter,
-			nextFNameSeq: 1,
-		}, nil
-	}
-
-	sort.Strings(fnames)
-	for i := len(fnames) - 1; i >= 0; i-- {
-		file, err := options.OpenFile(path.Join(dir, fnames[i]), os.O_RDWR, 0600)
-		if err != nil {
-			continue
-		}
-
-		err = checkHeader(file)
-		if err != nil {
-			file.Close()
-			return nil, err
-		}
-
-		footer, err := ReadFooter(&options, file) // Footer owns file on success.
-		if err != nil {
-			file.Close()
-			continue
-		}
-
-		if !options.KeepFiles {
-			err := removeFiles(dir, append(fnames[0:i], fnames[i+1:]...))
-			if err != nil {
-				footer.Close()
-				return nil, err
-			}
-		}
-
-		return &Store{
-			dir:          dir,
-			options:      &options,
-			refs:         1,
-			footer:       footer,
-			nextFNameSeq: maxFNameSeq + 1,
-		}, nil
-	}
-
-	return nil, fmt.Errorf("store: could not successfully open/parse any file")
-}
-
-func (s *Store) Dir() string {
-	return s.dir
-}
-
-func (s *Store) Options() StoreOptions {
-	return *s.options // Copy.
-}
-
-func (s *Store) Snapshot() (Snapshot, error) {
-	return s.snapshot()
-}
-
-func (s *Store) snapshot() (*Footer, error) {
-	s.m.Lock()
-	footer := s.footer
-	if footer != nil {
-		footer.AddRef()
-	}
-	s.m.Unlock()
-	return footer, nil
-}
-
-func (s *Store) AddRef() {
-	s.m.Lock()
-	s.refs++
-	s.m.Unlock()
-}
-
-func (s *Store) Close() error {
-	s.m.Lock()
-
-	s.refs--
-	if s.refs > 0 {
-		s.m.Unlock()
-		return nil
-	}
-
-	footer := s.footer
-	s.footer = nil
-
-	s.m.Unlock()
-
-	return footer.Close()
-}
-
-// --------------------------------------------------------
-
 // Persist helps the store implement the lower-level-update func.  The
 // higher snapshot may be nil.
-func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
+func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	Snapshot, error) {
 	wasCompacted, err := s.compactMaybe(higher, persistOptions)
 	if err != nil {
@@ -587,31 +320,95 @@ func pageOffset(pos, pageSize int64) int64 {
 
 // --------------------------------------------------------
 
-// OpenStoreCollection returns collection based on a persisted store
-// in a directory.  Updates to the collection will be persisted.  An
-// empty directory starts an empty collection.  Both the store and
-// collection should be closed by the caller when done.
-func OpenStoreCollection(dir string,
-	options StoreOptions,
-	persistOptions StorePersistOptions) (*Store, Collection, error) {
-	store, err := OpenStore(dir, options)
+func openStore(dir string, options StoreOptions) (*Store, error) {
+	fileInfos, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	coll, err := store.OpenCollection(options, persistOptions)
-	if err != nil {
-		store.Close()
-		return nil, nil, err
+	var maxFNameSeq int64
+
+	var fnames []string
+	for _, fileInfo := range fileInfos { // Find candidate file names.
+		fname := fileInfo.Name()
+		if strings.HasPrefix(fname, STORE_PREFIX) &&
+			strings.HasSuffix(fname, STORE_SUFFIX) {
+			fnames = append(fnames, fname)
+		}
+
+		fnameSeq, err := ParseFNameSeq(fname)
+		if err == nil && fnameSeq > maxFNameSeq {
+			maxFNameSeq = fnameSeq
+		}
 	}
 
-	return store, coll, nil
+	if options.OpenFile == nil {
+		options.OpenFile =
+			func(name string, flag int, perm os.FileMode) (File, error) {
+				return os.OpenFile(name, flag, perm)
+			}
+	}
+
+	if len(fnames) <= 0 {
+		emptyFooter := &Footer{
+			refs: 1,
+			ss: &segmentStack{
+				options: &options.CollectionOptions,
+			},
+		}
+
+		return &Store{
+			dir:          dir,
+			options:      &options,
+			refs:         1,
+			footer:       emptyFooter,
+			nextFNameSeq: 1,
+		}, nil
+	}
+
+	sort.Strings(fnames)
+
+	for i := len(fnames) - 1; i >= 0; i-- {
+		file, err := options.OpenFile(path.Join(dir, fnames[i]), os.O_RDWR, 0600)
+		if err != nil {
+			continue
+		}
+
+		err = checkHeader(file)
+		if err != nil {
+			file.Close()
+			return nil, err
+		}
+
+		footer, err := ReadFooter(&options, file) // Footer owns file on success.
+		if err != nil {
+			file.Close()
+			continue
+		}
+
+		if !options.KeepFiles {
+			err := removeFiles(dir, append(fnames[0:i], fnames[i+1:]...))
+			if err != nil {
+				footer.Close()
+				return nil, err
+			}
+		}
+
+		return &Store{
+			dir:          dir,
+			options:      &options,
+			refs:         1,
+			footer:       footer,
+			nextFNameSeq: maxFNameSeq + 1,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("store: could not successfully open/parse any file")
 }
 
-// OpenCollection opens a collection based on a store.  Applications
-// should open at most a single collection per store for performing
-// read/write work.
-func (store *Store) OpenCollection(
+// --------------------------------------------------------
+
+func (store *Store) openCollection(
 	options StoreOptions,
 	persistOptions StorePersistOptions) (Collection, error) {
 	storeSnapshotInit, err := store.Snapshot()
@@ -649,6 +446,8 @@ func (store *Store) OpenCollection(
 
 	return coll, nil
 }
+
+// --------------------------------------------------------
 
 func removeFiles(dir string, fnames []string) error {
 	for _, fname := range fnames {
