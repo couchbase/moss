@@ -22,6 +22,8 @@ todo / future ideas
 * benchmarks against other KV stores
 * tool to examine/diagnose mossStore files (e.g., finishing up the "mossScope" tool)
 * incremental compaction, as opposed to the existing full compaction
+  * hole punching / punch-line algorithm?
+  * block reuse algorithm?
 * more concurrent writer goroutines to utilize more I/O bandwidth
 * faster Get()'s by explicitly caching top-level binary-search positions
 * compression (key-prefix?)
@@ -29,6 +31,10 @@ todo / future ideas
 * C-based verison of moss?
   * might be named "mossc" (pronounced like "mossy" or "mosque")?
     or, perhaps cmoss ("sea moss" / "CMOS")?
+* Optimizations using posix_fadvise()
+* Optimizations using sync_file_range()
+  * http://stackoverflow.com/questions/3755765/what-posix-fadvise-args-for-sequential-file-write
+  * http://yoshinorimatsunobu.blogspot.com/2014/03/how-syncfilerange-really-works.html
 
 incremental compaction
 ======================
