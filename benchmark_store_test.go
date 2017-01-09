@@ -161,7 +161,9 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	tmpDir, _ := ioutil.TempDir("", "mossStoreBenchmark")
 	defer os.RemoveAll(tmpDir)
 
-	fmt.Printf("\n  spec: %+v\n", spec)
+	fmt.Printf("\n")
+	for i := 0; i < 180; i++ { fmt.Printf("-") }
+	fmt.Printf("\nspec: %+v\n", spec)
 
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
@@ -263,7 +265,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 			cumRKBPerSec = 1000 * cumRBytes / cumRMSecs / 1024
 		}
 
-		fmt.Printf("   %6s time: %8d (ms), phase %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s, cum %7d wop/s, %6d wkb/s, %7d rop/s, %6d rkb/s\n",
+		fmt.Printf("   %6s || time: %5d (ms) | %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s || cumulative: %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s\n",
 			phaseName,
 			phaseMSecs,
 			phaseWOpsPerSec,
@@ -282,7 +284,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 		for accessi, access := range spec.accesses {
 			if access.after == phaseName {
 				phaseDo("access", access.kind, false, func() {
-					fmt.Printf("   access %d: %+v\n", accessi, access)
+					fmt.Printf("  <<access %d: %+v>>\n", accessi, access)
 
 					batch, err := coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
 					if err != nil {
@@ -506,7 +508,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	// ------------------------------------------------
 
-	fmt.Printf("    total time: %8d (ms)\n", cumMSecs)
+	fmt.Printf("total time: %d (ms)\n", cumMSecs)
 
 	fileInfos, err := ioutil.ReadDir(tmpDir)
 	if err != nil {
@@ -519,7 +521,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	fileInfo := fileInfos[0]
 
-	fmt.Printf("  file size: %d (mb), amplification: %.3f\n",
+	fmt.Printf("file size: %d (MB), amplification: %.3f\n",
 		fileInfo.Size()/1000000.0,
 		float64(fileInfo.Size())/float64(int64(spec.numItems)*int64((spec.keySize+spec.valSize))))
 }
