@@ -56,6 +56,12 @@ func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_randomLoad(b *t
 	})
 }
 
+func BenchmarkStore_numItems1M_keySize20_valSize1000_batchSize100_randomLoad(b *testing.B) {
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 1000000, keySize: 20, valSize: 1000, batchSize: 100, randomLoad: true,
+	})
+}
+
 func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_ACCESSES_afterLoad_domainTo100K_ops200K_batchSize100(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100,
@@ -162,7 +168,9 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	defer os.RemoveAll(tmpDir)
 
 	fmt.Printf("\n")
-	for i := 0; i < 180; i++ { fmt.Printf("-") }
+	for i := 0; i < 180; i++ {
+		fmt.Printf("-")
+	}
 	fmt.Printf("\nspec: %+v\n", spec)
 
 	var mu sync.Mutex
@@ -327,7 +335,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 							phaseWOps++
 							phaseWBytes += int64(spec.keySize + spec.valSize)
 
-							if i%access.batchSize == 0 {
+							if (i != 0) && (i%access.batchSize == 0) {
 								err = coll.ExecuteBatch(batch, WriteOptions{})
 								if err != nil {
 									b.Fatal(err)
