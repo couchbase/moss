@@ -30,6 +30,8 @@ type benchStoreSpec struct {
 
 	randomLoad bool // When true, use repeatably random-like keys; otherwise, sequential load.
 
+	noCopyValue bool
+
 	accesses []benchStoreSpecAccess
 }
 
@@ -65,8 +67,10 @@ func BenchmarkStore_numItems1M_keySize20_valSize1000_batchSize100_randomLoad(b *
 func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_ACCESSES_afterLoad_domainTo100K_ops200K_batchSize100(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100,
+		noCopyValue: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 200000, batchSize: 100},
+			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 200000, random: true, batchSize: 100},
+			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 100000, ops: 200000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -173,6 +177,8 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	}
 	fmt.Printf("\nspec: %+v\n", spec)
 
+	readOptions := ReadOptions{NoCopyValue: spec.noCopyValue}
+
 	var mu sync.Mutex
 	counts := map[EventKind]int{}
 	eventWaiters := map[EventKind]chan struct{}{}
@@ -273,7 +279,8 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 			cumRKBPerSec = 1000 * cumRBytes / cumRMSecs / 1024
 		}
 
-		fmt.Printf("   %6s || time: %5d (ms) | %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s || cumulative: %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s\n",
+		fmt.Printf("   %6s || time: %5d (ms) | %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s"+
+			" || cumulative: %8d wop/s | %8d wkb/s | %8d rop/s | %8d rkb/s\n",
 			phaseName,
 			phaseMSecs,
 			phaseWOpsPerSec,
@@ -319,7 +326,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 						pos = pos % domainSize64
 
 						if float32(i%100)/100.0 < access.pctGet {
-							v, err := ss.Get(buf[0:spec.keySize], ReadOptions{})
+							v, err := ss.Get(buf[0:spec.keySize], readOptions)
 							if err != nil {
 								b.Fatal(err)
 							}

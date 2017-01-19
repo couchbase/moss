@@ -102,6 +102,8 @@ func (ss *segmentStack) mergeInto(minSegmentLevel, maxSegmentHeight int,
 
 	defer iter.Close()
 
+	readOptions := ReadOptions{NoCopyValue: true}
+
 OUTER:
 	for i := 0; true; i++ {
 		if cancelCh != nil && i%cancelCheckEvery == 0 {
@@ -146,7 +148,7 @@ OUTER:
 		if op == OperationMerge {
 			// TODO: the merge operator implementation is currently
 			// inefficient and not lazy enough right now.
-			val, err = ss.get(key, len(ss.a)-1, base)
+			val, err = ss.get(key, len(ss.a)-1, base, readOptions)
 			if err != nil {
 				return err
 			}

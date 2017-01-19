@@ -369,7 +369,7 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	}
 
 	rv, err := ss.Get(key, readOptions)
-	if err == nil && rv != nil {
+	if err == nil && rv != nil && !readOptions.NoCopyValue {
 		rv = append(make([]byte, 0, len(rv)), rv...) // Copy.
 	}
 

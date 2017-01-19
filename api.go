@@ -375,6 +375,13 @@ type WriteOptions struct {
 
 // ReadOptions are provided to Snapshot.Get().
 type ReadOptions struct {
+	// By default, the value returned during lookups or Get()'s are
+	// copied.  Specifying true for NoCopyValue means don't copy the
+	// value bytes, where the caller should copy the value themselves
+	// if they need the value after the lifetime of the enclosing
+	// snapshot.  When true, the caller must treat the value returned
+	// by a lookup/Get() as immutable.
+	NoCopyValue bool
 }
 
 // IteratorOptions are provided to StartIterator().

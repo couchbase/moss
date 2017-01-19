@@ -65,15 +65,15 @@ func (ss *segmentStack) Close() error {
 
 // Get retrieves a val from a segmentStack.
 func (ss *segmentStack) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
-	return ss.get(key, len(ss.a)-1, nil)
+	return ss.get(key, len(ss.a)-1, nil, readOptions)
 }
 
 // get() retrieves a val from a segmentStack, but only considers
 // segments at or below the segStart level.  The optional base
 // segmentStack, when non-nil, is used instead of the
 // lowerLevelSnapshot, as a form of controllable chaining.
-func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
-	[]byte, error) {
+func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
+	readOptions ReadOptions) ([]byte, error) {
 	if segStart >= 0 {
 		ss.ensureSorted(0, segStart)
 
@@ -88,7 +88,7 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
 				}
 
 				if operation == OperationMerge {
-					return ss.getMerged(k, v, seg-1, base)
+					return ss.getMerged(k, v, seg-1, base, readOptions)
 				}
 
 				return v, nil
@@ -97,11 +97,11 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
 	}
 
 	if base != nil {
-		return base.Get(key, ReadOptions{})
+		return base.Get(key, readOptions)
 	}
 
 	if ss.lowerLevelSnapshot != nil {
-		return ss.lowerLevelSnapshot.Get(key, ReadOptions{})
+		return ss.lowerLevelSnapshot.Get(key, readOptions)
 	}
 
 	return nil, nil
@@ -112,7 +112,7 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack) (
 // getMerged() retrieves a lower level val for a given key and returns
 // a merged val, based on the configured merge operator.
 func (ss *segmentStack) getMerged(key, val []byte, segStart int,
-	base *segmentStack) ([]byte, error) {
+	base *segmentStack, readOptions ReadOptions) ([]byte, error) {
 	var mo MergeOperator
 	if ss.options != nil {
 		mo = ss.options.MergeOperator
@@ -121,7 +121,7 @@ func (ss *segmentStack) getMerged(key, val []byte, segStart int,
 		return nil, ErrMergeOperatorNil
 	}
 
-	vLower, err := ss.get(key, segStart, base)
+	vLower, err := ss.get(key, segStart, base, readOptions)
 	if err != nil {
 		return nil, err
 	}

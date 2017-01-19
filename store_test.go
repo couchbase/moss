@@ -1275,6 +1275,20 @@ func TestStoreNilValue(t *testing.T) {
 					t.Errorf("expected get not nil")
 				}
 			}
+
+			v, err = ss.Get([]byte(xs), ReadOptions{NoCopyValue: true})
+			if err != nil {
+				t.Errorf("expected no get err, got err: %v", err)
+			}
+			if i%2 == 0 {
+				if v != nil {
+					t.Errorf("expected get of deleted item to be nil")
+				}
+			} else {
+				if v == nil || len(v) != 0 {
+					t.Errorf("expected get not nil")
+				}
+			}
 		}
 
 		v, err := ss.Get([]byte("not-there"), ReadOptions{})
