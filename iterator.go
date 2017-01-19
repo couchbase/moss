@@ -175,23 +175,25 @@ func (ss *segmentStack) startIterator(
 				return nil, err
 			}
 
-			k, v, err := lowerLevelIter.Current()
-			if err != nil && err != ErrIteratorDone {
-				return nil, err
-			}
-			if err == ErrIteratorDone {
-				lowerLevelIter.Close()
-			}
-			if err == nil {
-				iter.cursors = append(iter.cursors, &cursor{
-					ssIndex: -1,
-					pos:     -1,
-					op:      OperationSet,
-					k:       k,
-					v:       v,
-				})
+			if lowerLevelIter != nil {
+				k, v, err := lowerLevelIter.Current()
+				if err != nil && err != ErrIteratorDone {
+					return nil, err
+				}
+				if err == ErrIteratorDone {
+					lowerLevelIter.Close()
+				}
+				if err == nil {
+					iter.cursors = append(iter.cursors, &cursor{
+						ssIndex: -1,
+						pos:     -1,
+						op:      OperationSet,
+						k:       k,
+						v:       v,
+					})
 
-				iter.lowerLevelIter = lowerLevelIter
+					iter.lowerLevelIter = lowerLevelIter
+				}
 			}
 		}
 	}

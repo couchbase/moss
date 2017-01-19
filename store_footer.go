@@ -363,6 +363,10 @@ func (f *Footer) SegmentStack() (SegmentLocs, *segmentStack) {
 // if the entry does not exist in the footer.
 func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	_, ss := f.SegmentStack()
+	if ss == nil {
+		f.DecRef()
+		return nil, nil
+	}
 
 	rv, err := ss.Get(key, readOptions)
 	if err == nil && rv != nil {
@@ -385,9 +389,13 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
 	_, ss := f.SegmentStack()
+	if ss == nil {
+		f.DecRef()
+		return nil, nil
+	}
 
 	iter, err := ss.StartIterator(startKeyIncl, endKeyExcl, iteratorOptions)
-	if err != nil {
+	if err != nil || iter == nil {
 		f.DecRef()
 		return nil, err
 	}
