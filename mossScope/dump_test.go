@@ -127,8 +127,11 @@ func TestDump(t *testing.T) {
 		entry := m[i].(map[string]interface{})
 		k := fmt.Sprintf("key%d", i)
 		v := fmt.Sprintf("val%d", i)
-		if strings.Compare(v, entry[k].(string)) != 0 {
-			t.Errorf("Mismatch detected [%s != %s]!", v, entry[k].(string))
+		if strings.Compare(k, entry["K"].(string)) != 0 {
+			t.Errorf("Mismatch in key [%s != %s]!", k, entry["K"].(string))
+		}
+		if strings.Compare(v, entry["V"].(string)) != 0 {
+			t.Errorf("Mismatch in value [%s != %s]!", v, entry["V"].(string))
 		}
 	}
 }
@@ -136,16 +139,17 @@ func TestDump(t *testing.T) {
 func TestDumpKeysOnly(t *testing.T) {
 	out := dumpHelper(t, true)
 
-	var arr []interface{}
-	json.Unmarshal([]byte(out), &arr)
-	if (len(arr) != ITEM_COUNT) {
-		t.Errorf("Incorrect number of entries: %d!", len(arr))
+	var m []interface{}
+	json.Unmarshal([]byte(out), &m)
+	if (len(m) != ITEM_COUNT) {
+		t.Errorf("Incorrect number of entries: %d!", len(m))
 	}
 
 	for i := 0; i < ITEM_COUNT; i++ {
+		entry := m[i].(map[string]interface{})
 		k := fmt.Sprintf("key%d", i)
-		if strings.Compare(k, arr[i].(string)) != 0 {
-			t.Errorf("Mismatch detected [%s != %s]!", k, arr[i].(string))
+		if strings.Compare(k, entry["K"].(string)) != 0 {
+			t.Errorf("Mismatch in key [%s != %s]!", k, entry["K"].(string))
 		}
 	}
 }
@@ -182,8 +186,11 @@ func TestDumpKey(t *testing.T) {
 
 		entry := m[0].(map[string]interface{})
 		val := fmt.Sprintf("val%d", i)
-		if strings.Compare(val, entry[key].(string)) != 0 {
-			t.Errorf("Mismatch detected [%s != %s]!", val, entry[key].(string))
+		if strings.Compare(key, entry["K"].(string)) != 0 {
+			t.Errorf("Mismatch in key [%s != %s]!", key, entry["K"].(string))
+		}
+		if strings.Compare(val, entry["V"].(string)) != 0 {
+			t.Errorf("Mismatch in value [%s != %s]!", val, entry["V"].(string))
 		}
 	}
 
@@ -229,8 +236,11 @@ func TestDumpKeyAllVersions(t *testing.T) {
 		val := fmt.Sprintf("val%d", i)
 		for j := 0; j < len(m); j++ {
 			entry := m[j].(map[string]interface{})
-			if strings.Compare(val, entry[key].(string)) != 0 {
-				t.Errorf("Mismatch detected!")
+			if strings.Compare(key, entry["K"].(string)) != 0 {
+				t.Errorf("Mismatch in key [%s != %s]!", key, entry["K"].(string))
+			}
+			if strings.Compare(val, entry["V"].(string)) != 0 {
+				t.Errorf("Mismatch in value [%s != %s]!", val, entry["V"].(string))
 			}
 		}
 	}
