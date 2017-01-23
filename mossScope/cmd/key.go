@@ -91,6 +91,12 @@ func key(keyname string, dir string) {
 	store.Close()
 }
 
+// The following wrapper (public) is for test purposes
+func Key(keyname string, dir string, getAllVersions bool) {
+	allVersions = getAllVersions
+	key(keyname, dir)
+}
+
 func init() {
 	dumpCmd.AddCommand(keyCmd)
 

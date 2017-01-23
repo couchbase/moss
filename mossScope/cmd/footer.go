@@ -97,6 +97,12 @@ func footer(dir string) {
 	}
 }
 
+// The following wrapper (public) is for test purposes
+func Footer(dir string, getAll bool) {
+	allAvailable = getAll
+	footer(dir)
+}
+
 func init() {
 	dumpCmd.AddCommand(footerCmd)
 

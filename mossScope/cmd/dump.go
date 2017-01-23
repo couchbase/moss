@@ -117,6 +117,12 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 	}
 }
 
+// The following wrapper (public) is for test purposes
+func Dump(dir string, onlyKeys bool) {
+	keysOnly = onlyKeys
+	dump(dir)
+}
+
 func init() {
 	RootCmd.AddCommand(dumpCmd)
 
