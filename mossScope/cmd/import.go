@@ -233,6 +233,12 @@ func importDocs(file string, dir string) {
 	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n", len(data), numBatches)
 }
 
+// The following wrapper (public) is for test purposes
+func ImportDocs(file string, dir string, batch int) {
+	batchSize = batch
+	importDocs(file, dir)
+}
+
 func init() {
 	RootCmd.AddCommand(importCmd)
 
