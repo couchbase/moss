@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -39,14 +38,6 @@ func importHelper(t *testing.T, batchsize int) {
 			"  { \"K\" : \"key8\", \"V\" : \"val8\" },\n" +
 			"  { \"K\" : \"key9\", \"V\" : \"val9\" }\n]";
 
-	temp_file := "import_test_temp.json"
-	err := ioutil.WriteFile(temp_file, []byte(json_text), 0777)
-	if err != nil {
-		fmt.Printf("Failed to create file %s, err: %v\n", temp_file, err)
-		os.Exit(-1)
-	}
-	defer os.Remove(temp_file)
-
 	temp_dir := "import_test_dir"
 
 	// Prevent the command from writing anything to stdout
@@ -54,7 +45,7 @@ func importHelper(t *testing.T, batchsize int) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	cmd.ImportDocs(temp_file, temp_dir, batchsize)
+	cmd.ImportDocs(json_text, temp_dir, batchsize)
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't block indefinitely

@@ -51,7 +51,7 @@ A preview of mossScope --help:
     Available Flags:
       --keys-only       Dumps just the keys (without any values)
 
-    Use "mossScope dump [sub-command] [flag] --help" for more information about a command.
+    Use "mossScope dump [sub-command] --help" for more information about a command.
 
 footer:
 
@@ -79,12 +79,21 @@ Examples:
 --------
 
     Usage:
-        mossScope import [flag] json_file_of_docs path_to_store
+        mossScope import <flag(s)> path_to_store
 
     Available Flags:
-        --batchsize     Specifies the batch sizes for the set ops (default: all docs in one batch)
+        --batchsize int Specifies the batch sizes for the set ops (default: all docs in one batch)
+        --file string   Reads JSON content from file
+        --json string   Reads JSON content from command-line
+        --stdin         Reads JSON content from stdin (Enter to submit)
 
-    Use "mossScope import [flag] --help" for more infomration about a command.
+    Use "mossScope import --help" for more infomration about a command.
+
+Examples:
+
+    mossScope import path_to_store --file test.json --batchsize 100
+    mossScope import path_to_store --json '[{"K":"key0","V":"val0"},{"K":"key1","V":"val1"}]'
+    mossScope import path_to_store --stdin  // Program waits for user to submit JSON
 
 "stats"
 -------
