@@ -9,6 +9,7 @@ Features
 --------
 
 * dump: This is to dump the contents of the store in JSON format
+* import: This is to import docs from a JSON file into the store
 * stats: This is to dump stats pertaining to the store in JSON format
 * compact: This can be used to trigger compaction over the store
 
@@ -22,6 +23,7 @@ A preview of mossScope --help:
 
     Available Commands:
       dump              Dumps key/val data in the store
+      import            Imports the docs from the JSON file into the store
       stats             Retrieves all the store related stats
       compact           Runs full compaction on the store specified
 
@@ -64,6 +66,16 @@ Examples:
     mossScope dump footers path_to_store --latest-only
     mossScope dump key key_name path_to_store
 
+"import"
+--------
+
+    Usage:
+        mossScope import [flag] json_file_of_docs path_to_store
+
+    Available Flags:
+        --batchsize     Specifies the batch sizes for the set ops (default: all docs in one batch)
+
+    Use "mossScope import [flag] --help" for more infomration about a command.
 
 "stats"
 -------
