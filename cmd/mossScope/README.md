@@ -35,6 +35,7 @@ A preview of mossScope --help:
       import            Imports the docs from the JSON file into the store
       stats             Retrieves all the store related stats
       compact           Runs full compaction on the store specified
+      version           Retrieves the current version of mossScope
 
     Use "mossScope [command] --help" for more information about a command.
 
