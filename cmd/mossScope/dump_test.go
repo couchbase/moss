@@ -25,7 +25,7 @@ import (
 	"reflect"
 
 	"github.com/couchbase/moss"
-	"github.com/couchbase/moss/mossScope/cmd"
+	"github.com/couchbase/moss/cmd/mossScope/cmd"
 )
 
 var ITEM_COUNT = 10

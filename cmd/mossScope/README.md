@@ -1,5 +1,5 @@
-mossScope (v1.0)
-================
+mossScope (v0.1.0)
+==================
 
 mossScope is a diagnostic command line tool, that is designed to assist
 in browsing contents of, acquiring stats from, and otherwise diagnosing
@@ -10,7 +10,7 @@ Standalone: How to use
     (set $GOPATH)
     $ go get github.com/spf13/cobra
     $ go get github.com/couchbase/moss
-    $ cd $GOPATH/src/github.com/couchbase/moss/mossScope
+    $ cd $GOPATH/src/github.com/couchbase/moss/cmd/mossScope
     ../moss/mossScope $ go build
     ../moss/mossSCope $ ./mossScope --help
 

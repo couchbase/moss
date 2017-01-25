@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/couchbase/moss"
-	"github.com/couchbase/moss/mossScope/cmd"
+	"github.com/couchbase/moss/cmd/mossScope/cmd"
 )
 
 func importHelper(t *testing.T, batchsize int) {
