@@ -136,7 +136,7 @@ Performance
 
 Please try `go test -bench=.` for some basic performance tests.
 
-Many tests are run, whose where the output of each test looks generally like...
+Each performance test will emit output that generally looks like...
 
     ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     spec: {numItems:1000000 keySize:20 valSize:100 batchSize:100 randomLoad:false noCopyValue:false accesses:[]}
@@ -160,6 +160,10 @@ There are various phases in each test...
 * reopen - time to reopen the moss storage instance (OS/filesystem caches are still warm)
 * iter - time to sequentially iterate through key-val items
 * access - time to perform various access patterns, like random or sequential reads and writes
+
+The file size measurement is after final compaction, with
+amplification as a naive calculation to compare overhead against raw
+key-val size.
 
 Contributing changes
 ====================
