@@ -136,6 +136,31 @@ Performance
 
 Please try `go test -bench=.` for some basic performance tests.
 
+Many tests are run, whose where the output of each test looks generally like...
+
+    ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    spec: {numItems:1000000 keySize:20 valSize:100 batchSize:100 randomLoad:false noCopyValue:false accesses:[]}
+         open || time:     0 (ms) |        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s || cumulative:        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s
+         load || time:   840 (ms) |  1190476 wop/s |   139508 wkb/s |        0 rop/s |        0 rkb/s || cumulative:  1190476 wop/s |   139508 wkb/s |        0 rop/s |        0 rkb/s
+        drain || time:   609 (ms) |        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s || cumulative:   690131 wop/s |    80874 wkb/s |        0 rop/s |        0 rkb/s
+        close || time:     0 (ms) |        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s || cumulative:   690131 wop/s |    80874 wkb/s |        0 rop/s |        0 rkb/s
+       reopen || time:     0 (ms) |        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s || cumulative:   690131 wop/s |    80874 wkb/s |        0 rop/s |        0 rkb/s
+         iter || time:    81 (ms) |        0 wop/s |        0 wkb/s | 12344456 rop/s |  1446616 rkb/s || cumulative:   690131 wop/s |    80874 wkb/s | 12344456 rop/s |  1446616 rkb/s
+        close || time:     2 (ms) |        0 wop/s |        0 wkb/s |        0 rop/s |        0 rkb/s || cumulative:   690131 wop/s |    80874 wkb/s | 12344456 rop/s |  1446616 rkb/s
+    total time: 1532 (ms)
+    file size: 135 (MB), amplification: 1.133
+    BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100-8
+
+There are various phases in each test...
+
+* open - opening a brand new moss storage instance
+* load - time to load N sequential keys
+* drain - additional time after load for persistence to complete
+* close - time to close the moss storage instance
+* reopen - time to reopen the moss storage instance (OS/filesystem caches are still warm)
+* iter - time to sequentially iterate through key-val items
+* access - time to perform various access patterns, like random or sequential reads and writes
+
 Contributing changes
 ====================
 
