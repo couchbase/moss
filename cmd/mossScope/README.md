@@ -20,12 +20,12 @@ Usage:
 
 The store_path(s) is one or more directories where moss files reside.
 
-The command is requred.  Available commands:
+The command is requred. Available commands:
 
-      dump              Dumps key/val data from the store
-      import            Imports docs into the store
-      stats             Emits store related stats
-      version           Emits the current version of mossScope
+    dump              Dumps key/val data from the store
+    import            Imports docs into the store
+    stats             Emits store related stats
+    version           Emits the current version of mossScope
 
 Use "mossScope <command> --help" for more detailed information about
 any command.
@@ -87,15 +87,30 @@ Examples:
 "stats"
 -------
 
-    mossScope stats [sub-command] <store_path(s)>
+    mossScope stats <sub-command> <store_path(s)>
 
     Available sub-commands:
 
-        all               Dumps all available stats from the footers of the moss store
-        frag              Dumps the fragmentation stats (to assist with manual compaction)
-        hist              Scans the moss store and fetches histograms
+        footer            Dumps aggregated stats from the latest footer of the moss store
+        fragmentation     Dumps the fragmentation stats (to assist with manual compaction)
+
+    Available flags:
+
+        --json            Emits output in JSON
+
+footer:
+
+    mossScope stats footer [flags] <store_path(s)>
+
+    Available flags:
+
+        --all             Fetches stats from all available footers (Footer_1 is latest)
+
+fragmentation:
+
+    mossScope stats frag [flags] <store_path(s)>
 
 Examples:
 
-    mossScope stats all path/to/myStore
-    mossScope stats hist path/to/myStore
+    mossScope stats footer path/to/myStore --all --json
+    mossScope stats fragmentation path/to/myStore
