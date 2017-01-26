@@ -48,7 +48,8 @@ func importHelper(t *testing.T, batchsize int) {
 	cmd.ImportDocs(json_text, temp_dir, batchsize)
 
 	outC := make(chan string)
-	// copy the output in a separate goroutine so dump wouldn't block indefinitely
+	// copy the output in a separate goroutine so dump wouldn't
+	// block indefinitely
 	go func() {
 		var buf bytes.Buffer
 		io.Copy(&buf, r)

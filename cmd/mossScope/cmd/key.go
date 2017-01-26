@@ -32,7 +32,8 @@ format. For example:
 	./mossScope dump key <keyname> <path_to_store> [flag]`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 2 {
-			fmt.Println("USAGE: mossScope dump key <keyname> <path_to_store> [flag], more details with --help");
+			fmt.Println("USAGE: mossScope dump key <keyname> <path_to_store> " +
+			            "[flag], more details with --help");
 			return
 		}
 
@@ -101,5 +102,6 @@ func init() {
 	dumpCmd.AddCommand(keyCmd)
 
 	// Local flag that is intended to work as a flag over dump key
-	keyCmd.Flags().BoolVar(&allVersions, "all-versions", false, "Emits all the available versions of the key")
+	keyCmd.Flags().BoolVar(&allVersions, "all-versions", false,
+	                       "Emits all the available versions of the key")
 }

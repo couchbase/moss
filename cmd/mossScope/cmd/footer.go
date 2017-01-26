@@ -32,7 +32,8 @@ format, (optionally all) here's a sample command:
 	./mossScope dump footer <path_to_store> [flag]`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
-			fmt.Println("USAGE: mossScope dump footer <path_to_store>, more details with --help");
+			fmt.Println("USAGE: mossScope dump footer <path_to_store>, " +
+			            "more details with --help");
 			return
 		}
 
@@ -107,5 +108,6 @@ func init() {
 	dumpCmd.AddCommand(footerCmd)
 
 	// Local flag that is intended to work as a flag over dump footer
-	footerCmd.Flags().BoolVar(&allAvailable, "all", false, "Fetches all the available footers")
+	footerCmd.Flags().BoolVar(&allAvailable, "all", false,
+	                          "Fetches all the available footers")
 }

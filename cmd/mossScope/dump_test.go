@@ -30,7 +30,8 @@ import (
 
 var ITEM_COUNT = 10
 
-func setup(t *testing.T, createDir bool) (d string, s *moss.Store, c moss.Collection) {
+func setup(t *testing.T, createDir bool) (d string, s *moss.Store,
+                                          c moss.Collection) {
 	dir := "./testStore"
 	if createDir {
 		os.Mkdir(dir, 0777)
@@ -97,7 +98,8 @@ func dumpHelper(t *testing.T, keysOnly bool) (output string) {
 	cmd.Dump(dir, keysOnly)
 
 	outC := make(chan string)
-	// copy the output in a separate goroutine so dump wouldn't block indefinitely
+	// copy the output in a separate goroutine so dump wouldn't block
+	// indefinitely
 	go func() {
 		var buf bytes.Buffer
 		io.Copy(&buf, r)
@@ -166,7 +168,8 @@ func TestDumpKey(t *testing.T) {
 		cmd.Key(key, dir, false)
 
 		outC := make(chan string)
-		// copy the output in a separate goroutine so dump wouldn't block indefinitely
+		// copy the output in a separate goroutine so dump wouldn't
+		// block indefinitely
 		go func() {
 			var buf bytes.Buffer
 			io.Copy(&buf, r)
@@ -215,7 +218,8 @@ func TestDumpKeyAllVersions(t *testing.T) {
 		cmd.Key(key, dir, true)
 
 		outC := make(chan string)
-		// copy the output in a separate goroutine so dump wouldn't block indefinitely
+		// copy the output in a separate goroutine so dump wouldn't
+		// block indefinitely
 		go func() {
 			var buf bytes.Buffer
 			io.Copy(&buf, r)
@@ -237,10 +241,12 @@ func TestDumpKeyAllVersions(t *testing.T) {
 		for j := 0; j < len(m); j++ {
 			entry := m[j].(map[string]interface{})
 			if strings.Compare(key, entry["K"].(string)) != 0 {
-				t.Errorf("Mismatch in key [%s != %s]!", key, entry["K"].(string))
+				t.Errorf("Mismatch in key [%s != %s]!",
+				         key, entry["K"].(string))
 			}
 			if strings.Compare(val, entry["V"].(string)) != 0 {
-				t.Errorf("Mismatch in value [%s != %s]!", val, entry["V"].(string))
+				t.Errorf("Mismatch in value [%s != %s]!",
+				         val, entry["V"].(string))
 			}
 		}
 	}
@@ -263,7 +269,8 @@ func TestDumpAllFooters(t *testing.T) {
 	cmd.Footer(dir, true)
 
 	outC := make(chan string)
-	// copy the output in a separate goroutine so dump wouldn't block indefinitely
+	// copy the output in a separate goroutine so dump wouldn't
+	// block indefinitely
 	go func() {
 		var buf bytes.Buffer
 		io.Copy(&buf, r)
@@ -285,16 +292,19 @@ func TestDumpAllFooters(t *testing.T) {
 	// Expect 2 segment locs on latest footer (footer 2)
 	records := reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 2 {
-		t.Errorf("Unexpected number of segment locs in latest footer: %d", records.Len())
+		t.Errorf("Unexpected number of segment locs in latest footer: %d",
+		         records.Len())
 	}
 
 	for i := 0; i < records.Len(); i++ {
 		stats := (records.Index(i).Interface()).(map[string]interface{})
 		if stats["TotOpsSet"].(float64) != float64(ITEM_COUNT) {
-			t.Errorf("[Footer2] Unexpected value for TotOpsSet stat: %d!", stats["TotOpsSet"])
+			t.Errorf("[Footer2] Unexpected value for TotOpsSet stat: %d!",
+			         stats["TotOpsSet"])
 		}
 		if stats["TotOpsDel"].(float64) != 0 {
-			t.Errorf("[Footer2] Unexpected value for TotOpsDel stat: %d!", stats["TotOpsDel"])
+			t.Errorf("[Footer2] Unexpected value for TotOpsDel stat: %d!",
+			         stats["TotOpsDel"])
 		}
 	}
 
@@ -302,15 +312,18 @@ func TestDumpAllFooters(t *testing.T) {
 	// Expect 1 segment loc on the older footer (footer 1)
 	records = reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 1 {
-		t.Errorf("Unexpected number of segment locs in older footer: %d", records.Len())
+		t.Errorf("Unexpected number of segment locs in older footer: %d",
+		         records.Len())
 	}
 
 	stats := (records.Index(0).Interface()).(map[string]interface{})
 	if stats["TotOpsSet"].(float64) != float64(ITEM_COUNT) {
-		t.Errorf("[Footer1] Unexpected value for TotOpsSet stat: %d!", stats["TotOpsSet"])
+		t.Errorf("[Footer1] Unexpected value for TotOpsSet stat: %d!",
+		         stats["TotOpsSet"])
 	}
 	if stats["TotOpsDel"].(float64) != 0 {
-		t.Errorf("[Footer1] Unexpected value for TotOpsDel stat: %d!", stats["TotOpsDel"])
+		t.Errorf("[Footer1] Unexpected value for TotOpsDel stat: %d!",
+		         stats["TotOpsDel"])
 	}
 
 	cleanup(dir, store, coll)

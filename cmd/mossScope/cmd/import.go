@@ -40,12 +40,14 @@ Expected JSON file format:
 	[ {"K" : "key0", "V" : "val0"}, {"K" : "key1", "V" : "val1"} ]`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
-			fmt.Println("USAGE: mossScope import <path_to_store> <flag(s)>, more details with --help");
+			fmt.Println("USAGE: mossScope import <path_to_store> <flag(s)>, " +
+			            "more details with --help");
 			return
 		}
 
 		if (len(fileInput) == 0 && len(jsonInput) == 0 && !readFromStdin) {
-			fmt.Printf("At least one input source requred: file, command-line, stdin, more details with --help");
+			fmt.Printf("At least one input source requred: file, " +
+			           "command-line, stdin, more details with --help");
 			return
 		}
 
@@ -123,7 +125,8 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	if err != nil {
 		fmt.Printf("Invalid JSON format, err: %v\n", err)
 		fmt.Println("Expected format:")
-		fmt.Println("[\n {\"k\" : \"key0\", \"v\" : \"val0\"},\n {\"k\" : \"key1\", \"v\" : \"val1\"}\n]");
+		fmt.Println("[\n {\"k\" : \"key0\", \"v\" : \"val0\"},\n " +
+		            "{\"k\" : \"key1\", \"v\" : \"val1\"}\n]");
 		return -1
 	}
 
@@ -147,8 +150,8 @@ func importDocs(jsonStr string, dir string) (ret int) {
 		OnEvent: func(event moss.Event) {
 			if event.Kind == moss.EventKindPersisterProgress {
 				stats, err := coll.Stats()
-				if err == nil &&
-				stats.CurDirtyOps <= 0 && stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+				if err == nil && stats.CurDirtyOps <= 0 &&
+				   stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
 					m.Lock()
 					if waitingForCleanCh != nil {
 						waitingForCleanCh <- struct{}{}
@@ -161,8 +164,8 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	}
 
 	store, coll, err = moss.OpenStoreCollection(dir,
-						moss.StoreOptions{CollectionOptions: co,},
-						moss.StorePersistOptions{})
+	                                moss.StoreOptions{CollectionOptions: co,},
+	                                moss.StorePersistOptions{})
 	if err != nil || store == nil {
 		fmt.Printf("Moss-OpenStoreCollection failed, err: %v\n", err)
 		return -1
@@ -288,7 +291,9 @@ func importDocs(jsonStr string, dir string) (ret int) {
 
 	<-ch
 
-	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n", len(data), numBatches)
+	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n",
+	           len(data), numBatches)
+
 	return 0
 }
 
@@ -301,9 +306,13 @@ func ImportDocs(jsonStr string, dir string, batch int) {
 func init() {
 	RootCmd.AddCommand(importCmd)
 
-	// Local flag that is intended to work as a flag over import
-	importCmd.Flags().IntVar(&batchSize, "batchsize", 0, "Batch-size for the set operations (default: all docs in one batch)")
-	importCmd.Flags().StringVar(&fileInput, "file", "", "Reads JSON content from file")
-	importCmd.Flags().StringVar(&jsonInput, "json", "", "Reads JSON content from command-line")
-	importCmd.Flags().BoolVar(&readFromStdin, "stdin", false, "Reads JSON content from stdin (Enter to submit)")
+	// Local flags that is intended to work as a flag over import
+	importCmd.Flags().IntVar(&batchSize, "batchsize", 0,
+	    "Batch-size for the set operations (default: all docs in one batch)")
+	importCmd.Flags().StringVar(&fileInput, "file", "",
+	    "Reads JSON content from file")
+	importCmd.Flags().StringVar(&jsonInput, "json", "",
+	    "Reads JSON content from command-line")
+	importCmd.Flags().BoolVar(&readFromStdin, "stdin", false,
+	    "Reads JSON content from stdin (Enter to submit)")
 }

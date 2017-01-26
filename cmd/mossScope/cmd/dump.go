@@ -34,7 +34,8 @@ For example:
 	./mossScope dump [sub-command] <path_to_store> [flag]`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
-			fmt.Println("USAGE: mossScope dump [sub-command] <path_to_store> [flag], more details with --help");
+			fmt.Println("USAGE: mossScope dump [sub-command] <path_to_store> " +
+			            "[flag], more details with --help");
 			return
 		}
 
@@ -96,7 +97,8 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 		if val == nil {
 			fmt.Printf("  { \"k\" : \"%s\" }", hex.EncodeToString(key))
 		} else {
-			fmt.Printf("  { \"k\" : \"%s\", \"v\" : \"%s\" }", hex.EncodeToString(key), hex.EncodeToString(val))
+			fmt.Printf("  { \"k\" : \"%s\", \"v\" : \"%s\" }",
+			           hex.EncodeToString(key), hex.EncodeToString(val))
 		}
 	} else {
 		jBufk, err := json.Marshal(string(key))
@@ -112,7 +114,8 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
 				os.Exit(-1)
 			}
-			fmt.Printf("  { \"k\" : %s, \"v\" : %s }", string(jBufk), string(jBufv))
+			fmt.Printf("  { \"k\" : %s, \"v\" : %s }",
+			           string(jBufk), string(jBufv))
 		}
 	}
 }
@@ -127,7 +130,9 @@ func init() {
 	RootCmd.AddCommand(dumpCmd)
 
 	// Local flag that is intended to work as a filter over dump
-	dumpCmd.Flags().BoolVar(&keysOnly, "keys-only", false, "Emits keys only, works on dump without sub-commands")
+	dumpCmd.Flags().BoolVar(&keysOnly, "keys-only", false,
+	                    "Emits keys only, works on dump without sub-commands")
 	// Persistent flag that would work for current command and sub commands
-	dumpCmd.PersistentFlags().BoolVar(&inHex, "hex", false, "Emits output in hex")
+	dumpCmd.PersistentFlags().BoolVar(&inHex, "hex", false,
+	                    "Emits output in hex")
 }
