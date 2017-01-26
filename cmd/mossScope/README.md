@@ -7,20 +7,19 @@ moss store.
 
 Standalone: How to use
 ----------------------
-    (set $GOPATH)
-    $ go get github.com/spf13/cobra
+
     $ go get github.com/couchbase/moss
     $ cd $GOPATH/src/github.com/couchbase/moss/cmd/mossScope
-    ../moss/mossScope $ go build
-    ../moss/mossSCope $ ./mossScope --help
+    $ go build
+    $ ./mossScope --help
 
 Features
 --------
 
-* dump: This is to dump the contents of the store in JSON format
-* import: This is to import docs from a JSON file into the store
-* stats: This is to dump stats pertaining to the store in JSON format
-* compact: This can be used to trigger compaction over the store
+* dump: dump the contents of the store
+* import: import docs into the store
+* stats: emit stats pertaining to the store
+* compact: used to trigger compaction over the store
 
 CLI
 ---
