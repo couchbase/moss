@@ -35,18 +35,21 @@ any command.
 
     mossScope dump [sub-command] [flags] <store_path(s)>
 
-Available sub-commands:
-    footer            Dumps the latest footer in the store
-    key               Dumps the key and value of the specified key
+    Available sub-commands:
 
-Available flags:
-    --keys-only       Dumps just the keys (without any values)
+        footer            Dumps the latest footer in the store
+        key               Dumps the key and value of the specified key
+
+    Available flags:
+
+        --keys-only       Dumps just the keys (without any values)
 
 footer:
 
     mossScope dump footer [flags] <store_path(s)>
 
     Available flags:
+
         --all             Dumps all the available footers from the store
 
 key:
@@ -54,6 +57,7 @@ key:
     mossScope dump key [flags] <key> <store_path(s)>
 
     Available flags:
+
         --all-versions    Dumps key and value of all persisted versions of the specified key
 
 Examples:
@@ -67,12 +71,12 @@ Examples:
 
     mossScope import [flags] <store_path(s)>
 
-Available flags:
+    Available flags:
 
-    --batchsize int Specifies the batch sizes for the set ops (default: all docs in one batch)
-    --file <file_path> Reads JSON content from <file_path>
-    --json <json>      Reads JSON content from command-line
-    --stdin            Reads JSON content from stdin (Enter to submit)
+        --batchsize int Specifies the batch sizes for the set ops (default: all docs in one batch)
+        --file <file_path> Reads JSON content from <file_path>
+        --json <json>      Reads JSON content from command-line
+        --stdin            Reads JSON content from stdin (Enter to submit)
 
 Examples:
 
@@ -85,11 +89,11 @@ Examples:
 
     mossScope stats [sub-command] <store_path(s)>
 
-Available sub-commands:
+    Available sub-commands:
 
-    all               Dumps all available stats from the footers of the moss store
-    frag              Dumps the fragmentation stats (to assist with manual compaction)
-    hist              Scans the moss store and fetches histograms
+        all               Dumps all available stats from the footers of the moss store
+        frag              Dumps the fragmentation stats (to assist with manual compaction)
+        hist              Scans the moss store and fetches histograms
 
 Examples:
 
