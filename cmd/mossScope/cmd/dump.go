@@ -94,9 +94,9 @@ func dump(dir string) {
 func dumpKeyVal(key []byte, val []byte, toHex bool) {
 	if toHex {
 		if val == nil {
-			fmt.Printf("  { \"K\" : \"%s\" }", hex.EncodeToString(key))
+			fmt.Printf("  { \"k\" : \"%s\" }", hex.EncodeToString(key))
 		} else {
-			fmt.Printf("  { \"K\" : \"%s\", \"V\" : \"%s\" }", hex.EncodeToString(key), hex.EncodeToString(val))
+			fmt.Printf("  { \"k\" : \"%s\", \"v\" : \"%s\" }", hex.EncodeToString(key), hex.EncodeToString(val))
 		}
 	} else {
 		jBufk, err := json.Marshal(string(key))
@@ -105,14 +105,14 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 			os.Exit(-1)
 		}
 		if (val == nil) {
-			fmt.Printf("  { \"K\" : %s }", string(jBufk))
+			fmt.Printf("  { \"k\" : %s }", string(jBufk))
 		} else {
 			jBufv, err := json.Marshal(string(val))
 			if err != nil {
 				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
 				os.Exit(-1)
 			}
-			fmt.Printf("  { \"K\" : %s, \"V\" : %s }", string(jBufk), string(jBufv))
+			fmt.Printf("  { \"k\" : %s, \"v\" : %s }", string(jBufk), string(jBufv))
 		}
 	}
 }

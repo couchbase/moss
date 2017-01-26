@@ -105,8 +105,8 @@ var jsonInput string
 var readFromStdin bool
 
 type KV struct {
-	KEY		string	`json:"K"`
-	VAL		string	`json:"V"`
+	KEY		string	`json:"k"`
+	VAL		string	`json:"v"`
 }
 
 func importDocs(jsonStr string, dir string) (ret int) {
@@ -123,7 +123,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	if err != nil {
 		fmt.Printf("Invalid JSON format, err: %v\n", err)
 		fmt.Println("Expected format:")
-		fmt.Println("[\n {\"K\" : \"key0\", \"V\" : \"val0\"},\n {\"K\" : \"key1\", \"V\" : \"val1\"}\n]");
+		fmt.Println("[\n {\"k\" : \"key0\", \"v\" : \"val0\"},\n {\"k\" : \"key1\", \"v\" : \"val1\"}\n]");
 		return -1
 	}
 
