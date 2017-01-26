@@ -13,108 +13,85 @@ Standalone: How to use
     $ go build
     $ ./mossScope --help
 
-Features
---------
+Usage:
+------
 
-* dump: dump the contents of the store
-* import: import docs into the store
-* stats: emit stats pertaining to the store
-* compact: used to trigger compaction over the store
+    mossScope <command> [sub-command] [flags] <store_path(s)>
 
-CLI
----
+The store_path(s) is one or more directories where moss files reside.
 
-A preview of mossScope --help:
+The command is requred.  Available commands:
 
-    Usage:
-        mossScope [command] [sub-command] [flag] path_to_store
+      dump              Dumps key/val data from the store
+      import            Imports docs into the store
+      stats             Emits store related stats
+      version           Emits the current version of mossScope
 
-    Available Commands:
-      dump              Dumps key/val data in the store
-      import            Imports the docs from the JSON file into the store
-      stats             Retrieves all the store related stats
-      compact           Runs full compaction on the store specified
-      version           Retrieves the current version of mossScope
-
-    Use "mossScope [command] --help" for more information about a command.
+Use "mossScope <command> --help" for more detailed information about
+any command.
 
 "dump"
 ------
 
-    Usage:
-        mossScope dump [sub-command] [flag] path_to_store
+    mossScope dump [sub-command] [flags] <store_path(s)>
 
-    Available Sub-commands:
-      footer            Dumps the latest footer in the store
-      key               Dumps the key and value of the specified key
+Available sub-commands:
+    footer            Dumps the latest footer in the store
+    key               Dumps the key and value of the specified key
 
-    Available Flags:
-      --keys-only       Dumps just the keys (without any values)
-
-    Use "mossScope dump [sub-command] --help" for more information about a command.
+Available flags:
+    --keys-only       Dumps just the keys (without any values)
 
 footer:
 
-    Usage:
-        mossScope dump footer [flag] path_to_store
+    mossScope dump footer [flags] <store_path(s)>
 
-    Available Flags:
-      --all             Dumps all the available footers from the store
+    Available flags:
+        --all             Dumps all the available footers from the store
 
 key:
 
-    Usage:
-        mossScope dump key [flag] key_name path_to_store
+    mossScope dump key [flags] <key> <store_path(s)>
 
-    Available Flags:
-      --all-versions    Dumps key and value of all persisted versions of the specified key
+    Available flags:
+        --all-versions    Dumps key and value of all persisted versions of the specified key
 
 Examples:
 
-    mossScope dump path_to_store --keys-only
-    mossScope dump footers path_to_store --latest-only
-    mossScope dump key key_name path_to_store
+    mossScope dump path/to/myStore --keys-only
+    mossScope dump footer path/to/myStore
+    mossScope dump key myKey path/to/myStore
 
 "import"
 --------
 
-    Usage:
-        mossScope import <flag(s)> path_to_store
+    mossScope import [flags] <store_path(s)>
 
-    Available Flags:
-        --batchsize int Specifies the batch sizes for the set ops (default: all docs in one batch)
-        --file string   Reads JSON content from file
-        --json string   Reads JSON content from command-line
-        --stdin         Reads JSON content from stdin (Enter to submit)
+Available flags:
 
-    Use "mossScope import --help" for more infomration about a command.
+    --batchsize int Specifies the batch sizes for the set ops (default: all docs in one batch)
+    --file <file_path> Reads JSON content from <file_path>
+    --json <json>      Reads JSON content from command-line
+    --stdin            Reads JSON content from stdin (Enter to submit)
 
 Examples:
 
-    mossScope import path_to_store --file test.json --batchsize 100
-    mossScope import path_to_store --json '[{"K":"key0","V":"val0"},{"K":"key1","V":"val1"}]'
-    mossScope import path_to_store --stdin  // Program waits for user to submit JSON
+    mossScope import path/to/myStore --file test.json --batchsize 100
+    mossScope import path/to/myStore --json '[{"k":"key0","v":"val0"},{"k":"key1","v":"val1"}]'
+    mossScope import path/to/myStore --stdin // Program waits for user to submit JSON
 
 "stats"
 -------
 
-    Usage:
-        mossScope stats [sub-command] path_to_store
+    mossScope stats [sub-command] <store_path(s)>
 
-    Available Sub-commands:
-      all               Dumps all available stats from the footers of the moss store
-      frag              Dumps the fragmentation stats (to assist with manual compaction)
-      hist              Scans the moss store and fetches histograms
+Available sub-commands:
 
-    Use "mossScope stats [sub-command] --help" for more information about a command.
+    all               Dumps all available stats from the footers of the moss store
+    frag              Dumps the fragmentation stats (to assist with manual compaction)
+    hist              Scans the moss store and fetches histograms
 
 Examples:
 
-    mossScope stats all path_to_store
-    mossScope stats hist path_to_store
-
-"compact"
----------
-
-    Usage:
-        mossScope compact path_to_store
+    mossScope stats all path/to/myStore
+    mossScope stats hist path/to/myStore
