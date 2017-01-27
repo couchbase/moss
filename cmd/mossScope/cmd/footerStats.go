@@ -113,6 +113,12 @@ func footerStats(dir string) {
 	}
 }
 
+// The following wrapper (public) is for test purposes
+func FooterStats(dir string) {
+	jsonFormat = true
+	footerStats(dir)
+}
+
 func init() {
 	statsCmd.AddCommand(footerStatsCmd)
 

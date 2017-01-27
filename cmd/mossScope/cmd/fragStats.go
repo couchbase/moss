@@ -129,6 +129,12 @@ func fragStats(dir string) {
 	}
 }
 
+// The following wrapper (public) is for test purposes
+func FragStats(dir string) {
+	jsonFormat = true
+	fragStats(dir)
+}
+
 func init() {
 	statsCmd.AddCommand(fragStatsCmd)
 }

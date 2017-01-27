@@ -32,7 +32,7 @@ var ITEM_COUNT = 10
 
 func setup(t *testing.T, createDir bool) (d string, s *moss.Store,
                                           c moss.Collection) {
-	dir := "./testStore"
+	dir := "./testDumpStore"
 	if createDir {
 		os.Mkdir(dir, 0777)
 	}
