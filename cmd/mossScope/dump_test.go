@@ -32,7 +32,7 @@ var ITEM_COUNT = 10
 
 func setup(t *testing.T, createDir bool) (d string, s *moss.Store,
                                           c moss.Collection) {
-	dir := "./testDumpStore"
+	dir := "testDumpStore"
 	if createDir {
 		os.Mkdir(dir, 0777)
 	}
@@ -121,12 +121,24 @@ func TestDump(t *testing.T) {
 
 	var m []interface{}
 	json.Unmarshal([]byte(out), &m)
-	if len(m) != ITEM_COUNT {
-		t.Errorf("Incorrect number of entries: %d!", len(m))
+	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
+	}
+
+	store_data := m[0].(map[string]interface{})
+
+	if store_data["testDumpStore"] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	kvs := store_data["testDumpStore"].([]interface{})
+
+	if len(kvs) != ITEM_COUNT {
+		t.Errorf("Incorrect number of entries: %d!", len(kvs))
 	}
 
 	for i := 0; i < ITEM_COUNT; i++ {
-		entry := m[i].(map[string]interface{})
+		entry := kvs[i].(map[string]interface{})
 		k := fmt.Sprintf("key%d", i)
 		v := fmt.Sprintf("val%d", i)
 		if strings.Compare(k, entry["k"].(string)) != 0 {
@@ -143,12 +155,24 @@ func TestDumpKeysOnly(t *testing.T) {
 
 	var m []interface{}
 	json.Unmarshal([]byte(out), &m)
-	if (len(m) != ITEM_COUNT) {
-		t.Errorf("Incorrect number of entries: %d!", len(m))
+	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
+	}
+
+	store_data := m[0].(map[string]interface{})
+
+	if store_data["testDumpStore"] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	kvs := store_data["testDumpStore"].([]interface{})
+
+	if len(kvs) != ITEM_COUNT {
+		t.Errorf("Incorrect number of entries: %d!", len(kvs))
 	}
 
 	for i := 0; i < ITEM_COUNT; i++ {
-		entry := m[i].(map[string]interface{})
+		entry := kvs[i].(map[string]interface{})
 		k := fmt.Sprintf("key%d", i)
 		if strings.Compare(k, entry["k"].(string)) != 0 {
 			t.Errorf("Mismatch in key [%s != %s]!", k, entry["k"].(string))
@@ -184,10 +208,22 @@ func TestDumpKey(t *testing.T) {
 		var m []interface{}
 		json.Unmarshal([]byte(out), &m)
 		if len(m) != 1 {
-			t.Errorf("Incorrect number of entries: %d!", len(m))
+			t.Errorf("Expected one directory, but count: %d!", len(m))
 		}
 
-		entry := m[0].(map[string]interface{})
+		store_data := m[0].(map[string]interface{})
+
+		if store_data[dir] == nil {
+			t.Errorf("Expected directory not found!")
+		}
+
+		kvs := store_data[dir].([]interface{})
+
+		if len(kvs) != 1 {
+			t.Errorf("Incorrect number of entries: %d!", len(kvs))
+		}
+
+		entry := kvs[0].(map[string]interface{})
 		val := fmt.Sprintf("val%d", i)
 		if strings.Compare(key, entry["k"].(string)) != 0 {
 			t.Errorf("Mismatch in key [%s != %s]!", key, entry["k"].(string))
@@ -198,7 +234,6 @@ func TestDumpKey(t *testing.T) {
 	}
 
 	cleanup(dir, store, coll)
-
 }
 
 func TestDumpKeyAllVersions(t *testing.T) {
@@ -233,13 +268,25 @@ func TestDumpKeyAllVersions(t *testing.T) {
 
 		var m []interface{}
 		json.Unmarshal([]byte(out), &m)
-		if len(m) != 2 {
-			t.Errorf("Incorrect number of entries!")
+		if len(m) != 1 {
+			t.Errorf("Expected one directory, but count: %d!", len(m))
+		}
+
+		store_data := m[0].(map[string]interface{})
+
+		if store_data[dir] == nil {
+			t.Errorf("Expected directory not found!")
+		}
+
+		kvs := store_data[dir].([]interface{})
+
+		if len(kvs) != 2 {
+			t.Errorf("Incorrect number of entries: %d!", len(kvs))
 		}
 
 		val := fmt.Sprintf("val%d", i)
-		for j := 0; j < len(m); j++ {
-			entry := m[j].(map[string]interface{})
+		for j := 0; j < len(kvs); j++ {
+			entry := kvs[j].(map[string]interface{})
 			if strings.Compare(key, entry["k"].(string)) != 0 {
 				t.Errorf("Mismatch in key [%s != %s]!",
 				         key, entry["k"].(string))
@@ -284,11 +331,23 @@ func TestDumpAllFooters(t *testing.T) {
 
 	var m []interface{}
 	json.Unmarshal([]byte(out), &m)
-	if len(m) != 2 {
-		t.Errorf("Incorrect number of entries: %d!", len(m))
+	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
 	}
 
-	entry := m[0].(map[string]interface{})
+	store_data := m[0].(map[string]interface{})
+
+	if store_data[dir] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	kvs := store_data[dir].([]interface{})
+
+	if len(kvs) != 2 {
+		t.Errorf("Incorrect number of entries: %d!", len(kvs))
+	}
+
+	entry := kvs[0].(map[string]interface{})
 	// Expect 2 segment locs on latest footer (footer 2)
 	records := reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 2 {
@@ -308,7 +367,7 @@ func TestDumpAllFooters(t *testing.T) {
 		}
 	}
 
-	entry = m[1].(map[string]interface{})
+	entry = kvs[1].(map[string]interface{})
 	// Expect 1 segment loc on the older footer (footer 1)
 	records = reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 1 {

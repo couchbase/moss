@@ -33,71 +33,85 @@ format. It has a set of options that it can used with.
 For example:
 	./mossScope dump [sub-command] <path_to_store> [flag]`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
+		if len(args) < 1 {
 			fmt.Println("USAGE: mossScope dump [sub-command] <path_to_store> " +
 			            "[flag], more details with --help");
 			return
 		}
 
-		dump(args[0])
+		dump(args)
 	},
 }
 
 var keysOnly bool
 var inHex bool
 
-func dump(dir string) {
-	store, err := moss.OpenStore(dir, moss.StoreOptions{})
-	if err != nil || store == nil {
-		fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-		os.Exit(-1)
+func dump(dirs []string) {
+	if len(dirs) == 0 {
+		return
 	}
 
-	snap, err := store.Snapshot()
-	if err != nil || snap == nil {
-		fmt.Printf("Store-Snapshot() API failed, err: %v\n", err)
-		os.Exit(-1)
-	}
-
-	iter, err := snap.StartIterator(nil, nil, moss.IteratorOptions{})
-	if err != nil || iter == nil {
-		fmt.Printf("Snapshot-StartIterator() API failed, err: %v\n", err)
-		os.Exit(-1)
-	}
-
-	fmt.Printf("[\n")
-	for {
-		k, v, err := iter.Current()
-		if err != nil {
-			break
+	fmt.Printf("[")
+	for index, dir := range dirs {
+		store, err := moss.OpenStore(dir, moss.StoreOptions{})
+		if err != nil || store == nil {
+			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
+			os.Exit(-1)
 		}
 
-		if keysOnly {
-			dumpKeyVal(k, nil, inHex)
-		} else {
-			dumpKeyVal(k, v, inHex)
+		snap, err := store.Snapshot()
+		if err != nil || snap == nil {
+			fmt.Printf("Store-Snapshot() API failed, err: %v\n", err)
+			os.Exit(-1)
 		}
 
-		if iter.Next() ==  moss.ErrIteratorDone {
-			fmt.Printf("\n")
-			break
-		} else {
-			fmt.Printf(",\n")
+		iter, err := snap.StartIterator(nil, nil, moss.IteratorOptions{})
+		if err != nil || iter == nil {
+			fmt.Printf("Snapshot-StartIterator() API failed, err: %v\n", err)
+			os.Exit(-1)
 		}
+
+		if index != 0 {
+			fmt.Printf(",")
+		}
+		fmt.Printf("{\"%s\":", dir)
+
+		fmt.Printf("[")
+		for {
+			k, v, err := iter.Current()
+			if err != nil {
+				break
+			}
+
+			if keysOnly {
+				dumpKeyVal(k, nil, inHex)
+			} else {
+				dumpKeyVal(k, v, inHex)
+			}
+
+			if iter.Next() == moss.ErrIteratorDone {
+				break
+			}
+
+			fmt.Printf(",")
+		}
+		fmt.Printf("]")
+
+		iter.Close()
+		snap.Close()
+		store.Close()
+
+		fmt.Printf("}")
 	}
 	fmt.Printf("]\n")
-
-	iter.Close()
-	snap.Close()
-	store.Close()
 }
 
 func dumpKeyVal(key []byte, val []byte, toHex bool) {
 	if toHex {
 		if val == nil {
-			fmt.Printf("  { \"k\" : \"%s\" }", hex.EncodeToString(key))
+			fmt.Printf("{\"k\":\"%s\"}", hex.EncodeToString(key))
 		} else {
-			fmt.Printf("  { \"k\" : \"%s\", \"v\" : \"%s\" }",
+			fmt.Printf("{\"k\":\"%s\",\"v\":\"%s\"}",
 			           hex.EncodeToString(key), hex.EncodeToString(val))
 		}
 	} else {
@@ -107,14 +121,14 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 			os.Exit(-1)
 		}
 		if (val == nil) {
-			fmt.Printf("  { \"k\" : %s }", string(jBufk))
+			fmt.Printf("{\"k\":%s}", string(jBufk))
 		} else {
 			jBufv, err := json.Marshal(string(val))
 			if err != nil {
 				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
 				os.Exit(-1)
 			}
-			fmt.Printf("  { \"k\" : %s, \"v\" : %s }",
+			fmt.Printf("{\"k\":%s,\"v\":%s}",
 			           string(jBufk), string(jBufv))
 		}
 	}
@@ -122,8 +136,9 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 
 // The following wrapper (public) is for test purposes
 func Dump(dir string, onlyKeys bool) {
+	dirs := []string{dir}
 	keysOnly = onlyKeys
-	dump(dir)
+	dump(dirs)
 }
 
 func init() {

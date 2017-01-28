@@ -34,7 +34,7 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
                                                            s *moss.Store,
                                                            c moss.Collection) {
 
-	dir := "./testStatsStore"
+	dir := "testStatsStore"
 	if createDir {
 		os.Mkdir(dir, 0777)
 	}
@@ -175,17 +175,29 @@ func init2FootersAndInterceptStdout(t *testing.T, batches int,
 func TestLatestFooterStats(t *testing.T) {
 	out := init2FootersAndInterceptStdout(t, 2, FOOTERSTATS)
 
-	var m map[string]interface{}
+	var m []interface{}
 	json.Unmarshal([]byte(out), &m)
 	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
+	}
+
+	store_data := m[0].(map[string]interface{})
+
+	if store_data["testStatsStore"] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	if len(store_data) != 1 {
 		t.Errorf("Expected 1 footer only!")
 	}
 
-	if m["Footer_1"] == nil {
+	footer_data := store_data["testStatsStore"].(map[string]interface{})
+
+	if footer_data["Footer_1"] == nil {
 		t.Errorf("Expected Footer_1 to be the latest footer!")
 	}
 
-	stats := m["Footer_1"].(map[string]interface{})
+	stats := footer_data["Footer_1"].(map[string]interface{})
 
 	if stats["total_ops_set"] != float64(2 * ITEMS) {
 		t.Errorf("Unexpected total_ops_set: %v!",
@@ -207,22 +219,33 @@ func TestLatestFooterStats(t *testing.T) {
 func TestFragmentationStats(t *testing.T) {
 	out := init2FootersAndInterceptStdout(t, 2, FRAGMENTATIONSTATS)
 
-	var m map[string]interface{}
+	var m []interface{}
 	json.Unmarshal([]byte(out), &m)
+	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
+	}
 
-	if m["data_bytes"] == nil {
+	store_data := m[0].(map[string]interface{})
+
+	if store_data["testStatsStore"] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	stats := store_data["testStatsStore"].(map[string]interface{})
+
+	if stats["data_bytes"] == nil {
 		t.Errorf("Expected an entry for data_bytes!")
 	}
 
-	if m["dir_size"] == nil {
+	if stats["dir_size"] == nil {
 		t.Errorf("Expected an entry for dir_size")
 	}
 
-	if m["fragmentation_bytes"] == nil {
+	if stats["fragmentation_bytes"] == nil {
 		t.Errorf("Expected an entry for fragmentation_bytes!")
 	}
 
-	if m["fragmentation_percent"] == nil {
+	if stats["fragmentation_percent"] == nil {
 		t.Errorf("Expected an entry for fragmentation_percent!")
 	}
 }

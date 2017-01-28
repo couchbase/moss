@@ -38,7 +38,7 @@ func importHelper(t *testing.T, batchsize int) {
 	             "{\"k\":\"key8\",\"v\":\"val8\"}," +
 	             "{\"k\":\"key9\",\"v\":\"val9\"}]";
 
-	temp_dir := "./testImportStore"
+	temp_dir := "testImportStore"
 
 	// Prevent the command from writing anything to stdout
 	old := os.Stdout // keep backup of the real stdout
