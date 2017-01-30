@@ -137,10 +137,9 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 func init() {
 	RootCmd.AddCommand(dumpCmd)
 
-	// Local flag that is intended to work as a filter over dump
+	// Local flags that are intended to work as a filter over dump
 	dumpCmd.Flags().BoolVar(&keysOnly, "keys-only", false,
 		"Emits keys only, works on dump without sub-commands")
-	// Persistent flag that would work for current command and sub commands
-	dumpCmd.PersistentFlags().BoolVar(&inHex, "hex", false,
+	dumpCmd.Flags().BoolVar(&inHex, "hex", false,
 		"Emits output in hex")
 }

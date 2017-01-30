@@ -104,7 +104,9 @@ func invokeKey(keyname string, dirs []string) {
 func init() {
 	dumpCmd.AddCommand(keyCmd)
 
-	// Local flag that is intended to work as a flag over dump key
+	// Local flags that are intended to work as a flag over dump key
 	keyCmd.Flags().BoolVar(&allVersions, "all-versions", false,
 		"Emits all the available versions of the key")
+	keyCmd.Flags().BoolVar(&inHex, "hex", false,
+		"Emits output in hex")
 }
