@@ -115,6 +115,12 @@ var ErrUnexpected = errors.New("unexpected")
 // used.
 var ErrUnimplemented = errors.New("unimplemented")
 
+// ErrKeyTooLarge is returned when the length of the key exceeds the limit of 2^24.
+var ErrKeyTooLarge = errors.New("key-too-large")
+
+// ErrValueTooLarge is returned when the length of the value exceeds the limit of 2^28.
+var ErrValueTooLarge = errors.New("value-too-large")
+
 // A Collection represents an ordered mapping of key-val entries,
 // where a Collection is snapshot'able and atomically updatable.
 type Collection interface {
