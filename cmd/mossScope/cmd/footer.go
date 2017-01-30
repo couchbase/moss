@@ -15,9 +15,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -33,7 +33,7 @@ format, (optionally all) here's a sample command:
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			fmt.Println("USAGE: mossScope dump footer <path_to_store>, " +
-			            "more details with --help");
+				"more details with --help")
 			return
 		}
 
@@ -119,5 +119,5 @@ func init() {
 
 	// Local flag that is intended to work as a flag over dump footer
 	footerCmd.Flags().BoolVar(&allAvailable, "all", false,
-	                          "Fetches all the available footers")
+		"Fetches all the available footers")
 }

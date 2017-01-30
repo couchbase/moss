@@ -29,7 +29,7 @@ specific moss store.
 	./mossScope stats <sub-command> <path_to_store>`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("USAGE: mossScope stats <sub_command> <path_to_store>, " +
-		            "more details with --help");
+			"more details with --help")
 	},
 }
 
@@ -40,5 +40,5 @@ func init() {
 
 	// Persistent flag that would work for current commands and sub commands
 	statsCmd.PersistentFlags().BoolVar(&jsonFormat, "json", false,
-	                                   "Emits output in JSON")
+		"Emits output in JSON")
 }

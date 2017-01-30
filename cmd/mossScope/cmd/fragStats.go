@@ -15,9 +15,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 	"path/filepath"
 
 	"github.com/couchbase/moss"
@@ -35,7 +35,7 @@ could assist with decisions around invoking manual compaction.
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			fmt.Println("USAGE: mossScope stats frag <path_to_store>, " +
-			            "more details with --help");
+				"more details with --help")
 			return
 		}
 
@@ -101,7 +101,7 @@ func fragStats(dirs []string) {
 				os.Exit(-1)
 			}
 
-			stats_map["data_bytes"] += int64(len(jBuf))  // footer length
+			stats_map["data_bytes"] += int64(len(jBuf)) // footer length
 
 			// Also account for the magic that repeats twice at start and end
 			stats_map["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_BEG))
@@ -119,10 +119,10 @@ func fragStats(dirs []string) {
 		filepath.Walk(dir, read_size)
 
 		stats_map["fragmentation_bytes"] = stats_map["dir_size"] -
-		stats_map["data_bytes"]
+			stats_map["data_bytes"]
 		stats_map["fragmentation_percent"] = int64(100 *
-		                      ((float64(stats_map["fragmentation_bytes"])) /
-		                                      float64(stats_map["dir_size"])))
+			((float64(stats_map["fragmentation_bytes"])) /
+				float64(stats_map["dir_size"])))
 
 		if jsonFormat {
 			jBuf, err := json.Marshal(stats_map)

@@ -27,7 +27,7 @@ var versionCmd = &cobra.Command{
 	Short: "Retrieves the current version of mossScope",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("mossScope v%s (moss lib version: %v)\n",
-		           version, moss.STORE_VERSION)
+			version, moss.STORE_VERSION)
 	},
 }
 

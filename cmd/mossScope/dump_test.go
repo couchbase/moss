@@ -16,13 +16,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
-	"encoding/json"
-	"reflect"
 
 	"github.com/couchbase/moss"
 	"github.com/couchbase/moss/cmd/mossScope/cmd"
@@ -31,7 +31,7 @@ import (
 var ITEM_COUNT = 10
 
 func setup(t *testing.T, createDir bool) (d string, s *moss.Store,
-                                          c moss.Collection) {
+	c moss.Collection) {
 	dir := "testDumpStore"
 	if createDir {
 		os.Mkdir(dir, 0777)
@@ -46,7 +46,7 @@ func setup(t *testing.T, createDir bool) (d string, s *moss.Store,
 	coll.Start()
 
 	// Creates
-	batch, err := coll.NewBatch(ITEM_COUNT, ITEM_COUNT * 8)
+	batch, err := coll.NewBatch(ITEM_COUNT, ITEM_COUNT*8)
 	if err != nil {
 		t.Errorf("Expected NewBatch() to succeed!")
 	}
@@ -289,11 +289,11 @@ func TestDumpKeyAllVersions(t *testing.T) {
 			entry := kvs[j].(map[string]interface{})
 			if strings.Compare(key, entry["k"].(string)) != 0 {
 				t.Errorf("Mismatch in key [%s != %s]!",
-				         key, entry["k"].(string))
+					key, entry["k"].(string))
 			}
 			if strings.Compare(val, entry["v"].(string)) != 0 {
 				t.Errorf("Mismatch in value [%s != %s]!",
-				         val, entry["v"].(string))
+					val, entry["v"].(string))
 			}
 		}
 	}
@@ -352,18 +352,18 @@ func TestDumpAllFooters(t *testing.T) {
 	records := reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 2 {
 		t.Errorf("Unexpected number of segment locs in latest footer: %d",
-		         records.Len())
+			records.Len())
 	}
 
 	for i := 0; i < records.Len(); i++ {
 		stats := (records.Index(i).Interface()).(map[string]interface{})
 		if stats["TotOpsSet"].(float64) != float64(ITEM_COUNT) {
 			t.Errorf("[Footer2] Unexpected value for TotOpsSet stat: %d!",
-			         stats["TotOpsSet"])
+				stats["TotOpsSet"])
 		}
 		if stats["TotOpsDel"].(float64) != 0 {
 			t.Errorf("[Footer2] Unexpected value for TotOpsDel stat: %d!",
-			         stats["TotOpsDel"])
+				stats["TotOpsDel"])
 		}
 	}
 
@@ -372,17 +372,17 @@ func TestDumpAllFooters(t *testing.T) {
 	records = reflect.ValueOf(entry["SegmentLocs"])
 	if records.Len() != 1 {
 		t.Errorf("Unexpected number of segment locs in older footer: %d",
-		         records.Len())
+			records.Len())
 	}
 
 	stats := (records.Index(0).Interface()).(map[string]interface{})
 	if stats["TotOpsSet"].(float64) != float64(ITEM_COUNT) {
 		t.Errorf("[Footer1] Unexpected value for TotOpsSet stat: %d!",
-		         stats["TotOpsSet"])
+			stats["TotOpsSet"])
 	}
 	if stats["TotOpsDel"].(float64) != 0 {
 		t.Errorf("[Footer1] Unexpected value for TotOpsDel stat: %d!",
-		         stats["TotOpsDel"])
+			stats["TotOpsDel"])
 	}
 
 	cleanup(dir, store, coll)

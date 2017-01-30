@@ -16,13 +16,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"sync"
 	"testing"
-	"encoding/json"
 
 	"github.com/couchbase/moss"
 	"github.com/couchbase/moss/cmd/mossScope/cmd"
@@ -31,8 +31,8 @@ import (
 var ITEMS = 5
 
 func initStore(t *testing.T, createDir bool, batches int) (d string,
-                                                           s *moss.Store,
-                                                           c moss.Collection) {
+	s *moss.Store,
+	c moss.Collection) {
 
 	dir := "testStatsStore"
 	if createDir {
@@ -40,7 +40,7 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
 	}
 
 	var m sync.Mutex
-	var waitingForCleanCh chan struct {}
+	var waitingForCleanCh chan struct{}
 
 	var err error
 	var store *moss.Store
@@ -51,7 +51,7 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
 			if event.Kind == moss.EventKindPersisterProgress {
 				stats, err := coll.Stats()
 				if err == nil && stats.CurDirtyOps <= 0 &&
-				   stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
 					m.Lock()
 					if waitingForCleanCh != nil {
 						waitingForCleanCh <- struct{}{}
@@ -64,8 +64,8 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
 	}
 
 	store, coll, err = moss.OpenStoreCollection(dir,
-	                                moss.StoreOptions{CollectionOptions: co,},
-	                                moss.StorePersistOptions{})
+		moss.StoreOptions{CollectionOptions: co},
+		moss.StorePersistOptions{})
 	if err != nil || store == nil {
 		t.Errorf("Moss-OpenStoreCollection failed, err: %v\n", err)
 	}
@@ -82,7 +82,7 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
 
 	for i := 0; i < ITEMS; i++ {
 		if itemsWrittenInBatch == 0 {
-			batch, err = coll.NewBatch(itemsPerBatch, itemsPerBatch * 8)
+			batch, err = coll.NewBatch(itemsPerBatch, itemsPerBatch*8)
 			if err != nil {
 				t.Errorf("Expected NewBatch() to succeed!")
 			}
@@ -94,7 +94,7 @@ func initStore(t *testing.T, createDir bool, batches int) (d string,
 		batch.Set(k, v)
 		itemsWrittenInBatch++
 
-		if itemsWrittenInBatch == itemsPerBatch || i == ITEMS - 1 {
+		if itemsWrittenInBatch == itemsPerBatch || i == ITEMS-1 {
 			m.Lock()
 			waitingForCleanCh = ch
 			m.Unlock()
@@ -128,12 +128,12 @@ func cleanupStore(dir string, store *moss.Store, coll moss.Collection) {
 }
 
 const (
-	FOOTERSTATS = 1
+	FOOTERSTATS        = 1
 	FRAGMENTATIONSTATS = 2
 )
 
 func init2FootersAndInterceptStdout(t *testing.T, batches int,
-                                    command int) (ret string) {
+	command int) (ret string) {
 	// Footer 1 (1 segment)
 	_, store, coll := initStore(t, true, batches)
 	cleanupStore("", store, coll)
@@ -199,22 +199,21 @@ func TestLatestFooterStats(t *testing.T) {
 
 	stats := footer_data["Footer_1"].(map[string]interface{})
 
-	if stats["total_ops_set"] != float64(2 * ITEMS) {
+	if stats["total_ops_set"] != float64(2*ITEMS) {
 		t.Errorf("Unexpected total_ops_set: %v!",
-		         stats["total_ops_set"])
+			stats["total_ops_set"])
 	}
 
-	if stats["total_key_bytes"] != float64(4 * (2 * ITEMS)) {
+	if stats["total_key_bytes"] != float64(4*(2*ITEMS)) {
 		t.Errorf("Unexpected key bytes: %v!",
-		         stats["total_key_bytes"])
+			stats["total_key_bytes"])
 	}
 
-	if stats["total_val_bytes"] != float64(4 * (2 * ITEMS)) {
+	if stats["total_val_bytes"] != float64(4*(2*ITEMS)) {
 		t.Errorf("Unexpected val bytes: %v!",
-		         stats["total_val_bytes"])
+			stats["total_val_bytes"])
 	}
 }
-
 
 func TestFragmentationStats(t *testing.T) {
 	out := init2FootersAndInterceptStdout(t, 2, FRAGMENTATIONSTATS)
@@ -249,4 +248,3 @@ func TestFragmentationStats(t *testing.T) {
 		t.Errorf("Expected an entry for fragmentation_percent!")
 	}
 }
-

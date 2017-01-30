@@ -28,15 +28,15 @@ import (
 func importHelper(t *testing.T, batchsize int) {
 	// Create a JSON file with some sample content
 	json_text := "[{\"k\":\"key0\",\"v\":\"val0\" }," +
-	             "{\"k\":\"key1\",\"v\":\"val1\"}," +
-	             "{\"k\":\"key2\",\"v\":\"val2\"}," +
-	             "{\"k\":\"key3\",\"v\":\"val3\"}," +
-	             "{\"k\":\"key4\",\"v\":\"val4\"}," +
-	             "{\"k\":\"key5\",\"v\":\"val5\"}," +
-	             "{\"k\":\"key6\",\"v\":\"val6\"}," +
-	             "{\"k\":\"key7\",\"v\":\"val7\"}," +
-	             "{\"k\":\"key8\",\"v\":\"val8\"}," +
-	             "{\"k\":\"key9\",\"v\":\"val9\"}]";
+		"{\"k\":\"key1\",\"v\":\"val1\"}," +
+		"{\"k\":\"key2\",\"v\":\"val2\"}," +
+		"{\"k\":\"key3\",\"v\":\"val3\"}," +
+		"{\"k\":\"key4\",\"v\":\"val4\"}," +
+		"{\"k\":\"key5\",\"v\":\"val5\"}," +
+		"{\"k\":\"key6\",\"v\":\"val6\"}," +
+		"{\"k\":\"key7\",\"v\":\"val7\"}," +
+		"{\"k\":\"key8\",\"v\":\"val8\"}," +
+		"{\"k\":\"key9\",\"v\":\"val9\"}]"
 
 	temp_dir := "testImportStore"
 

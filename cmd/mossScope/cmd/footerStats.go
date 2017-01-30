@@ -15,9 +15,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"encoding/json"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -33,7 +33,7 @@ collected from the latest footer of the store.
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			fmt.Println("USAGE: mossScope stats footer <path_to_store>, " +
-			            "more details with --help");
+				"more details with --help")
 			return
 		}
 
@@ -75,7 +75,7 @@ func footerStats(dirs []string) {
 			footer_stats[footer_id] = make(stats)
 
 			footer_stats[footer_id]["num_segments"] =
-			                                    uint64(len(footer.SegmentLocs))
+				uint64(len(footer.SegmentLocs))
 			footer_stats[footer_id]["total_ops_set"] = 0
 			footer_stats[footer_id]["total_ops_del"] = 0
 			footer_stats[footer_id]["total_key_bytes"] = 0
@@ -118,7 +118,7 @@ func footerStats(dirs []string) {
 		} else {
 			fmt.Println(dir)
 			for f, fstats := range footer_stats {
-				fmt.Printf("  %s\n", f);
+				fmt.Printf("  %s\n", f)
 				for k, v := range fstats {
 					fmt.Printf("%25s : %v\n", k, v)
 				}
@@ -144,5 +144,5 @@ func init() {
 
 	// Local flag that is intended to work as a flag over stats footer
 	footerStatsCmd.Flags().BoolVar(&getAll, "all", false,
-	            "Fetches stats from all available footers (Footer_1 is latest)")
+		"Fetches stats from all available footers (Footer_1 is latest)")
 }

@@ -16,12 +16,12 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
 	"sync"
-	"encoding/json"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -41,13 +41,13 @@ Expected JSON file format:
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) != 1 {
 			fmt.Println("USAGE: mossScope import <path_to_store> <flag(s)>, " +
-			            "more details with --help");
+				"more details with --help")
 			return
 		}
 
-		if (len(fileInput) == 0 && len(jsonInput) == 0 && !readFromStdin) {
+		if len(fileInput) == 0 && len(jsonInput) == 0 && !readFromStdin {
 			fmt.Printf("At least one input source requred: file, " +
-			           "command-line, stdin, more details with --help");
+				"command-line, stdin, more details with --help")
 			return
 		}
 
@@ -107,15 +107,15 @@ var jsonInput string
 var readFromStdin bool
 
 type KV struct {
-	KEY		string	`json:"k"`
-	VAL		string	`json:"v"`
+	KEY string `json:"k"`
+	VAL string `json:"v"`
 }
 
 func importDocs(jsonStr string, dir string) (ret int) {
 	var err error
 
 	if len(jsonStr) == 0 {
-		return 0;
+		return 0
 	}
 
 	input := []byte(jsonStr)
@@ -126,7 +126,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 		fmt.Printf("Invalid JSON format, err: %v\n", err)
 		fmt.Println("Expected format:")
 		fmt.Println("[\n {\"k\" : \"key0\", \"v\" : \"val0\"},\n " +
-		            "{\"k\" : \"key1\", \"v\" : \"val1\"}\n]");
+			"{\"k\" : \"key1\", \"v\" : \"val1\"}\n]")
 		return -1
 	}
 
@@ -141,7 +141,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	}
 
 	var m sync.Mutex
-	var waitingForCleanCh chan struct {}
+	var waitingForCleanCh chan struct{}
 
 	var store *moss.Store
 	var coll moss.Collection
@@ -151,7 +151,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 			if event.Kind == moss.EventKindPersisterProgress {
 				stats, err := coll.Stats()
 				if err == nil && stats.CurDirtyOps <= 0 &&
-				   stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
 					m.Lock()
 					if waitingForCleanCh != nil {
 						waitingForCleanCh <- struct{}{}
@@ -164,8 +164,8 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	}
 
 	store, coll, err = moss.OpenStoreCollection(dir,
-	                                moss.StoreOptions{CollectionOptions: co,},
-	                                moss.StorePersistOptions{})
+		moss.StoreOptions{CollectionOptions: co},
+		moss.StorePersistOptions{})
 	if err != nil || store == nil {
 		fmt.Printf("Moss-OpenStoreCollection failed, err: %v\n", err)
 		return -1
@@ -237,7 +237,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 		for i := 0; i < numBatches; i++ {
 			sizeOfBatch := 0
 			numItemsInBatch := 0
-			for j := cursor; j < cursor + batchSize; j++ {
+			for j := cursor; j < cursor+batchSize; j++ {
 				if j >= len(data) {
 					break
 				}
@@ -254,7 +254,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 				return -1
 			}
 
-			for j := 0 ; j < numItemsInBatch; j++ {
+			for j := 0; j < numItemsInBatch; j++ {
 				kbuf, err := batch.Alloc(len(data[cursor].KEY))
 				if err != nil {
 					fmt.Printf("Batch-Alloc() failed, err: %v\n", err)
@@ -292,7 +292,7 @@ func importDocs(jsonStr string, dir string) (ret int) {
 	<-ch
 
 	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n",
-	           len(data), numBatches)
+		len(data), numBatches)
 
 	return 0
 }
@@ -308,11 +308,11 @@ func init() {
 
 	// Local flags that is intended to work as a flag over import
 	importCmd.Flags().IntVar(&batchSize, "batchsize", 0,
-	    "Batch-size for the set operations (default: all docs in one batch)")
+		"Batch-size for the set operations (default: all docs in one batch)")
 	importCmd.Flags().StringVar(&fileInput, "file", "",
-	    "Reads JSON content from file")
+		"Reads JSON content from file")
 	importCmd.Flags().StringVar(&jsonInput, "json", "",
-	    "Reads JSON content from command-line")
+		"Reads JSON content from command-line")
 	importCmd.Flags().BoolVar(&readFromStdin, "stdin", false,
-	    "Reads JSON content from stdin (Enter to submit)")
+		"Reads JSON content from stdin (Enter to submit)")
 }

@@ -33,7 +33,7 @@ format. For example:
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 2 {
 			fmt.Println("USAGE: mossScope dump key <keyname> <path_to_store> " +
-			            "[flag], more details with --help");
+				"[flag], more details with --help")
 			return
 		}
 
@@ -64,7 +64,7 @@ func key(keyname string, dirs []string) {
 
 		curr_snapshot := snap
 		val, err := curr_snapshot.Get([]byte(keyname), moss.ReadOptions{})
-		if (err == nil && val != nil) {
+		if err == nil && val != nil {
 			if index != 0 {
 				fmt.Printf(",")
 			}
@@ -81,8 +81,8 @@ func key(keyname string, dirs []string) {
 
 					curr_snapshot = prev_snapshot
 					val, err := curr_snapshot.Get([]byte(keyname),
-					                              moss.ReadOptions{})
-					if (err == nil && val != nil) {
+						moss.ReadOptions{})
+					if err == nil && val != nil {
 						fmt.Printf(",")
 						dumpKeyVal([]byte(keyname), val, inHex)
 					}
@@ -113,5 +113,5 @@ func init() {
 
 	// Local flag that is intended to work as a flag over dump key
 	keyCmd.Flags().BoolVar(&allVersions, "all-versions", false,
-	                       "Emits all the available versions of the key")
+		"Emits all the available versions of the key")
 }
