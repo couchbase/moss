@@ -81,19 +81,19 @@ Expected JSON file format:
 
 		var ret int
 
-		ret = importDocs(from_stdin, args[0])
+		ret = invokeImport(from_stdin, args[0])
 		if ret < 0 {
 			fmt.Println("Import from STDIN failed!")
 			os.Exit(-1)
 		}
 
-		ret = importDocs(from_cla, args[0])
+		ret = invokeImport(from_cla, args[0])
 		if ret < 0 {
 			fmt.Println("Import from CMD-LINE failed!")
 			os.Exit(-1)
 		}
 
-		ret = importDocs(from_file, args[0])
+		ret = invokeImport(from_file, args[0])
 		if ret < 0 {
 			fmt.Println("Import from FILE failed!")
 			os.Exit(-1)
@@ -111,7 +111,7 @@ type KV struct {
 	VAL string `json:"v"`
 }
 
-func importDocs(jsonStr string, dir string) (ret int) {
+func invokeImport(jsonStr string, dir string) (ret int) {
 	var err error
 
 	if len(jsonStr) == 0 {
@@ -295,12 +295,6 @@ func importDocs(jsonStr string, dir string) (ret int) {
 		len(data), numBatches)
 
 	return 0
-}
-
-// The following wrapper (public) is for test purposes
-func ImportDocs(jsonStr string, dir string, batch int) {
-	batchSize = batch
-	importDocs(jsonStr, dir)
 }
 
 func init() {

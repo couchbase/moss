@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"bytes"
@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/couchbase/moss"
-	"github.com/couchbase/moss/cmd/mossScope/cmd"
 )
 
 func importHelper(t *testing.T, batchsize int) {
@@ -45,7 +44,8 @@ func importHelper(t *testing.T, batchsize int) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	cmd.ImportDocs(json_text, temp_dir, batchsize)
+	batchSize = batchsize
+	invokeImport(json_text, temp_dir)
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't

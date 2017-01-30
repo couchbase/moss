@@ -39,11 +39,11 @@ could assist with decisions around invoking manual compaction.
 			return
 		}
 
-		fragStats(args)
+		invokeFragStats(args)
 	},
 }
 
-func fragStats(dirs []string) {
+func invokeFragStats(dirs []string) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -146,13 +146,6 @@ func fragStats(dirs []string) {
 	if jsonFormat {
 		fmt.Printf("]\n")
 	}
-}
-
-// The following wrapper (public) is for test purposes
-func FragStats(dir string) {
-	dirs := []string{dir}
-	jsonFormat = true
-	fragStats(dirs)
 }
 
 func init() {

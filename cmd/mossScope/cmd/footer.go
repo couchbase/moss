@@ -37,13 +37,13 @@ format, (optionally all) here's a sample command:
 			return
 		}
 
-		footer(args)
+		invokeFooter(args)
 	},
 }
 
 var allAvailable bool
 
-func footer(dirs []string) {
+func invokeFooter(dirs []string) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -105,13 +105,6 @@ func footer(dirs []string) {
 		store.Close()
 	}
 	fmt.Printf("]\n")
-}
-
-// The following wrapper (public) is for test purposes
-func Footer(dir string, getAll bool) {
-	dirs := []string{dir}
-	allAvailable = getAll
-	footer(dirs)
 }
 
 func init() {

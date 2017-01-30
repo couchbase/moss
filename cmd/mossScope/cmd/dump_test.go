@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"bytes"
@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/couchbase/moss"
-	"github.com/couchbase/moss/cmd/mossScope/cmd"
 )
 
 var ITEM_COUNT = 10
@@ -88,14 +87,16 @@ func cleanup(dir string, store *moss.Store, coll moss.Collection) {
 	}
 }
 
-func dumpHelper(t *testing.T, keysOnly bool) (output string) {
+func dumpHelper(t *testing.T, onlyKeys bool) (output string) {
 	dir, store, coll := setup(t, true)
 
 	old := os.Stdout // keep backup of the real stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	cmd.Dump(dir, keysOnly)
+	keysOnly = onlyKeys
+	dirs := []string{dir}
+	invokeDump(dirs)
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't block
@@ -188,8 +189,10 @@ func TestDumpKey(t *testing.T) {
 		r, w, _ := os.Pipe()
 		os.Stdout = w
 
+		allVersions = false
 		key := fmt.Sprintf("key%d", i)
-		cmd.Key(key, dir, false)
+		dirs := []string{dir}
+		invokeKey(key, dirs)
 
 		outC := make(chan string)
 		// copy the output in a separate goroutine so dump wouldn't
@@ -249,8 +252,10 @@ func TestDumpKeyAllVersions(t *testing.T) {
 		r, w, _ := os.Pipe()
 		os.Stdout = w
 
+		allVersions = true
 		key := fmt.Sprintf("key%d", i)
-		cmd.Key(key, dir, true)
+		dirs := []string{dir}
+		invokeKey(key, dirs)
 
 		outC := make(chan string)
 		// copy the output in a separate goroutine so dump wouldn't
@@ -313,7 +318,9 @@ func TestDumpAllFooters(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	cmd.Footer(dir, true)
+	allAvailable = true
+    dirs := []string{dir}
+	invokeFooter(dirs)
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't

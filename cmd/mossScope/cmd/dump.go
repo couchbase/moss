@@ -39,14 +39,14 @@ For example:
 			return
 		}
 
-		dump(args)
+		invokeDump(args)
 	},
 }
 
 var keysOnly bool
 var inHex bool
 
-func dump(dirs []string) {
+func invokeDump(dirs []string) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -132,13 +132,6 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 				string(jBufk), string(jBufv))
 		}
 	}
-}
-
-// The following wrapper (public) is for test purposes
-func Dump(dir string, onlyKeys bool) {
-	dirs := []string{dir}
-	keysOnly = onlyKeys
-	dump(dirs)
 }
 
 func init() {

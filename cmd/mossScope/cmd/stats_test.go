@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"bytes"
@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"github.com/couchbase/moss"
-	"github.com/couchbase/moss/cmd/mossScope/cmd"
 )
 
 var ITEMS = 5
@@ -145,10 +144,12 @@ func init2FootersAndInterceptStdout(t *testing.T, batches int,
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	jsonFormat = true
+	dirs := []string{dir}
 	if command == FOOTERSTATS {
-		cmd.FooterStats(dir)
+		invokeFooterStats(dirs)
 	} else if command == FRAGMENTATIONSTATS {
-		cmd.FragStats(dir)
+		invokeFragStats(dirs)
 	} else {
 		t.Errorf("Unknown CMD: %d", command)
 	}

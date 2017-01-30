@@ -37,13 +37,13 @@ collected from the latest footer of the store.
 			return
 		}
 
-		footerStats(args)
+		invokeFooterStats(args)
 	},
 }
 
 var getAll bool
 
-func footerStats(dirs []string) {
+func invokeFooterStats(dirs []string) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -130,13 +130,6 @@ func footerStats(dirs []string) {
 	if jsonFormat {
 		fmt.Printf("]\n")
 	}
-}
-
-// The following wrapper (public) is for test purposes
-func FooterStats(dir string) {
-	dirs := []string{dir}
-	jsonFormat = true
-	footerStats(dirs)
 }
 
 func init() {

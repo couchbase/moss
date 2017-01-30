@@ -37,13 +37,13 @@ format. For example:
 			return
 		}
 
-		key(args[0], args[1:len(args)])
+		invokeKey(args[0], args[1:len(args)])
 	},
 }
 
 var allVersions bool
 
-func key(keyname string, dirs []string) {
+func invokeKey(keyname string, dirs []string) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -99,13 +99,6 @@ func key(keyname string, dirs []string) {
 
 	}
 	fmt.Printf("]\n")
-}
-
-// The following wrapper (public) is for test purposes
-func Key(keyname string, dir string, getAllVersions bool) {
-	dirs := []string{dir}
-	allVersions = getAllVersions
-	key(keyname, dirs)
 }
 
 func init() {
