@@ -96,7 +96,10 @@ func dumpHelper(t *testing.T, onlyKeys bool) (output string) {
 
 	keysOnly = onlyKeys
 	dirs := []string{dir}
-	invokeDump(dirs)
+	err := invokeDump(dirs)
+	if err != nil {
+		t.Error(err)
+	}
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't block
@@ -192,7 +195,10 @@ func TestDumpKey(t *testing.T) {
 		allVersions = false
 		key := fmt.Sprintf("key%d", i)
 		dirs := []string{dir}
-		invokeKey(key, dirs)
+		err := invokeKey(key, dirs)
+		if err != nil {
+			t.Error(err)
+		}
 
 		outC := make(chan string)
 		// copy the output in a separate goroutine so dump wouldn't
@@ -255,7 +261,10 @@ func TestDumpKeyAllVersions(t *testing.T) {
 		allVersions = true
 		key := fmt.Sprintf("key%d", i)
 		dirs := []string{dir}
-		invokeKey(key, dirs)
+		err := invokeKey(key, dirs)
+		if err != nil {
+			t.Error(err)
+		}
 
 		outC := make(chan string)
 		// copy the output in a separate goroutine so dump wouldn't
@@ -319,8 +328,11 @@ func TestDumpAllFooters(t *testing.T) {
 	os.Stdout = w
 
 	allAvailable = true
-    dirs := []string{dir}
-	invokeFooter(dirs)
+	dirs := []string{dir}
+	err := invokeFooter(dirs)
+	if err != nil {
+		t.Error(err)
+	}
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't

@@ -45,7 +45,10 @@ func importHelper(t *testing.T, batchsize int) {
 	os.Stdout = w
 
 	batchSize = batchsize
-	invokeImport(json_text, temp_dir)
+	err := invokeImport(json_text, temp_dir)
+	if err != nil {
+		t.Error(err)
+	}
 
 	outC := make(chan string)
 	// copy the output in a separate goroutine so dump wouldn't

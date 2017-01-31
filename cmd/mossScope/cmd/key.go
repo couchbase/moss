@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -30,36 +29,33 @@ var keyCmd = &cobra.Command{
 from the latest snapshot in which it is available in JSON
 format. For example:
 	./mossScope dump key <keyname> <path_to_store> [flag]`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 2 {
-			fmt.Println("USAGE: mossScope dump key <keyname> <path_to_store> " +
-				"[flag], more details with --help")
-			return
-		}
 
-		invokeKey(args[0], args[1:len(args)])
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 2 {
+			return fmt.Errorf("A keyname along with at least one path " +
+				"are required!")
+		}
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return invokeKey(args[0], args[1:len(args)])
 	},
 }
 
 var allVersions bool
 
-func invokeKey(keyname string, dirs []string) {
-	if len(dirs) == 0 {
-		return
-	}
-
+func invokeKey(keyname string, dirs []string) error {
 	fmt.Printf("[")
 	for index, dir := range dirs {
 		store, err := moss.OpenStore(dir, moss.StoreOptions{})
 		if err != nil || store == nil {
-			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
 
 		snap, err := store.Snapshot()
 		if err != nil || snap == nil {
-			fmt.Printf("Store-Snapshot() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Store-Snapshot() API failed, err: %v", err)
 		}
 
 		curr_snapshot := snap
@@ -70,25 +66,30 @@ func invokeKey(keyname string, dirs []string) {
 			}
 			fmt.Printf("{\"%s\":[", dir)
 
-			dumpKeyVal([]byte(keyname), val, inHex)
+			err = dumpKeyVal([]byte(keyname), val, inHex)
+			if err != nil {
+				return err
+			}
 
 			if allVersions {
-				prev_snapshot, err := store.SnapshotPrevious(curr_snapshot)
 				for {
-					if err != nil || prev_snapshot == nil {
+					prev_snapshot, err := store.SnapshotPrevious(curr_snapshot)
+					curr_snapshot.Close()
+					curr_snapshot = prev_snapshot
+
+					if err != nil || curr_snapshot == nil {
 						break
 					}
 
-					curr_snapshot = prev_snapshot
 					val, err := curr_snapshot.Get([]byte(keyname),
 						moss.ReadOptions{})
 					if err == nil && val != nil {
 						fmt.Printf(",")
-						dumpKeyVal([]byte(keyname), val, inHex)
+						err = dumpKeyVal([]byte(keyname), val, inHex)
+						if err != nil {
+							return err
+						}
 					}
-
-					prev_snapshot, err = store.SnapshotPrevious(curr_snapshot)
-					curr_snapshot.Close()
 				}
 			}
 			fmt.Printf("]}")
@@ -99,6 +100,8 @@ func invokeKey(keyname string, dirs []string) {
 
 	}
 	fmt.Printf("]\n")
+
+	return nil
 }
 
 func init() {

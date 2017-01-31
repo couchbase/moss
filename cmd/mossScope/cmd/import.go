@@ -38,19 +38,22 @@ specified by a flag, into the store. For example:
 Order of execution (if all flags included): stdin < cmdline < file
 Expected JSON file format:
 	[ {"K" : "key0", "V" : "val0"}, {"K" : "key1", "V" : "val1"} ]`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
-			fmt.Println("USAGE: mossScope import <path_to_store> <flag(s)>, " +
-				"more details with --help")
-			return
+
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("One path needed!")
+		} else if len(args) != 1 {
+			return fmt.Errorf("Only one path allowed!")
 		}
 
 		if len(fileInput) == 0 && len(jsonInput) == 0 && !readFromStdin {
-			fmt.Printf("At least one input source requred: file, " +
-				"command-line, stdin, more details with --help")
-			return
+			return fmt.Errorf("At least one input source required!")
 		}
 
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
 		from_file := ""
 		from_cla := ""
 		from_stdin := ""
@@ -60,8 +63,7 @@ Expected JSON file format:
 		if len(fileInput) > 0 {
 			input, err := ioutil.ReadFile(fileInput)
 			if err != nil {
-				fmt.Printf("File read error: %v\n", err)
-				os.Exit(-1)
+				return fmt.Errorf("File read error: %v", err)
 			}
 			from_file = string(input)
 		}
@@ -74,30 +76,26 @@ Expected JSON file format:
 			reader := bufio.NewReader(os.Stdin)
 			from_stdin, err = reader.ReadString('\n')
 			if err != nil {
-				fmt.Printf("Error in reading from stdin, err: %v\n", err)
-				os.Exit(-1)
+				return fmt.Errorf("Error in reading from stdin, err: %v", err)
 			}
 		}
 
-		var ret int
-
-		ret = invokeImport(from_stdin, args[0])
-		if ret < 0 {
-			fmt.Println("Import from STDIN failed!")
-			os.Exit(-1)
+		err = invokeImport(from_stdin, args[0])
+		if err != nil {
+			return fmt.Errorf("Import from STDIN failed; err: %v", err)
 		}
 
-		ret = invokeImport(from_cla, args[0])
-		if ret < 0 {
-			fmt.Println("Import from CMD-LINE failed!")
-			os.Exit(-1)
+		err = invokeImport(from_cla, args[0])
+		if err != nil {
+			return fmt.Errorf("Import from CMD-LINE failed; err: %v", err)
 		}
 
-		ret = invokeImport(from_file, args[0])
-		if ret < 0 {
-			fmt.Println("Import from FILE failed!")
-			os.Exit(-1)
+		err = invokeImport(from_file, args[0])
+		if err != nil {
+			return fmt.Errorf("Import from FILE failed; err: %v", err)
 		}
+
+		return nil
 	},
 }
 
@@ -111,28 +109,25 @@ type KV struct {
 	VAL string `json:"v"`
 }
 
-func invokeImport(jsonStr string, dir string) (ret int) {
-	var err error
-
+func invokeImport(jsonStr string, dir string) error {
 	if len(jsonStr) == 0 {
-		return 0
+		return nil
 	}
 
 	input := []byte(jsonStr)
 
 	var data []KV
-	err = json.Unmarshal(input, &data)
+	err := json.Unmarshal(input, &data)
 	if err != nil {
-		fmt.Printf("Invalid JSON format, err: %v\n", err)
-		fmt.Println("Expected format:")
-		fmt.Println("[\n {\"k\" : \"key0\", \"v\" : \"val0\"},\n " +
-			"{\"k\" : \"key1\", \"v\" : \"val1\"}\n]")
-		return -1
+		fmt.Printf("Expected format:")
+		fmt.Printf("[{\"k\" : \"key0\", \"v\" : \"val0\"}, " +
+			"{\"k\" : \"key1\", \"v\" : \"val1\"}]\n")
+		return fmt.Errorf("Json-UnMarshal() failed!, err: %v", err)
 	}
 
 	if len(data) == 0 {
-		fmt.Println("Empty JSON file, no key-values to load")
-		return 0
+		fmt.Println("Empty JSON file, no key-values to load!")
+		return nil
 	}
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -167,8 +162,7 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 		moss.StoreOptions{CollectionOptions: co},
 		moss.StorePersistOptions{})
 	if err != nil || store == nil {
-		fmt.Printf("Moss-OpenStoreCollection failed, err: %v\n", err)
-		return -1
+		return fmt.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
 	}
 
 	defer store.Close()
@@ -188,25 +182,22 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 		}
 
 		if sizeOfBatch == 0 {
-			return 0
+			return nil
 		}
 
 		batch, err := coll.NewBatch(len(data), sizeOfBatch)
 		if err != nil {
-			fmt.Printf("Collection-NewBatch() failed, err: %v\n", err)
-			return -1
+			return fmt.Errorf("Collection-NewBatch() failed, err: %v", err)
 		}
 
 		for i := 0; i < len(data); i++ {
 			kbuf, err := batch.Alloc(len(data[i].KEY))
 			if err != nil {
-				fmt.Printf("Batch-Alloc() failed, err: %v\n", err)
-				return -1
+				return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 			}
 			vbuf, err := batch.Alloc(len(data[i].VAL))
 			if err != nil {
-				fmt.Printf("Batch-Alloc() failed, err: %v\n", err)
-				return -1
+				return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 			}
 
 			copy(kbuf, data[i].KEY)
@@ -214,8 +205,7 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 
 			err = batch.AllocSet(kbuf, vbuf)
 			if err != nil {
-				fmt.Printf("Batch-AllocSet() failed, err: %v\n", err)
-				return -1
+				return fmt.Errorf("Batch-AllocSet() failed, err: %v", err)
 			}
 		}
 
@@ -225,8 +215,7 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 
 		err = coll.ExecuteBatch(batch, moss.WriteOptions{})
 		if err != nil {
-			fmt.Printf("Collection-ExecuteBatch() failed, err: %v\n", err)
-			return -1
+			return fmt.Errorf("Collection-ExecuteBatch() failed, err: %v", err)
 		}
 
 	} else {
@@ -250,20 +239,17 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 
 			batch, err := coll.NewBatch(numItemsInBatch, sizeOfBatch)
 			if err != nil {
-				fmt.Printf("Collection-NewBatch() failed, err: %v\n", err)
-				return -1
+				fmt.Errorf("Collection-NewBatch() failed, err: %v", err)
 			}
 
 			for j := 0; j < numItemsInBatch; j++ {
 				kbuf, err := batch.Alloc(len(data[cursor].KEY))
 				if err != nil {
-					fmt.Printf("Batch-Alloc() failed, err: %v\n", err)
-					return -1
+					return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 				}
 				vbuf, err := batch.Alloc(len(data[cursor].VAL))
 				if err != nil {
-					fmt.Printf("Batch-Alloc() failed, err: %v\n", err)
-					return -1
+					return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 				}
 
 				copy(kbuf, data[cursor].KEY)
@@ -271,8 +257,7 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 
 				err = batch.AllocSet(kbuf, vbuf)
 				if err != nil {
-					fmt.Printf("Batch-AllocSet() failed, err: %v\n", err)
-					return -1
+					return fmt.Errorf("Batch-AllocSet() failed, err: %v", err)
 				}
 				cursor++
 			}
@@ -283,8 +268,8 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 
 			err = coll.ExecuteBatch(batch, moss.WriteOptions{})
 			if err != nil {
-				fmt.Printf("Collection-ExecuteBatch() failed, err: %v\n", err)
-				return -1
+				return fmt.Errorf("Collection-ExecuteBatch() failed, err: %v",
+					err)
 			}
 		}
 	}
@@ -294,7 +279,7 @@ func invokeImport(jsonStr string, dir string) (ret int) {
 	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n",
 		len(data), numBatches)
 
-	return 0
+	return nil
 }
 
 func init() {

@@ -17,7 +17,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -30,32 +29,29 @@ var footerStatsCmd = &cobra.Command{
 	Long: `This command dumps the aggregated stats from all segments
 collected from the latest footer of the store.
 	./mossScope stats footer <path_to_store>`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			fmt.Println("USAGE: mossScope stats footer <path_to_store>, " +
-				"more details with --help")
-			return
-		}
 
-		invokeFooterStats(args)
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("At least one path is required!")
+		}
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return invokeFooterStats(args)
 	},
 }
 
 var getAll bool
 
-func invokeFooterStats(dirs []string) {
-	if len(dirs) == 0 {
-		return
-	}
-
+func invokeFooterStats(dirs []string) error {
 	if jsonFormat {
 		fmt.Printf("[")
 	}
 	for index, dir := range dirs {
 		store, err := moss.OpenStore(dir, moss.StoreOptions{})
 		if err != nil || store == nil {
-			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
 		defer store.Close()
 
@@ -107,8 +103,7 @@ func invokeFooterStats(dirs []string) {
 		if jsonFormat {
 			jBuf, err := json.Marshal(footer_stats)
 			if err != nil {
-				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-				os.Exit(-1)
+				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 			}
 			if index != 0 {
 				fmt.Printf(",")
@@ -130,6 +125,8 @@ func invokeFooterStats(dirs []string) {
 	if jsonFormat {
 		fmt.Printf("]\n")
 	}
+
+	return nil
 }
 
 func init() {

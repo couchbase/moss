@@ -18,7 +18,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -32,43 +31,38 @@ var dumpCmd = &cobra.Command{
 format. It has a set of options that it can used with.
 For example:
 	./mossScope dump [sub-command] <path_to_store> [flag]`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			fmt.Println("USAGE: mossScope dump [sub-command] <path_to_store> " +
-				"[flag], more details with --help")
-			return
-		}
 
-		invokeDump(args)
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("At least one path is required!")
+		}
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return invokeDump(args)
 	},
 }
 
 var keysOnly bool
 var inHex bool
 
-func invokeDump(dirs []string) {
-	if len(dirs) == 0 {
-		return
-	}
-
+func invokeDump(dirs []string) error {
 	fmt.Printf("[")
 	for index, dir := range dirs {
 		store, err := moss.OpenStore(dir, moss.StoreOptions{})
 		if err != nil || store == nil {
-			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
 
 		snap, err := store.Snapshot()
 		if err != nil || snap == nil {
-			fmt.Printf("Store-Snapshot() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Store-Snapshot() API failed, err: %v", err)
 		}
 
 		iter, err := snap.StartIterator(nil, nil, moss.IteratorOptions{})
 		if err != nil || iter == nil {
-			fmt.Printf("Snapshot-StartIterator() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Snapshot-StartItr() API failed, err: %v", err)
 		}
 
 		if index != 0 {
@@ -84,9 +78,13 @@ func invokeDump(dirs []string) {
 			}
 
 			if keysOnly {
-				dumpKeyVal(k, nil, inHex)
+				err = dumpKeyVal(k, nil, inHex)
 			} else {
-				dumpKeyVal(k, v, inHex)
+				err = dumpKeyVal(k, v, inHex)
+			}
+
+			if err != nil {
+				return err
 			}
 
 			if iter.Next() == moss.ErrIteratorDone {
@@ -104,9 +102,11 @@ func invokeDump(dirs []string) {
 		fmt.Printf("}")
 	}
 	fmt.Printf("]\n")
+
+	return nil
 }
 
-func dumpKeyVal(key []byte, val []byte, toHex bool) {
+func dumpKeyVal(key []byte, val []byte, toHex bool) error {
 	if toHex {
 		if val == nil {
 			fmt.Printf("{\"k\":\"%s\"}", hex.EncodeToString(key))
@@ -117,21 +117,20 @@ func dumpKeyVal(key []byte, val []byte, toHex bool) {
 	} else {
 		jBufk, err := json.Marshal(string(key))
 		if err != nil {
-			fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 		}
 		if val == nil {
 			fmt.Printf("{\"k\":%s}", string(jBufk))
 		} else {
 			jBufv, err := json.Marshal(string(val))
 			if err != nil {
-				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-				os.Exit(-1)
+				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 			}
 			fmt.Printf("{\"k\":%s,\"v\":%s}",
 				string(jBufk), string(jBufv))
 		}
 	}
+	return nil
 }
 
 func init() {

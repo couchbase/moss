@@ -32,30 +32,27 @@ var fragStatsCmd = &cobra.Command{
 and alongside that estimates the fragmentation levels. This data
 could assist with decisions around invoking manual compaction.
 	./mossScope stats frag <path_to_store>`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			fmt.Println("USAGE: mossScope stats frag <path_to_store>, " +
-				"more details with --help")
-			return
-		}
 
-		invokeFragStats(args)
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("At least one path is required!")
+		}
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return invokeFragStats(args)
 	},
 }
 
-func invokeFragStats(dirs []string) {
-	if len(dirs) == 0 {
-		return
-	}
-
+func invokeFragStats(dirs []string) error {
 	if jsonFormat {
 		fmt.Printf("[")
 	}
 	for index, dir := range dirs {
 		store, err := moss.OpenStore(dir, moss.StoreOptions{})
 		if err != nil || store == nil {
-			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
 		defer store.Close()
 
@@ -70,7 +67,6 @@ func invokeFragStats(dirs []string) {
 			if !file.IsDir() {
 				stats_map["dir_size"] += file.Size()
 			}
-
 			return nil
 		}
 
@@ -97,8 +93,7 @@ func invokeFragStats(dirs []string) {
 			footer = curr_snap.(*moss.Footer)
 			jBuf, err := json.Marshal(footer)
 			if err != nil {
-				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-				os.Exit(-1)
+				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 			}
 
 			stats_map["data_bytes"] += int64(len(jBuf)) // footer length
@@ -127,7 +122,7 @@ func invokeFragStats(dirs []string) {
 		if jsonFormat {
 			jBuf, err := json.Marshal(stats_map)
 			if err != nil {
-				fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
+				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 			}
 			if index != 0 {
 				fmt.Printf(",")
@@ -146,6 +141,8 @@ func invokeFragStats(dirs []string) {
 	if jsonFormat {
 		fmt.Printf("]\n")
 	}
+
+	return nil
 }
 
 func init() {

@@ -144,14 +144,20 @@ func init2FootersAndInterceptStdout(t *testing.T, batches int,
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
+	var err error
+
 	jsonFormat = true
 	dirs := []string{dir}
 	if command == FOOTERSTATS {
-		invokeFooterStats(dirs)
+		err = invokeFooterStats(dirs)
 	} else if command == FRAGMENTATIONSTATS {
-		invokeFragStats(dirs)
+		err = invokeFragStats(dirs)
 	} else {
 		t.Errorf("Unknown CMD: %d", command)
+	}
+
+	if err != nil {
+		t.Error(err)
 	}
 
 	outC := make(chan string)

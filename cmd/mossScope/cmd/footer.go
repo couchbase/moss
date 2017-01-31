@@ -17,7 +17,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -30,33 +29,34 @@ var footerCmd = &cobra.Command{
 	Long: `This command will print out the latest footer in JSON
 format, (optionally all) here's a sample command:
 	./mossScope dump footer <path_to_store> [flag]`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) < 1 {
-			fmt.Println("USAGE: mossScope dump footer <path_to_store>, " +
-				"more details with --help")
-			return
-		}
 
-		invokeFooter(args)
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) < 1 {
+			return fmt.Errorf("At least one path is required!")
+		}
+		return nil
+	},
+
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return invokeFooter(args)
 	},
 }
 
 var allAvailable bool
 
-func invokeFooter(dirs []string) {
-	if len(dirs) == 0 {
-		return
-	}
-
+func invokeFooter(dirs []string) error {
 	fmt.Printf("[")
 	for index, dir := range dirs {
 		store, err := moss.OpenStore(dir, moss.StoreOptions{})
 		if err != nil || store == nil {
-			fmt.Printf("Moss-OpenStore() API failed, err: %v\n", err)
-			os.Exit(-1)
+			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
 
 		curr_snap, err := store.Snapshot()
+		if err != nil || curr_snap == nil {
+			return fmt.Errorf("Store-Snapshot() API failed, err: %v", err)
+		}
+
 		if index != 0 {
 			fmt.Printf(",")
 		}
@@ -64,14 +64,9 @@ func invokeFooter(dirs []string) {
 
 		if allAvailable {
 			for {
-				if err != nil || curr_snap == nil {
-					break
-				}
-
 				jBuf, err := json.Marshal(curr_snap.(*moss.Footer))
 				if err != nil {
-					fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-					os.Exit(-1)
+					return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 				}
 
 				fmt.Printf("%s", string(jBuf))
@@ -80,31 +75,29 @@ func invokeFooter(dirs []string) {
 				curr_snap.Close()
 				curr_snap = prev_snap
 
-				if curr_snap != nil {
-					fmt.Printf(",")
-				} else {
+				if err != nil || curr_snap == nil {
 					fmt.Printf("")
 					break
 				}
+				fmt.Printf(",")
 			}
 		} else {
-			if err == nil && curr_snap != nil {
-				jBuf, err := json.Marshal(curr_snap.(*moss.Footer))
-				if err != nil {
-					fmt.Printf("Json-Marshal() failed!, err: %v\n", err)
-					os.Exit(-1)
-				}
-
-				fmt.Printf("%s", string(jBuf))
-
-				curr_snap.Close()
+			jBuf, err := json.Marshal(curr_snap.(*moss.Footer))
+			if err != nil {
+				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
 			}
+
+			fmt.Printf("%s", string(jBuf))
+
+			curr_snap.Close()
 		}
 		fmt.Printf("]}")
 
 		store.Close()
 	}
 	fmt.Printf("]\n")
+
+	return nil
 }
 
 func init() {
