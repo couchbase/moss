@@ -17,8 +17,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -58,66 +56,10 @@ func invokeFragStats(dirs []string) error {
 
 		stats_map := make(map[string]int64)
 
-		stats_map["data_bytes"] = 0
-		stats_map["dir_size"] = 0
-		stats_map["fragmentation_bytes"] = 0
-		stats_map["fragmentation_percent"] = 0
-
-		read_size := func(dir string, file os.FileInfo, err error) error {
-			if !file.IsDir() {
-				stats_map["dir_size"] += file.Size()
-			}
-			return nil
+		err = fetchFragStats(store, stats_map)
+		if err != nil {
+			return err
 		}
-
-		curr_snap, err := store.Snapshot()
-		if err != nil || curr_snap == nil {
-			continue
-		}
-
-		footer := curr_snap.(*moss.Footer)
-
-		// Acquire key, val bytes from all segments of latest footer
-		for i := range footer.SegmentLocs {
-			sloc := &footer.SegmentLocs[i]
-
-			stats_map["data_bytes"] += int64(sloc.TotKeyByte)
-			stats_map["data_bytes"] += int64(sloc.TotValByte)
-		}
-
-		for {
-			// header signature
-			stats_map["data_bytes"] += 4096
-
-			// footer signature
-			footer = curr_snap.(*moss.Footer)
-			jBuf, err := json.Marshal(footer)
-			if err != nil {
-				return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
-			}
-
-			stats_map["data_bytes"] += int64(len(jBuf)) // footer length
-
-			// Also account for the magic that repeats twice at start and end
-			stats_map["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_BEG))
-			stats_map["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_END))
-
-			prev_snap, err := store.SnapshotPrevious(curr_snap)
-			curr_snap.Close()
-			curr_snap = prev_snap
-
-			if err != nil || curr_snap == nil {
-				break
-			}
-		}
-
-		filepath.Walk(dir, read_size)
-
-		stats_map["fragmentation_bytes"] = stats_map["dir_size"] -
-			stats_map["data_bytes"]
-		stats_map["fragmentation_percent"] = int64(100 *
-			((float64(stats_map["fragmentation_bytes"])) /
-				float64(stats_map["dir_size"])))
 
 		if jsonFormat {
 			jBuf, err := json.Marshal(stats_map)
@@ -141,6 +83,72 @@ func invokeFragStats(dirs []string) error {
 	if jsonFormat {
 		fmt.Printf("]\n")
 	}
+
+	return nil
+}
+
+func fetchFragStats(store *moss.Store, stats map[string]int64) error {
+	if store == nil {
+		return nil
+	}
+
+	stats["data_bytes"] = 0
+	stats["dir_size"] = 0
+	stats["fragmentation_bytes"] = 0
+	stats["fragmentation_percent"] = 0
+
+	curr_snap, err := store.Snapshot()
+	if err != nil || curr_snap == nil {
+		return nil
+	}
+
+	footer := curr_snap.(*moss.Footer)
+
+	// Acquire key, val bytes from all segments of latest footer
+	for i := range footer.SegmentLocs {
+		sloc := &footer.SegmentLocs[i]
+
+		stats["data_bytes"] += int64(sloc.TotKeyByte)
+		stats["data_bytes"] += int64(sloc.TotValByte)
+	}
+
+	for {
+		// header signature
+		stats["data_bytes"] += 4096
+
+		// footer signature
+		footer = curr_snap.(*moss.Footer)
+		jBuf, err := json.Marshal(footer)
+		if err != nil {
+			return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
+		}
+
+		stats["data_bytes"] += int64(len(jBuf)) // footer length
+
+		// Also account for the magic that repeats twice at start and end
+		stats["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_BEG))
+		stats["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_END))
+
+		prev_snap, err := store.SnapshotPrevious(curr_snap)
+		curr_snap.Close()
+		curr_snap = prev_snap
+
+		if err != nil || curr_snap == nil {
+			break
+		}
+	}
+
+	sstats, err := store.Stats()
+	if err != nil {
+		return fmt.Errorf("Store-Stats() failed!, err: %v", err)
+	}
+
+	stats["dir_size"] = int64(sstats["num_bytes_used_disk"].(uint64))
+
+	stats["fragmentation_bytes"] = stats["dir_size"] - stats["data_bytes"]
+	stats["fragmentation_percent"] = int64(100 *
+		((float64(stats["fragmentation_bytes"])) /
+			float64(stats["dir_size"])))
 
 	return nil
 }

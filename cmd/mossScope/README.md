@@ -91,12 +91,17 @@ Examples:
 
     Available sub-commands:
 
-        footer            Dumps aggregated stats from the latest footer of the moss store
+        diag              Dumps all the diagnostic stats for the store
+        footer            Dumps aggregated stats from the latest footer in the store
         fragmentation     Dumps the fragmentation stats (to assist with manual compaction)
 
     Available flags:
 
         --json            Emits output in JSON
+
+diag:
+
+    mossScope stats diag [flags] <store_path(s)>
 
 footer:
 
@@ -112,5 +117,6 @@ fragmentation:
 
 Examples:
 
+    mossScope stats diag path/to/myStore
     mossScope stats footer path/to/myStore --all --json
     mossScope stats fragmentation path/to/myStore

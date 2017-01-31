@@ -39,11 +39,11 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	numSegments := 0
+	var numSegments uint64
 	if footer != nil {
 		footer.m.Lock()
 		if footer.ss != nil {
-			numSegments = len(footer.ss.a)
+			numSegments = uint64(len(footer.ss.a))
 		}
 		footer.m.Unlock()
 	}

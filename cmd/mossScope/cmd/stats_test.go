@@ -129,6 +129,7 @@ func cleanupStore(dir string, store *moss.Store, coll moss.Collection) {
 const (
 	FOOTERSTATS        = 1
 	FRAGMENTATIONSTATS = 2
+	DIAGSTATS          = 3
 )
 
 func init2FootersAndInterceptStdout(t *testing.T, batches int,
@@ -148,11 +149,14 @@ func init2FootersAndInterceptStdout(t *testing.T, batches int,
 
 	jsonFormat = true
 	dirs := []string{dir}
-	if command == FOOTERSTATS {
+	switch command {
+	case FOOTERSTATS:
 		err = invokeFooterStats(dirs)
-	} else if command == FRAGMENTATIONSTATS {
+	case FRAGMENTATIONSTATS:
 		err = invokeFragStats(dirs)
-	} else {
+	case DIAGSTATS:
+		err = invokeDiagStats(dirs)
+	default:
 		t.Errorf("Unknown CMD: %d", command)
 	}
 
@@ -253,5 +257,55 @@ func TestFragmentationStats(t *testing.T) {
 
 	if stats["fragmentation_percent"] == nil {
 		t.Errorf("Expected an entry for fragmentation_percent!")
+	}
+}
+
+func TestDiagStats(t *testing.T) {
+	out := init2FootersAndInterceptStdout(t, 2, DIAGSTATS)
+
+	var m []interface{}
+	json.Unmarshal([]byte(out), &m)
+	if len(m) != 1 {
+		t.Errorf("Expected one directory, but count: %d!", len(m))
+	}
+
+	store_data := m[0].(map[string]interface{})
+
+	if store_data["testStatsStore"] == nil {
+		t.Errorf("Expected directory not found!")
+	}
+
+	stats := store_data["testStatsStore"].(map[string]interface{})
+
+	if stats["total_ops_set"] != float64(2*ITEMS) {
+		t.Errorf("Unexpected total_ops_set: %v!",
+			stats["total_ops_set"])
+	}
+
+	if stats["total_ops_del"] != float64(0) {
+		t.Errorf("Unexpected total_ops_del: %v!",
+			stats["total_ops_del"])
+	}
+
+	if stats["total_key_bytes"] != float64(4*(2*ITEMS)) {
+		t.Errorf("Unexpected key bytes: %v!",
+			stats["total_key_bytes"])
+	}
+
+	if stats["total_val_bytes"] != float64(4*(2*ITEMS)) {
+		t.Errorf("Unexpected val bytes: %v!",
+			stats["total_val_bytes"])
+	}
+
+	if stats["num_segments"] == nil {
+		t.Errorf("num_segments stat unavailable!")
+	}
+
+	if stats["total_compactions"] == nil {
+		t.Errorf("total_compactions stat unavailable!")
+	}
+
+	if stats["total_persists"] == nil {
+		t.Errorf("total_persists stat unavailable!")
 	}
 }

@@ -60,31 +60,17 @@ func invokeFooterStats(dirs []string) error {
 			continue
 		}
 
-		type stats map[string]uint64
-		footer_stats := make(map[string]stats)
+		type stats_t map[string]uint64
+		footer_stats := make(map[string]stats_t)
 		id := 1
 
 		for {
 
 			footer := curr_snap.(*moss.Footer)
 			footer_id := fmt.Sprintf("Footer_%d", id)
-			footer_stats[footer_id] = make(stats)
+			footer_stats[footer_id] = make(stats_t)
 
-			footer_stats[footer_id]["num_segments"] =
-				uint64(len(footer.SegmentLocs))
-			footer_stats[footer_id]["total_ops_set"] = 0
-			footer_stats[footer_id]["total_ops_del"] = 0
-			footer_stats[footer_id]["total_key_bytes"] = 0
-			footer_stats[footer_id]["total_val_bytes"] = 0
-
-			for i := range footer.SegmentLocs {
-				sloc := &footer.SegmentLocs[i]
-
-				footer_stats[footer_id]["total_ops_set"] += sloc.TotOpsSet
-				footer_stats[footer_id]["total_ops_del"] += sloc.TotOpsDel
-				footer_stats[footer_id]["total_key_bytes"] += sloc.TotKeyByte
-				footer_stats[footer_id]["total_val_bytes"] += sloc.TotValByte
-			}
+			fetchFooterStats(footer, footer_stats[footer_id])
 
 			if !getAll {
 				break
@@ -108,8 +94,7 @@ func invokeFooterStats(dirs []string) error {
 			if index != 0 {
 				fmt.Printf(",")
 			}
-			fmt.Printf("{\"%s\":", dir)
-			fmt.Printf("%s}", string(jBuf))
+			fmt.Printf("{\"%s\":%s}", dir, string(jBuf))
 		} else {
 			fmt.Println(dir)
 			for f, fstats := range footer_stats {
@@ -127,6 +112,27 @@ func invokeFooterStats(dirs []string) error {
 	}
 
 	return nil
+}
+
+func fetchFooterStats(footer *moss.Footer, stats map[string]uint64) {
+	if footer == nil {
+		return
+	}
+
+	stats["num_segments"] = uint64(len(footer.SegmentLocs))
+	stats["total_ops_set"] = 0
+	stats["total_ops_del"] = 0
+	stats["total_key_bytes"] = 0
+	stats["total_val_bytes"] = 0
+
+	for i := range footer.SegmentLocs {
+		sloc := &footer.SegmentLocs[i]
+
+		stats["total_ops_set"] += sloc.TotOpsSet
+		stats["total_ops_del"] += sloc.TotOpsDel
+		stats["total_key_bytes"] += sloc.TotKeyByte
+		stats["total_val_bytes"] += sloc.TotValByte
+	}
 }
 
 func init() {
