@@ -340,6 +340,16 @@ func (f *Footer) DecRef() {
 	f.m.Unlock()
 }
 
+func (f *Footer) Length() uint64 {
+	jBuf, err := json.Marshal(f)
+	if err != nil {
+		return 0
+	}
+
+	footerLen := footerBegLen + len(jBuf) + footerEndLen
+	return uint64(footerLen)
+}
+
 // --------------------------------------------------------
 
 // SegmentStack() returns the current SegmentLocs and segmentStack for

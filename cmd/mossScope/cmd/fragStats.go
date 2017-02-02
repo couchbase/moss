@@ -54,7 +54,7 @@ func invokeFragStats(dirs []string) error {
 		}
 		defer store.Close()
 
-		stats_map := make(map[string]int64)
+		stats_map := make(map[string]uint64)
 
 		err = fetchFragStats(store, stats_map)
 		if err != nil {
@@ -87,7 +87,7 @@ func invokeFragStats(dirs []string) error {
 	return nil
 }
 
-func fetchFragStats(store *moss.Store, stats map[string]int64) error {
+func fetchFragStats(store *moss.Store, stats map[string]uint64) error {
 	if store == nil {
 		return nil
 	}
@@ -108,26 +108,17 @@ func fetchFragStats(store *moss.Store, stats map[string]int64) error {
 	for i := range footer.SegmentLocs {
 		sloc := &footer.SegmentLocs[i]
 
-		stats["data_bytes"] += int64(sloc.TotKeyByte)
-		stats["data_bytes"] += int64(sloc.TotValByte)
+		stats["data_bytes"] += sloc.TotKeyByte
+		stats["data_bytes"] += sloc.TotValByte
 	}
 
 	for {
 		// header signature
-		stats["data_bytes"] += 4096
+		stats["data_bytes"] += moss.HeaderLength()
 
 		// footer signature
 		footer = curr_snap.(*moss.Footer)
-		jBuf, err := json.Marshal(footer)
-		if err != nil {
-			return fmt.Errorf("Json-Marshal() failed!, err: %v", err)
-		}
-
-		stats["data_bytes"] += int64(len(jBuf)) // footer length
-
-		// Also account for the magic that repeats twice at start and end
-		stats["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_BEG))
-		stats["data_bytes"] += int64(2 * len(moss.STORE_MAGIC_END))
+		stats["data_bytes"] += footer.Length()
 
 		prev_snap, err := store.SnapshotPrevious(curr_snap)
 		curr_snap.Close()
@@ -143,10 +134,10 @@ func fetchFragStats(store *moss.Store, stats map[string]int64) error {
 		return fmt.Errorf("Store-Stats() failed!, err: %v", err)
 	}
 
-	stats["dir_size"] = int64(sstats["num_bytes_used_disk"].(uint64))
+	stats["dir_size"] = sstats["num_bytes_used_disk"].(uint64)
 
 	stats["fragmentation_bytes"] = stats["dir_size"] - stats["data_bytes"]
-	stats["fragmentation_percent"] = int64(100 *
+	stats["fragmentation_percent"] = uint64(100 *
 		((float64(stats["fragmentation_bytes"])) /
 			float64(stats["dir_size"])))
 

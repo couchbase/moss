@@ -211,6 +211,10 @@ func (s *Store) createNextFileLOCKED() (string, File, error) {
 
 // --------------------------------------------------------
 
+func HeaderLength() uint64 {
+	return uint64(STORE_PAGE_SIZE)
+}
+
 func (s *Store) persistHeader(file File) error {
 	buf, err := json.Marshal(Header{
 		Version:       STORE_VERSION,
