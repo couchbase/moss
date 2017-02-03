@@ -84,8 +84,11 @@ type collection struct {
 
 // Start kicks off required background gouroutines.
 func (m *collection) Start() error {
-	go m.runMerger()
-	go m.runPersister()
+	if !m.options.ReadOnly {
+		// Kick off merger and persister only when not in Read-Only mode
+		go m.runMerger()
+		go m.runPersister()
+	}
 	return nil
 }
 
@@ -106,15 +109,17 @@ func (m *collection) Close() error {
 	m.stackDirtyTopCond.Broadcast()  // Awake all ExecuteBatch()'ers.
 	m.stackDirtyBaseCond.Broadcast() // Awake persister.
 
-	m.m.Unlock()
+	if !m.options.ReadOnly {
+		m.m.Unlock()
 
-	<-m.doneMergerCh
-	atomic.AddUint64(&m.stats.TotCloseMergerDone, 1)
+		<-m.doneMergerCh
+		atomic.AddUint64(&m.stats.TotCloseMergerDone, 1)
 
-	<-m.donePersisterCh
-	atomic.AddUint64(&m.stats.TotClosePersisterDone, 1)
+		<-m.donePersisterCh
+		atomic.AddUint64(&m.stats.TotClosePersisterDone, 1)
 
-	m.m.Lock()
+		m.m.Lock()
+	}
 
 	if m.lowerLevelSnapshot != nil {
 		atomic.AddUint64(&m.stats.TotCloseLowerLevelBeg, 1)

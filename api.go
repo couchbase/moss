@@ -222,6 +222,10 @@ type CollectionOptions struct {
 	// implementation blocks, it may pause processing and progress,
 	// depending on the type of callback event kind.
 	OnEvent func(event Event) `json:"-"`
+
+	// ReadOnly means that persisted data and storage files if any,
+	// will remain unchanged.
+	ReadOnly bool
 }
 
 // Event represents the information provided in an OnEvent() callback.

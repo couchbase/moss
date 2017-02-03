@@ -87,7 +87,8 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	}
 
 	// If no dirty higher items, we're still clean, so just snapshot.
-	if higher == nil {
+	// If in case of ReadOnly mode, just snapshot.
+	if higher == nil || s.Options().CollectionOptions.ReadOnly {
 		return s.Snapshot()
 	}
 

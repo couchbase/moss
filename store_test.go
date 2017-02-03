@@ -1701,3 +1701,141 @@ func TestStoreSnapshotRevert(t *testing.T) {
 
 	storeReverted.Close()
 }
+
+func openStoreAndWriteNItems(t *testing.T, tmpDir string,
+	n int, readOnly bool) (s *Store, c Collection) {
+	var store *Store
+	var coll Collection
+	var err error
+
+	var m sync.Mutex
+	var waitingForCleanCh chan struct{}
+
+	var co CollectionOptions
+
+	co = CollectionOptions{
+		OnEvent: func(event Event) {
+			if event.Kind == EventKindPersisterProgress {
+				stats, err := coll.Stats()
+				if err == nil && stats.CurDirtyOps <= 0 &&
+					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+					m.Lock()
+					if waitingForCleanCh != nil {
+						waitingForCleanCh <- struct{}{}
+						waitingForCleanCh = nil
+					}
+					m.Unlock()
+				}
+			}
+		},
+		ReadOnly: readOnly,
+	}
+
+	ch := make(chan struct{}, 1)
+
+	store, coll, err = OpenStoreCollection(tmpDir,
+		StoreOptions{CollectionOptions: co},
+		StorePersistOptions{})
+
+	if err != nil || store == nil {
+		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
+	}
+
+	batch, err := coll.NewBatch(n, n*10)
+	if err != nil {
+		t.Errorf("Expected NewBatch() to succeed!")
+	}
+
+	for i := 0; i < n; i++ {
+		k := []byte(fmt.Sprintf("key%d", i))
+		v := []byte(fmt.Sprintf("val%d", i))
+
+		batch.Set(k, v)
+	}
+
+	m.Lock()
+	waitingForCleanCh = ch
+	m.Unlock()
+
+	err = coll.ExecuteBatch(batch, WriteOptions{})
+	if err != nil {
+		t.Errorf("Expected ExecuteBatch() to work!")
+	}
+
+	if readOnly {
+		// In the readOnly mode, the persister will not run and therefore
+		// nothing gets put on the channel that we need to block on.
+		// However to ensure that the persister does not persist anything
+		// in this scenario, test it by manually invoking the Persist API
+		ss, _ := coll.Snapshot()
+		llss, err := store.Persist(ss, StorePersistOptions{})
+		if err != nil || llss == nil {
+			t.Errorf("Expected Store;Persist() to succeed!")
+		}
+		ss.Close()
+	} else {
+		<-ch
+	}
+
+	return store, coll
+}
+
+func fetchOpsSetFromFooter(store *Store) uint64 {
+	if store == nil {
+		return 0
+	}
+
+	curr_snap, err := store.Snapshot()
+	if err != nil || curr_snap == nil {
+		return 0
+	}
+
+	var ops_set uint64
+
+	footer := curr_snap.(*Footer)
+	for i := range footer.SegmentLocs {
+		sloc := &footer.SegmentLocs[i]
+		ops_set += sloc.TotOpsSet
+	}
+
+	curr_snap.Close()
+
+	return ops_set
+}
+
+func TestStoreReadOnlyOption(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	// Open store, coll in Regular mode, and write 10 items
+	store, coll := openStoreAndWriteNItems(t, tmpDir, 10, false)
+
+	if fetchOpsSetFromFooter(store) != 10 {
+		t.Errorf("Unexpected number of sets!")
+	}
+
+	coll.Close()
+	store.Close()
+
+	// Reopen store, coll in ReadOnly mode, and write 10 more items
+	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, true)
+
+	// Expect no additional sets since the first batch
+	if fetchOpsSetFromFooter(store) != 10 {
+		t.Errorf("Extra number of sets detected!")
+	}
+
+	coll.Close()
+	store.Close()
+
+	// Reopen store, coll in regular mode, and write 10 more items
+	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, false)
+
+	// Expect 10 more sets since the first batch
+	if fetchOpsSetFromFooter(store) != 20 {
+		t.Errorf("Unexpected number of sets!")
+	}
+
+	coll.Close()
+	store.Close()
+}

@@ -19,6 +19,11 @@ import (
 
 func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions) (
 	bool, error) {
+	if s.Options().CollectionOptions.ReadOnly {
+		// Do not compact in Read-Only mode
+		return false, nil
+	}
+
 	compactionConcern := persistOptions.CompactionConcern
 	if compactionConcern <= 0 {
 		return false, nil
