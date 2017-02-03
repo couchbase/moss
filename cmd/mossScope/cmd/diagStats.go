@@ -47,7 +47,7 @@ func invokeDiagStats(dirs []string) error {
 	}
 
 	for index, dir := range dirs {
-		store, err := moss.OpenStore(dir, moss.StoreOptions{})
+		store, err := moss.OpenStore(dir, ReadOnlyMode)
 		if err != nil || store == nil {
 			return fmt.Errorf("Moss-OpenStore() API failed, err: %v", err)
 		}
