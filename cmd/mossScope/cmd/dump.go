@@ -138,7 +138,7 @@ func init() {
 
 	// Local flags that are intended to work as a filter over dump
 	dumpCmd.Flags().BoolVar(&keysOnly, "keys-only", false,
-		"Emits keys only, works on dump without sub-commands")
+		"Emits keys only")
 	dumpCmd.Flags().BoolVar(&inHex, "hex", false,
 		"Emits output in hex")
 }
