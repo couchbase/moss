@@ -99,4 +99,8 @@ func invokeDiagStats(dirs []string) error {
 
 func init() {
 	statsCmd.AddCommand(diagStatsCmd)
+
+	// Local flag that is intended to work over stats diag
+	diagStatsCmd.Flags().BoolVar(&jsonFormat, "json", false,
+		"Emits output in JSON")
 }

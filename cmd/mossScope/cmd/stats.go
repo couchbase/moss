@@ -37,8 +37,4 @@ var jsonFormat bool
 
 func init() {
 	RootCmd.AddCommand(statsCmd)
-
-	// Persistent flag that would work for current commands and sub commands
-	statsCmd.PersistentFlags().BoolVar(&jsonFormat, "json", false,
-		"Emits output in JSON")
 }

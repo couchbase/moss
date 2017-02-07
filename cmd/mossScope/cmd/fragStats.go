@@ -146,4 +146,8 @@ func fetchFragStats(store *moss.Store, stats map[string]uint64) error {
 
 func init() {
 	statsCmd.AddCommand(fragStatsCmd)
+
+	// Local flag that is intended to work over stats fragmentation
+	fragStatsCmd.Flags().BoolVar(&jsonFormat, "json", false,
+		"Emits output in JSON")
 }

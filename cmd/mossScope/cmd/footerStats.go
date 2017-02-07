@@ -138,7 +138,9 @@ func fetchFooterStats(footer *moss.Footer, stats map[string]uint64) {
 func init() {
 	statsCmd.AddCommand(footerStatsCmd)
 
-	// Local flag that is intended to work as a flag over stats footer
+	// Local flags that are intended to work over stats footer
 	footerStatsCmd.Flags().BoolVar(&getAll, "all", false,
 		"Fetches stats from all available footers (Footer_1 is latest)")
+	footerStatsCmd.Flags().BoolVar(&jsonFormat, "json", false,
+		"Emits output in JSON")
 }
