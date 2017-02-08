@@ -198,6 +198,9 @@ func (s *Store) startFileLOCKED() (*FileRef, File, error) {
 }
 
 func (s *Store) createNextFileLOCKED() (string, File, error) {
+	// File to be opened in RDWR mode here because this is either
+	// invoked by the persister or the compactor either of which
+	// do not execute in the ReadOnly mode
 	fname := FormatFName(s.nextFNameSeq)
 	s.nextFNameSeq++
 
@@ -374,7 +377,16 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 	sort.Strings(fnames)
 
 	for i := len(fnames) - 1; i >= 0; i-- {
-		file, err := options.OpenFile(path.Join(dir, fnames[i]), os.O_RDWR, 0600)
+		var flag int
+		var perm os.FileMode
+		if options.CollectionOptions.ReadOnly {
+			flag = os.O_RDONLY
+			perm = 0400
+		} else {
+			flag = os.O_RDWR
+			perm = 0600
+		}
+		file, err := options.OpenFile(path.Join(dir, fnames[i]), flag, perm)
 		if err != nil {
 			continue
 		}
