@@ -94,6 +94,7 @@ Examples:
         diag              Dumps all the diagnostic stats for the store
         footer            Dumps aggregated stats from the latest footer in the store
         fragmentation     Dumps the fragmentation stats (to assist with manual compaction)
+        hist              Generates histograms for the store
 
     Available flags:
 
@@ -114,6 +115,10 @@ footer:
 fragmentation:
 
     mossScope stats frag [flags] <store_path(s)>
+
+hist:
+
+    mossScope stats hist <store_path(s)>
 
 Examples:
 
