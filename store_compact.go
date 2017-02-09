@@ -79,17 +79,53 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		return false, err
 	}
 
+	var size_before, size_after int64
+
 	if len(slocs) > 0 {
 		mref := slocs[0].mref
 		if mref != nil && mref.fref != nil {
 			finfo, err := mref.fref.file.Stat()
 			if err == nil && len(finfo.Name()) > 0 {
+				// Fetch size of old file
+				size_before = finfo.Size()
 				mref.fref.OnAfterClose(func() {
 					os.Remove(path.Join(s.dir, finfo.Name()))
 				})
 			}
 		}
 	}
+
+	slocs, _ = footer.SegmentStack()
+	defer footer.DecRef()
+
+	if len(slocs) > 0 {
+		mref := slocs[0].mref
+		if mref != nil && mref.fref != nil {
+			finfo, err := mref.fref.file.Stat()
+			if err == nil && len(finfo.Name()) > 0 {
+				// Fetch size of new file
+				size_after = finfo.Size()
+			}
+		}
+	}
+
+	s.m.Lock()
+	s.numLastCompactionBeforeBytes = uint64(size_before)
+	s.numLastCompactionAfterBytes = uint64(size_after)
+	delta := size_before - size_after
+	if delta > 0 {
+		s.totCompactionDecreaseBytes += uint64(delta)
+		if s.maxCompactionDecreaseBytes < uint64(delta) {
+			s.maxCompactionDecreaseBytes = uint64(delta)
+		}
+	} else if delta < 0 {
+		delta = -delta
+		s.totCompactionIncreaseBytes += uint64(delta)
+		if s.maxCompactionIncreaseBytes < uint64(delta) {
+			s.maxCompactionIncreaseBytes = uint64(delta)
+		}
+	}
+	s.m.Unlock()
 
 	return true, nil
 }

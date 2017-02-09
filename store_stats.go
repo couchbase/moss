@@ -32,6 +32,12 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	s.m.Lock()
 	totPersists := s.totPersists
 	totCompactions := s.totCompactions
+	numLastCompactionBeforeBytes := s.numLastCompactionBeforeBytes
+	numLastCompactionAfterBytes := s.numLastCompactionAfterBytes
+	totCompactionDecreaseBytes := s.totCompactionDecreaseBytes
+	totCompactionIncreaseBytes := s.totCompactionIncreaseBytes
+	maxCompactionDecreaseBytes := s.maxCompactionDecreaseBytes
+	maxCompactionIncreaseBytes := s.maxCompactionIncreaseBytes
 	s.m.Unlock()
 
 	footer, err := s.snapshot()
@@ -51,9 +57,15 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	footer.Close()
 
 	return map[string]interface{}{
-		"num_bytes_used_disk": numBytesUsedDisk,
-		"total_persists":      totPersists,
-		"total_compactions":   totCompactions,
-		"num_segments":        numSegments,
+		"num_bytes_used_disk":              numBytesUsedDisk,
+		"total_persists":                   totPersists,
+		"total_compactions":                totCompactions,
+		"num_segments":                     numSegments,
+		"num_last_compaction_before_bytes": numLastCompactionBeforeBytes,
+		"num_last_compaction_after_bytes":  numLastCompactionAfterBytes,
+		"total_compaction_decrease_bytes":  totCompactionDecreaseBytes,
+		"total_compaction_increase_bytes":  totCompactionIncreaseBytes,
+		"max_compaction_decrease_bytes":    maxCompactionDecreaseBytes,
+		"max_compaction_increase_bytes":    maxCompactionIncreaseBytes,
 	}, nil
 }

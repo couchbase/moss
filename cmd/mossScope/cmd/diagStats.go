@@ -84,7 +84,7 @@ func invokeDiagStats(dirs []string) error {
 		} else {
 			fmt.Println(dir)
 			for k, v := range stats {
-				fmt.Printf("%25s : %v\n", k, v)
+				fmt.Printf("%35s : %v\n", k, v)
 			}
 			fmt.Println()
 		}

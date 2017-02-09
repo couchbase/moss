@@ -32,8 +32,15 @@ type Store struct {
 	footer       *Footer
 	nextFNameSeq int64
 
-	totPersists    uint64
-	totCompactions uint64
+	totPersists    uint64 // Total number of persists
+	totCompactions uint64 // Total number of compactions
+
+	numLastCompactionBeforeBytes uint64 // File size before last compaction
+	numLastCompactionAfterBytes  uint64 // File size after last compaction
+	totCompactionDecreaseBytes   uint64 // File size decrease after all compactions
+	totCompactionIncreaseBytes   uint64 // File size increase after all compactions
+	maxCompactionDecreaseBytes   uint64 // Max file size decrease from any compaction
+	maxCompactionIncreaseBytes   uint64 // Max file size increase from any compaction
 }
 
 // StoreOptions are provided to OpenStore().
