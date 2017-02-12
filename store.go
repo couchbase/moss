@@ -36,7 +36,7 @@ var STORE_ENDIAN = binary.LittleEndian
 var STORE_PAGE_SIZE = 4096
 
 // STORE_VERSION must be bumped whenever the file format changes.
-var STORE_VERSION = uint32(3)
+var STORE_VERSION = uint32(4)
 
 var STORE_MAGIC_BEG []byte = []byte("0m1o2s")
 var STORE_MAGIC_END []byte = []byte("3s4p5s")
@@ -72,6 +72,10 @@ type Footer struct {
 
 	fileName string // Ephemeral; file name; "" when unpersisted.
 	filePos  int64  // Ephemeral; byte offset of footer; <= 0 when unpersisted.
+
+	incarNum uint64 // Ephemeral; to detect fast collection recreations.
+
+	ChildFooters map[string]*Footer // Persisted; Child collections by name.
 }
 
 // --------------------------------------------------------
@@ -108,39 +112,30 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 
 	// TODO: Pre-allocate file space up front?
 
-	ss.ensureSorted(0, len(ss.a)-1)
+	// Recursively sort all child collection stacks if sorting was deferred.
+	ss.ensureFullySorted()
 
-	numSegmentLocs := len(ss.a)
-
+	// Recursively build a new store footer combined with higher snapshot.
 	s.m.Lock()
-	if s.footer != nil {
-		numSegmentLocs += len(s.footer.SegmentLocs)
-	}
-	segmentLocs := make([]SegmentLoc, 0, numSegmentLocs)
-	if s.footer != nil {
-		segmentLocs = append(segmentLocs, s.footer.SegmentLocs...)
-	}
+	footer := s.buildNewFooter(s.footer, ss)
 	s.m.Unlock()
 
-	for _, segment := range ss.a {
-		segmentLoc, err := s.persistSegment(file, segment)
-		if err != nil {
-			fref.DecRef()
-			return nil, err
-		}
-
-		segmentLocs = append(segmentLocs, segmentLoc)
+	// Recursively write out all the segments of the snapshot.
+	err = s.persistSegments(ss, footer, file, fref)
+	if err != nil {
+		fref.DecRef()
+		return nil, err
 	}
 
-	footer := &Footer{refs: 1, SegmentLocs: segmentLocs}
-
+	// Recursively load all segments of the newly persisted footer.
 	err = footer.loadSegments(s.options, fref)
 	if err != nil {
 		fref.DecRef()
 		return nil, err
 	}
 
-	err = s.persistFooter(file, footer, !persistOptions.NoSync)
+	// Recursively persist all footers of top-level and child collections.
+	err = s.persistFooter(file, footer, persistOptions)
 	if err != nil {
 		footer.DecRef()
 		return nil, err
@@ -162,6 +157,72 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	}
 
 	return footer, nil // The other ref-count returned to caller.
+}
+
+// buildNewFooter will construct a new Footer for the store by combining
+// the given storeFooter's segmentLocs with that of the incoming snapshot.
+func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
+	footer := &Footer{refs: 1, incarNum: ss.incarNum}
+
+	numSegmentLocs := len(ss.a)
+	if storeFooter != nil {
+		numSegmentLocs += len(storeFooter.SegmentLocs)
+	}
+	segmentLocs := make([]SegmentLoc, 0, numSegmentLocs)
+	if storeFooter != nil {
+		segmentLocs = append(segmentLocs, s.footer.SegmentLocs...)
+	}
+	footer.SegmentLocs = segmentLocs
+
+	// Now process the child collections recursively.
+	for cName, childStack := range ss.childSegStacks {
+		var storeChildFooter *Footer
+		if storeFooter != nil && storeFooter.ChildFooters != nil {
+			var exists bool
+			storeChildFooter, exists = footer.ChildFooters[cName]
+			if exists {
+				if storeChildFooter.incarNum != childStack.incarNum {
+					// This is a special case of deletion & recreate where an
+					// existing child collection has been deleted and quickly
+					// recreated. Here we drop the existing store footer's
+					// segments that correspond to the prior incarnation.
+					storeChildFooter = nil
+				}
+			}
+		}
+		childFooter := s.buildNewFooter(storeChildFooter, childStack)
+		if len(footer.ChildFooters) == 0 {
+			footer.ChildFooters = make(map[string]*Footer)
+		}
+		footer.ChildFooters[cName] = childFooter
+	}
+	// As a deleted Child collection does not feature in the source
+	// segmentStack, its corresponding Footer would simply get dropped.
+	return footer
+}
+
+// persistSegments will recursively write out all the segments of the
+// current collection as well as any of its child collections.
+func (s *Store) persistSegments(ss *segmentStack, footer *Footer,
+	file File, fref *FileRef) error {
+	// First persist the child segments recursively.
+	for cName, childSegStack := range ss.childSegStacks {
+		err := s.persistSegments(childSegStack, footer.ChildFooters[cName],
+			file, fref)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, segment := range ss.a {
+		segmentLoc, err := s.persistSegment(file, segment)
+		if err != nil {
+			return err
+		}
+
+		footer.SegmentLocs = append(footer.SegmentLocs, segmentLoc)
+	}
+	return nil
 }
 
 // --------------------------------------------------------
@@ -374,10 +435,9 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 
 	if len(fnames) <= 0 {
 		emptyFooter := &Footer{
-			refs: 1,
-			ss: &segmentStack{
-				options: &options.CollectionOptions,
-			},
+			refs:         1,
+			ss:           &segmentStack{options: &options.CollectionOptions},
+			ChildFooters: make(map[string]*Footer),
 		}
 
 		return &Store{
@@ -413,6 +473,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			return nil, err
 		}
 
+		// Will recursively restore ChildFooters of childCollections
 		footer, err := ReadFooter(&options, file) // Footer owns file on success.
 		if err != nil {
 			file.Close()
@@ -466,7 +527,13 @@ func (store *Store) openCollection(
 		return ss, err
 	}
 
-	coll, err := NewCollection(co)
+	storeFooter, ok := storeSnapshotInit.(*Footer)
+	if !ok {
+		storeSnapshotInit.Close()
+		return nil, fmt.Errorf("Wrong Snapshot type - need Footer")
+	}
+
+	coll, err := restoreCollection(&co, storeFooter)
 	if err != nil {
 		storeSnapshotInit.Close()
 		return nil, err
@@ -479,6 +546,47 @@ func (store *Store) openCollection(
 	}
 
 	return coll, nil
+}
+
+func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
+	rv *collection, err error) {
+	var coll *collection
+	if storeFooter.incarNum == 0 {
+		newColl, err := NewCollection(*co)
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		coll, ok = newColl.(*collection)
+		if !ok {
+			return nil, fmt.Errorf("Incorrect collection implementation")
+		}
+	} else {
+		coll = &collection{
+			options:  co,
+			stats:    &CollectionStats{},
+			incarNum: storeFooter.incarNum,
+		}
+	}
+
+	coll.highestIncarNum = coll.incarNum
+
+	for collName, childFooter := range storeFooter.ChildFooters {
+		if len(coll.childCollections) == 0 {
+			coll.childCollections = make(map[string]*collection)
+		}
+		// Keep the incarnation numbers of the newly restored child
+		// collections monotonically increasing.
+		coll.highestIncarNum++
+		childFooter.incarNum = coll.highestIncarNum
+
+		childCollection, err := restoreCollection(co, childFooter)
+		if err != nil {
+			break
+		}
+		coll.childCollections[collName] = childCollection
+	}
+	return coll, err
 }
 
 // --------------------------------------------------------

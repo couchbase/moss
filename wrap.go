@@ -16,6 +16,8 @@ import (
 	"sync"
 )
 
+// Must implement the moss.Snapshot interface.
+// This is required for compatability with the moss adapter within bleve.
 type snapshotWrapper struct {
 	m        sync.Mutex
 	refCount uint64
@@ -59,6 +61,28 @@ func (w *snapshotWrapper) decRef() (err error) {
 	}
 	w.m.Unlock()
 	return err
+}
+
+// ChildCollectionNames returns an array of child collection name strings.
+func (w *snapshotWrapper) ChildCollectionNames() ([]string, error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	if w.ss != nil {
+		return w.ss.ChildCollectionNames()
+	}
+	return nil, nil
+}
+
+// ChildCollectionSnapshot returns a Snapshot on a given child
+// collection by its name.
+func (w *snapshotWrapper) ChildCollectionSnapshot(childCollectionName string) (
+	Snapshot, error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	if w.ss != nil {
+		return w.ss.ChildCollectionSnapshot(childCollectionName)
+	}
+	return nil, nil
 }
 
 func (w *snapshotWrapper) Close() (err error) {

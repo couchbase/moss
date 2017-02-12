@@ -16,27 +16,52 @@ import (
 )
 
 func (s *Store) snapshotRevert(revertTo Snapshot) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+
 	revertToFooter, ok := revertTo.(*Footer)
 	if !ok {
 		return fmt.Errorf("can only revert a footer")
 	}
 
-	s.m.Lock()
-	defer s.m.Unlock()
-
 	fileNameCurr := FormatFName(s.nextFNameSeq - 1)
 	if fileNameCurr != revertToFooter.fileName {
-		return fmt.Errorf("snapshot too old, revertToFooter.fileName: %+v,"+
+		return fmt.Errorf("snapshot too old, revertToSnapshot.fileName: %+v,"+
 			" fileNameCurr: %s", revertToFooter.fileName, fileNameCurr)
 	}
 
+	persistOptions := StorePersistOptions{}
+	footer, err := s.revertToSnapshot(revertToFooter, persistOptions)
+	if err != nil {
+		return err
+	}
+
+	err = s.persistFooter(revertToFooter.SegmentLocs[0].mref.fref.file, footer,
+		persistOptions)
+	if err != nil {
+		footer.DecRef()
+		return err
+	}
+	footerPrev := s.footer
+	s.footer = footer // Owns the footer ref-count.
+	s.totPersists++
+
+	if footerPrev != nil {
+		footerPrev.DecRef()
+	}
+
+	return nil
+}
+
+func (s *Store) revertToSnapshot(revertToFooter *Footer, options StorePersistOptions) (
+	rv *Footer, err error) {
 	if len(revertToFooter.SegmentLocs) <= 0 {
-		return fmt.Errorf("revert footer slocs <= 0")
+		return nil, fmt.Errorf("revert footer slocs <= 0")
 	}
 
 	mref := revertToFooter.SegmentLocs[0].mref
 	if mref == nil || mref.fref == nil || mref.fref.file == nil {
-		return fmt.Errorf("revert footer parts nil")
+		return nil, fmt.Errorf("revert footer parts nil")
 	}
 
 	slocs := append(SegmentLocs{}, revertToFooter.SegmentLocs...)
@@ -48,19 +73,17 @@ func (s *Store) snapshotRevert(revertTo Snapshot) error {
 		ss:          revertToFooter.ss,
 	}
 
-	err := s.persistFooter(mref.fref.file, footer, true)
-	if err != nil {
-		footer.DecRef()
-		return err
+	for cName, childFooter := range revertToFooter.ChildFooters {
+		newChildFooter, err := s.revertToSnapshot(childFooter, options)
+		if err != nil {
+			footer.DecRef()
+			return nil, err
+		}
+		if len(footer.ChildFooters) == 0 {
+			footer.ChildFooters = make(map[string]*Footer)
+		}
+		footer.ChildFooters[cName] = newChildFooter
 	}
 
-	footerPrev := s.footer
-	s.footer = footer // Owns the footer ref-count.
-	s.totPersists++
-
-	if footerPrev != nil {
-		footerPrev.DecRef()
-	}
-
-	return nil
+	return footer, nil
 }

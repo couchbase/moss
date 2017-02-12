@@ -203,27 +203,15 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 // the stackDirtyMid and swaps the merged result into the collection.
 func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 	mergeAll bool) (ok bool) {
-	if stackDirtyMid != nil && len(stackDirtyMid.a) > 1 {
-		newTopLevel := 0
-
-		if !mergeAll {
-			// If we have not been asked to merge all segments,
-			// then heuristically calc a newTopLevel.
-			newTopLevel = stackDirtyMid.calcTargetTopLevel()
-		}
-
-		if newTopLevel <= 0 {
-			atomic.AddUint64(&m.stats.TotMergerAll, 1)
-		}
-
+	if stackDirtyMid != nil && !stackDirtyMid.isEmpty() {
 		atomic.AddUint64(&m.stats.TotMergerInternalBeg, 1)
-
-		mergedStackDirtyMid, err := stackDirtyMid.merge(newTopLevel, stackDirtyBase)
+		mergedStackDirtyMid, numFullMerges, err := stackDirtyMid.merge(mergeAll,
+			stackDirtyBase)
 		if err != nil {
 			atomic.AddUint64(&m.stats.TotMergerInternalErr, 1)
 
 			m.Logf("collection: mergerMain stackDirtyMid.merge,"+
-				" newTopLevel: %d, err: %v", newTopLevel, err)
+				" numFullMerges: %d, err: %v", numFullMerges, err)
 
 			m.OnError(err)
 
@@ -233,6 +221,7 @@ func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 			return false
 		}
 
+		atomic.AddUint64(&m.stats.TotMergerAll, numFullMerges)
 		atomic.AddUint64(&m.stats.TotMergerInternalEnd, 1)
 
 		stackDirtyMid.Close()

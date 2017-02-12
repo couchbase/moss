@@ -206,12 +206,12 @@ func TestEmpty(t *testing.T) {
 func TestBatchSort(t *testing.T) {
 	m, _ := NewCollection(CollectionOptions{})
 
-	batch, err := m.NewBatch(0, 0)
+	segbatch, err := m.NewBatch(0, 0)
 	if err != nil {
 		t.Errorf("expected ok")
 	}
 
-	b := batch.(*segment)
+	b := segbatch.(*batch)
 
 	b.Set([]byte("f"), []byte("F"))
 	b.Set([]byte("d"), []byte("D"))

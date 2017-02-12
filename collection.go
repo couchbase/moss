@@ -13,7 +13,6 @@ package moss
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,7 +22,7 @@ import (
 
 // A collection implements the Collection interface.
 type collection struct {
-	options CollectionOptions
+	options *CollectionOptions
 
 	stopCh          chan struct{}
 	pingMergerCh    chan ping
@@ -41,6 +40,17 @@ type collection struct {
 	// notify waiters like the merger via waitDirtyOutgoingCh (if
 	// non-nil).
 	waitDirtyOutgoingCh chan struct{}
+
+	// stats leverage sync/atomic counters.
+	// All child collections simply point back to the same stats instance.
+	// TODO: Have child collection specific stats.
+	stats *CollectionStats
+
+	// highestIncarNum is the highest child collection incarnation number
+	// seen by this collection. It monotonically increases every time a
+	// new child collection is created and helps distinguish child collection
+	// recreations with the same name.
+	highestIncarNum uint64
 
 	// ----------------------------------------
 
@@ -78,11 +88,18 @@ type collection struct {
 	// implementation, when using the Collection as a cache.
 	lowerLevelSnapshot *snapshotWrapper
 
-	// stats leverage sync/atomic counters.
-	stats *CollectionStats
-
 	// histograms from collection operations
 	histograms ghistogram.Histograms
+
+	// incarNum is a unique incarnation number assigned to a child
+	// collection at the time of its creation. It helps process child
+	// collection recreations and is zero in the top-level collection.
+	incarNum uint64
+
+	// Map of child collection by name.
+	// TODO: Most of the fields of the child collections are nil, so it
+	// might be lighter to use a dedicated map instead of reusing collection.
+	childCollections map[string]*collection
 }
 
 // ------------------------------------------------------
@@ -168,7 +185,7 @@ func (m *collection) isClosed() bool {
 
 // Options returns the current options.
 func (m *collection) Options() CollectionOptions {
-	return m.options
+	return *m.options
 }
 
 // Snapshot returns a stable snapshot of the key-value entries.
@@ -198,7 +215,7 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 	atomic.AddUint64(&m.stats.TotNewBatchTotalOps, uint64(totalOps))
 	atomic.AddUint64(&m.stats.TotNewBatchTotalKeyValBytes, uint64(totalKeyValBytes))
 
-	return newSegment(totalOps, totalKeyValBytes)
+	return newBatch("", BatchOptions{totalOps, totalKeyValBytes})
 }
 
 // ExecuteBatch atomically incorporates the provided Batch into the
@@ -213,14 +230,14 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	atomic.AddUint64(&m.stats.TotExecuteBatchBeg, 1)
 
-	b, ok := bIn.(*segment)
+	b, ok := bIn.(*batch)
 	if !ok {
 		atomic.AddUint64(&m.stats.TotExecuteBatchErr, 1)
 
 		return fmt.Errorf("wrong Batch implementation type")
 	}
 
-	if b == nil || b.Len() <= 0 {
+	if b == nil || b.isEmpty() {
 		atomic.AddUint64(&m.stats.TotExecuteBatchEmpty, 1)
 
 		m.histograms["ExecuteBatchUsecs"].Add(
@@ -236,16 +253,10 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	}
 
 	if m.options.DeferredSort {
-		b.needSorterCh = make(chan bool, 1)
-		b.needSorterCh <- true // A ticket for the future sorter.
-		close(b.needSorterCh)
-
-		b.waitSortedCh = make(chan struct{})
+		b.readyDeferredSort() // will recursively ready child batches.
 	} else {
-		sort.Sort(b)
+		b.doSort() // will recursively sort the child batches.
 	}
-
-	stackDirtyTop := &segmentStack{options: &m.options, refs: 1}
 
 	// notify interested handlers that we are about to execute this batch
 	m.fireEvent(EventKindBatchExecuteStart, 0)
@@ -260,7 +271,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		}
 
 		if m.options.DeferredSort {
-			go b.RequestSort(false) // While waiting, might as well sort.
+			go b.RequestSort() // While waiting, might as well sort.
 		}
 
 		atomic.AddUint64(&m.stats.TotExecuteBatchWaitBeg, 1)
@@ -274,18 +285,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		return ErrClosed
 	}
 
-	numDirtyTop := 0
-	if m.stackDirtyTop != nil {
-		numDirtyTop = len(m.stackDirtyTop.a)
-	}
-
-	stackDirtyTop.a = make([]Segment, 0, numDirtyTop+1)
-
-	if m.stackDirtyTop != nil {
-		stackDirtyTop.a = append(stackDirtyTop.a, m.stackDirtyTop.a...)
-	}
-
-	stackDirtyTop.a = append(stackDirtyTop.a, b)
+	stackDirtyTop := m.buildStackDirtyTop(b, m.stackDirtyTop)
 
 	prevStackDirtyTop := m.stackDirtyTop
 	m.stackDirtyTop = stackDirtyTop
@@ -309,6 +309,97 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
 
 	return nil
+}
+
+// buildStackDirtyTop recursively builds a segmentStack out of a
+// recursive batch with potential child batches.
+// This function does a 3 way merge.
+// Consider the example below:
+//    Incoming batch (b)   existing (curStackTop)      childCollections map
+//   /       |      \           /    |    \            /    |     \
+// child1  child2'  child4   child1 child2 child3  child1  child2 child3
+// (del)  (update)  (new)
+//
+// The result is to build a new stackTop & update childCollection map as:
+//    returned segmentStack (rv)         childCollection map
+//       /         |     \             /       |     \
+// child2+child2' child3 child4     child2  child3  child4
+func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
+	rv *segmentStack) {
+	numDirtyTop := 0
+	if curStackTop != nil {
+		numDirtyTop = len(curStackTop.a)
+	}
+
+	rv = &segmentStack{options: m.options, refs: 1}
+	rv.a = make([]Segment, 0, numDirtyTop+1)
+	if curStackTop != nil {
+		rv.a = append(rv.a, curStackTop.a...)
+	}
+
+	rv.incarNum = m.incarNum
+
+	if b != nil {
+		rv.a = append(rv.a, b.segment)
+
+		for cName, cBatch := range b.childBatches {
+			if cBatch == deletedChildBatchMarker { // child1 in diagram above.
+				delete(m.childCollections, cName)
+				continue
+			}
+			if len(m.childCollections) == 0 {
+				m.childCollections = make(map[string]*collection)
+			}
+			childCollection, exists := m.childCollections[cName]
+			if !exists { // Child Collection being created for first time.
+				m.highestIncarNum++
+				childCollection = &collection{ // child4 in diagram above.
+					options:         m.options,
+					stats:           m.stats,
+					highestIncarNum: m.highestIncarNum,
+					incarNum:        m.highestIncarNum,
+				}
+				m.childCollections[cName] = childCollection
+			}
+			if len(rv.childSegStacks) == 0 {
+				rv.childSegStacks = make(map[string]*segmentStack)
+			}
+			var prevChildSegStack *segmentStack
+			if curStackTop != nil && len(curStackTop.childSegStacks) > 0 {
+				// child2 from existing stackDirtyTop in diagram above.
+				prevChildSegStack = curStackTop.childSegStacks[cName]
+			}
+			// Recursively merge & build the child collection batches..
+			rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(
+				cBatch, prevChildSegStack)
+		}
+	}
+
+	if curStackTop == nil {
+		return rv
+	}
+
+	// Now there could be some child collection in existing curStackTop
+	// that were not in the batch. Need to copy over these recursively too.
+	for cName, childStack := range curStackTop.childSegStacks {
+		if len(rv.childSegStacks) == 0 {
+			rv.childSegStacks = make(map[string]*segmentStack)
+		}
+		if rv.childSegStacks[cName] != nil {
+			// this child collection was already procesed as part of batch.
+			continue // Do not copy over to new stackDirtyTop
+		} // else we have a child collection in existing stackDirtyTop
+		// that was NOT in the incoming batch.
+		childCollection, exists := m.childCollections[cName]
+		if !exists || // this child collection was deleted OR
+			// it was quickly recreated in the incoming batch.
+			childCollection.incarNum != childStack.incarNum {
+			continue // Do not copy over to new stackDirtyTop
+		} // child3 from existing curStackTop in diagram above.
+		rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(nil,
+			childStack)
+	}
+	return rv
 }
 
 // ------------------------------------------------------
@@ -354,7 +445,7 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	*segmentStack, int, int, int, int) {
 	atomic.AddUint64(&m.stats.TotSnapshotInternalBeg, 1)
 
-	rv := &segmentStack{options: &m.options, refs: 1}
+	rv := &segmentStack{options: m.options, refs: 1}
 
 	heightDirtyTop := 0
 	heightDirtyMid := 0
@@ -364,6 +455,9 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	m.m.Lock()
 
 	rv.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
+	if rv.lowerLevelSnapshot != nil {
+		rv = m.appendChildLLSnapshot(rv, rv.lowerLevelSnapshot.ss)
+	}
 
 	if m.stackDirtyTop != nil && (skip&snapshotSkipDirtyTop == 0) {
 		heightDirtyTop = len(m.stackDirtyTop.a)
@@ -385,19 +479,19 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 		heightDirtyTop+heightDirtyMid+heightDirtyBase+heightClean)
 
 	if m.stackClean != nil && (skip&snapshotSkipClean == 0) {
-		rv.a = append(rv.a, m.stackClean.a...)
+		rv = m.appendChildStacks(rv, m.stackClean)
 	}
 
 	if m.stackDirtyBase != nil && (skip&snapshotSkipDirtyBase == 0) {
-		rv.a = append(rv.a, m.stackDirtyBase.a...)
+		rv = m.appendChildStacks(rv, m.stackDirtyBase)
 	}
 
 	if m.stackDirtyMid != nil && (skip&snapshotSkipDirtyMid == 0) {
-		rv.a = append(rv.a, m.stackDirtyMid.a...)
+		rv = m.appendChildStacks(rv, m.stackDirtyMid)
 	}
 
 	if m.stackDirtyTop != nil && (skip&snapshotSkipDirtyTop == 0) {
-		rv.a = append(rv.a, m.stackDirtyTop.a...)
+		rv = m.appendChildStacks(rv, m.stackDirtyTop)
 	}
 
 	if cb != nil {
@@ -409,4 +503,57 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	atomic.AddUint64(&m.stats.TotSnapshotInternalEnd, 1)
 
 	return rv, heightClean, heightDirtyBase, heightDirtyMid, heightDirtyTop
+}
+
+func (m *collection) getOrInitChildStack(ss *segmentStack,
+	childCollName string) *segmentStack {
+	if len(ss.childSegStacks) == 0 {
+		ss.childSegStacks = make(map[string]*segmentStack)
+	}
+	dstChildStack, exists := ss.childSegStacks[childCollName]
+	if !exists {
+		dstChildStack = &segmentStack{
+			options:  m.options,
+			refs:     1,
+			incarNum: m.incarNum,
+		}
+	}
+	return dstChildStack
+}
+
+func (m *collection) appendChildLLSnapshot(dst *segmentStack,
+	src Snapshot) *segmentStack {
+	if m.incarNum != 0 {
+		dst.lowerLevelSnapshot = NewSnapshotWrapper(src, nil)
+	}
+	for cName, childCollection := range m.childCollections {
+		dstChildStack := childCollection.getOrInitChildStack(dst, cName)
+		var childSnap Snapshot
+		if src != nil {
+			childSnap, _ = src.ChildCollectionSnapshot(cName)
+		}
+		dst.childSegStacks[cName] = childCollection.appendChildLLSnapshot(dstChildStack,
+			childSnap)
+	}
+	return dst
+}
+
+func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
+	if src == nil {
+		return dst
+	}
+	dst.a = append(dst.a, src.a...)
+
+	for cName, srcChildStack := range src.childSegStacks {
+		childCollection, exists := m.childCollections[cName]
+		if !exists || // This child collection was dropped recently, OR
+			// This child collection was recreated quickly.
+			childCollection.incarNum != srcChildStack.incarNum {
+			continue
+		}
+		dstChildStack := childCollection.getOrInitChildStack(dst, cName)
+		dst.childSegStacks[cName] = childCollection.appendChildStacks(
+			dstChildStack, srcChildStack)
+	}
+	return dst
 }

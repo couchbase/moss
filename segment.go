@@ -115,8 +115,7 @@ const maxValLength = 1<<28 - 1
 const maskRESERVED = uint64(0xF0000000F0000000)
 
 // newSegment() allocates a segment with hinted amount of resources.
-func newSegment(totalOps, totalKeyValBytes int) (
-	*segment, error) {
+func newSegment(totalOps, totalKeyValBytes int) (*segment, error) {
 	return &segment{
 		kvs: make([]uint64, 0, totalOps*2),
 		buf: make([]byte, 0, totalKeyValBytes),
@@ -356,6 +355,15 @@ func decodeOpKeyLenValLen(opklvl uint64) (uint64, int, int) {
 }
 
 // ------------------------------------------------------
+// readyDeferredSort() will create a ticket for the future sorter and
+// a channel to wait for its completion
+func (a *segment) readyDeferredSort() {
+	a.needSorterCh = make(chan bool, 1)
+	a.needSorterCh <- true // A ticket for the future sorter.
+	close(a.needSorterCh)
+
+	a.waitSortedCh = make(chan struct{})
+}
 
 // RequestSort() will either perform the previously deferred sorting,
 // if the goroutine can acquire the 1 ticket from the needSorterCh.
@@ -380,6 +388,11 @@ func (a *segment) RequestSort(synchronous bool) bool {
 	}
 
 	return false
+}
+
+// doSort() will immediately sort this segment.
+func (a *segment) doSort() {
+	sort.Sort(a)
 }
 
 // ------------------------------------------------------
@@ -453,4 +466,107 @@ func loadBasicSegment(sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, erro
 		totKeyByte:      sloc.TotKeyByte,
 		totValByte:      sloc.TotValByte,
 	}, nil
+}
+
+// ------------------------------------------------------
+type batch struct {
+	// Compose batch as a type of segment extending it with childCollections
+	*segment
+
+	// childBatches track the segments of child collections indexed by their
+	// unique collection names.
+	childBatches map[string]*batch
+}
+
+// deletedChildBatchMarker is used as a conduit to convey the delete
+// request from DelChildCollection() to ExecuteBatch()
+var deletedChildBatchMarker = &batch{}
+
+// newBatch() allocates a segment with hinted amount of resources.
+func newBatch(collectionName string, options BatchOptions) (
+	*batch, error) {
+	return &batch{
+		segment: &segment{
+			kvs: make([]uint64, 0, options.TotalOps*2),
+			buf: make([]byte, 0, options.TotalKeyValBytes),
+		},
+		childBatches: nil, // created later on demand
+	}, nil
+}
+
+func (seg *batch) NewChildCollectionBatch(collectionName string,
+	options BatchOptions) (b Batch, err error) {
+	if len(collectionName) == 0 {
+		return nil, ErrBadCollectionName
+	}
+
+	childBatch, err := newBatch(collectionName, options)
+
+	if seg.childBatches == nil { // First creation of child batch.
+		seg.childBatches = make(map[string]*batch)
+	}
+
+	seg.childBatches[collectionName] = childBatch
+
+	// Directly return the child batch, allowing recursive recreations.
+	return childBatch, err
+}
+
+func (seg *batch) DelChildCollection(collectionName string) error {
+	if len(collectionName) == 0 {
+		return ErrNoSuchCollection
+	}
+	if seg.childBatches == nil { // No previous child batches seen.
+		seg.childBatches = make(map[string]*batch)
+	}
+	// Load the parent batch with this batch having special signature.
+	seg.childBatches[collectionName] = deletedChildBatchMarker
+
+	return nil
+}
+
+func (b *batch) readyDeferredSort() {
+	if b == deletedChildBatchMarker {
+		return
+	}
+	for _, childBatch := range b.childBatches {
+		childBatch.readyDeferredSort()
+	}
+
+	b.segment.readyDeferredSort()
+}
+
+// RequestSort() returns true if all child batches are sorted and
+// false if sorting has been asynchronously scheduled.
+func (b *batch) RequestSort() bool {
+	if b == deletedChildBatchMarker {
+		return true
+	}
+	// false because we must never wait for sorter else it can deadlock.
+	sorted := b.segment.RequestSort(false)
+
+	for _, childBatch := range b.childBatches {
+		sorted = childBatch.RequestSort() && sorted
+	}
+	return sorted
+}
+
+func (b *batch) doSort() {
+	if b == deletedChildBatchMarker {
+		return
+	}
+	sort.Sort(b.segment)
+	for _, childBatch := range b.childBatches {
+		childBatch.doSort()
+	}
+}
+
+func (b *batch) isEmpty() bool {
+	if len(b.childBatches) != 0 {
+		// Very presence of child batches indicates a non-empty batch
+		// even if the child batches themselves are empty. This is so that
+		// collection creation/deletions can still work.
+		return false
+	}
+	return b.Len() <= 0
 }

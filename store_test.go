@@ -315,6 +315,8 @@ func testSimpleStoreEx(t *testing.T,
 
 	b, _ := coll.NewBatch(0, 0)
 	b.Set([]byte("a"), []byte("A"))
+	b2, _ := b.NewChildCollectionBatch("child", BatchOptions{0, 0})
+	b2.Set([]byte("a"), []byte("A2"))
 	coll.ExecuteBatch(b, WriteOptions{})
 
 	ss, _ := coll.Snapshot()
@@ -330,7 +332,16 @@ func testSimpleStoreEx(t *testing.T,
 		t.Errorf("expected store nextFNameSeq to be 2")
 	}
 
-	v, err := llss.Get([]byte("a"), ReadOptions{})
+	cs, err := llss.ChildCollectionSnapshot("child")
+	if err != nil {
+		t.Errorf("expected store to have child collection")
+	}
+	v, err := cs.Get([]byte("a"), ReadOptions{})
+	if err != nil || string(v) != "A2" {
+		t.Errorf("expected llss child get to work, err: %v, v: %v", err, v)
+	}
+
+	v, err = llss.Get([]byte("a"), ReadOptions{})
 	if err != nil || string(v) != "A" {
 		t.Errorf("expected llss get to work, err: %v, v: %v", err, v)
 	}
@@ -403,6 +414,16 @@ func testSimpleStoreEx(t *testing.T,
 	llss2, err := store2.Snapshot()
 	if err != nil || llss2 == nil {
 		t.Errorf("expected llss2 to work")
+	}
+
+	cllss2, err := llss2.ChildCollectionSnapshot("child")
+	if err != nil || cllss2 == nil {
+		t.Errorf("expected child snapshot to be durable")
+	}
+
+	v, err = cllss2.Get([]byte("a"), ReadOptions{})
+	if err != nil || string(v) != "A2" {
+		t.Errorf("expected llss get to work, err: %v, v: %v", err, v)
 	}
 
 	v, err = llss2.Get([]byte("a"), ReadOptions{})

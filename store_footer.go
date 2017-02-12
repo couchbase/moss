@@ -21,9 +21,10 @@ import (
 	"github.com/edsrzf/mmap-go"
 )
 
-func (s *Store) persistFooter(file File, footer *Footer, sync bool) error {
+func (s *Store) persistFooter(file File, footer *Footer,
+	options StorePersistOptions) error {
 	startTime := time.Now()
-	if sync {
+	if !options.NoSync {
 		err := file.Sync()
 		if err != nil {
 			return err
@@ -35,7 +36,7 @@ func (s *Store) persistFooter(file File, footer *Footer, sync bool) error {
 		return err
 	}
 
-	if sync {
+	if !options.NoSync {
 		err = file.Sync()
 	}
 
@@ -189,6 +190,9 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 					return nil, err
 				}
 
+				// json.Unmarshal would have just loaded the map.
+				// We now need to load the segments into the map.
+				// Recursively load the Child Footer segment stacks.
 				err = f.loadSegments(options, fref)
 				if err != nil {
 					return nil, err
@@ -208,25 +212,39 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 // already loaded.  The footer adds new ref-counts to the fref on
 // success.  The footer will be in an already closed state on error.
 func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) {
+	// Track mrefs that we need to DecRef() if there's an error.
+	mrefs := make([]*mmapRef, 0, len(f.SegmentLocs))
+	mrefs, err = f.doLoadSegments(options, fref, mrefs)
+	if err != nil {
+		for _, mref := range mrefs {
+			mref.DecRef()
+		}
+		return err
+	}
+
+	return err
+}
+
+func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
+	mrefs []*mmapRef) (mrefsSoFar []*mmapRef, err error) {
+	// Recursively load the childFooters first..
+	for _, childFooter := range f.ChildFooters {
+		mrefs, err = childFooter.doLoadSegments(options, fref, mrefs)
+		if err != nil {
+			return mrefs, err
+		}
+	}
+
 	if f.ss != nil && f.ss.a != nil {
-		return nil
+		return mrefs, nil
 	}
 
 	osFile := ToOsFile(fref.file)
 	if osFile == nil {
-		return fmt.Errorf("store: loadSegments convert to os.File error")
+		return mrefs, fmt.Errorf("store: loadSegments convert to os.File error")
 	}
 
 	a := make([]Segment, len(f.SegmentLocs))
-
-	// Track mrefs that we need to DecRef() if there's an error.
-	mrefs := make([]*mmapRef, 0, len(f.SegmentLocs))
-
-	onError := func() {
-		for _, mref := range mrefs {
-			mref.DecRef()
-		}
-	}
 
 	for i := range f.SegmentLocs {
 		sloc := &f.SegmentLocs[i]
@@ -234,8 +252,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 		mref := sloc.mref
 		if mref != nil {
 			if mref.fref != fref {
-				onError()
-				return fmt.Errorf("store: loadSegments fref mismatch")
+				return mrefs, fmt.Errorf("store: loadSegments fref mismatch")
 			}
 
 			mref.AddRef()
@@ -255,8 +272,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
-				onError()
-				return fmt.Errorf("store: loadSegments mmap.Map(), err: %v", err)
+				return mrefs, fmt.Errorf("store: loadSegments mmap.Map(), err: %v", err)
 			}
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
@@ -272,8 +288,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 		segmentLoader, exists := SegmentLoaders[sloc.Kind]
 		if !exists || segmentLoader == nil {
-			onError()
-			return fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
+			return mrefs, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
 		}
 
 		var kvs []uint64
@@ -281,8 +296,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 		if sloc.KvsBytes > 0 {
 			if sloc.KvsBytes > uint64(len(mref.buf)) {
-				onError()
-				return fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
+				return mrefs, fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
 					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
 					" f.SegmentLocs: %+v, i: %d, options: %v",
 					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
@@ -291,16 +305,14 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 			kvsBytes := mref.buf[0:sloc.KvsBytes]
 			kvs, err = ByteSliceToUint64Slice(kvsBytes)
 			if err != nil {
-				onError()
-				return err
+				return mrefs, err
 			}
 		}
 
 		if sloc.BufBytes > 0 {
 			bufStart := sloc.BufOffset - sloc.KvsOffset
 			if bufStart+sloc.BufBytes > uint64(len(mref.buf)) {
-				onError()
-				return fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
+				return mrefs, fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
 					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
 					" f.SegmentLocs: %+v, i: %d, options: %v",
 					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
@@ -311,19 +323,45 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 		seg, err := segmentLoader(sloc, kvs, buf)
 		if err != nil {
-			onError()
-			return err
+			return mrefs, err
 		}
 
 		a[i] = seg
 	}
 
-	f.ss = &segmentStack{options: &options.CollectionOptions, a: a, refs: 1}
+	f.ss = &segmentStack{
+		options: &options.CollectionOptions,
+		a:       a,
+		refs:    1,
+	}
 
-	return nil
+	return mrefs, nil
 }
 
 // --------------------------------------------------------
+
+// ChildCollectionNames returns an array of child collection name strings.
+func (f *Footer) ChildCollectionNames() ([]string, error) {
+	var childNames = make([]string, len(f.ChildFooters))
+	idx := 0
+	for name, _ := range f.ChildFooters {
+		childNames[idx] = name
+		idx++
+	}
+	return childNames, nil
+}
+
+// ChildCollectionSnapshot returns a Snapshot on a given child
+// collection by its name.
+func (f *Footer) ChildCollectionSnapshot(childCollectionName string) (
+	Snapshot, error) {
+	childFooter, exists := f.ChildFooters[childCollectionName]
+	if !exists {
+		return nil, nil
+	}
+	childFooter.AddRef()
+	return childFooter, nil
+}
 
 func (f *Footer) Close() error {
 	f.DecRef()

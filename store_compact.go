@@ -134,26 +134,16 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 func (s *Store) compact(footer *Footer, higher Snapshot,
 	persistOptions StorePersistOptions) error {
 	startTime := time.Now()
-
-	_, ss := footer.SegmentStack()
-
-	defer footer.DecRef()
-
+	var newSS *segmentStack
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)
 		if !ok {
 			return fmt.Errorf("store: can only compact higher that's a segmentStack")
 		}
-		ssHigher.ensureSorted(0, len(ssHigher.a)-1)
-
-		ssOrig := ss
-
-		ss = &segmentStack{
-			options: ssOrig.options,
-			a:       make([]Segment, 0, len(ssOrig.a)+len(ssHigher.a)),
-		}
-		ss.a = append(ss.a, ssOrig.a...)
-		ss.a = append(ss.a, ssHigher.a...)
+		ssHigher.ensureFullySorted()
+		newSS = s.mergeSegStacks(footer, ssHigher)
+	} else {
+		newSS = footer.ss // safe as footer ref count is held positive.
 	}
 
 	s.m.Lock()
@@ -163,9 +153,99 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 		return err
 	}
 
-	stats := ss.Stats()
+	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact)
+	if err != nil {
+		frefCompact.DecRef()
+		return err
+	}
 
-	kvsBegPos := pageAlign(int64(STORE_PAGE_SIZE))
+	sync := !persistOptions.NoSync
+	if !sync {
+		sync = s.options != nil && s.options.CompactionSync
+	}
+
+	err = s.persistFooter(fileCompact, compactFooter, persistOptions)
+	if err != nil {
+		frefCompact.DecRef()
+		return err
+	}
+
+	footerReady, err := ReadFooter(s.options, fileCompact)
+	if err != nil {
+		frefCompact.DecRef()
+		return err
+	}
+
+	s.m.Lock()
+	footerPrev := s.footer
+	s.footer = footerReady // Owns the frefCompact ref-count.
+	s.totCompactions++
+	s.m.Unlock()
+
+	s.histograms["CompactUsecs"].Add(
+		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
+
+	if footerPrev != nil {
+		footerPrev.DecRef()
+	}
+
+	return nil
+}
+
+func (s *Store) mergeSegStacks(footer *Footer, higher *segmentStack) *segmentStack {
+	var footerSS *segmentStack
+	var lenFooterSS int
+	if footer != nil && footer.ss != nil {
+		footerSS = footer.ss
+		lenFooterSS = len(footerSS.a)
+	}
+	rv := &segmentStack{
+		options:  higher.options,
+		a:        make([]Segment, 0, len(higher.a)+lenFooterSS),
+		incarNum: higher.incarNum,
+	}
+	if footerSS != nil {
+		rv.a = append(rv.a, footerSS.a...)
+	}
+	rv.a = append(rv.a, higher.a...)
+	for cName, newStack := range higher.childSegStacks {
+		if len(rv.childSegStacks) == 0 {
+			rv.childSegStacks = make(map[string]*segmentStack)
+		}
+		if footer == nil {
+			rv.childSegStacks[cName] = s.mergeSegStacks(nil, newStack)
+			continue
+		}
+
+		childFooter, exists := footer.ChildFooters[cName]
+		if exists {
+			if childFooter.incarNum != higher.incarNum {
+				// Fast child collection recreation, must not merge
+				// segments from prior incarnation.
+				childFooter = nil
+			}
+		}
+		rv.childSegStacks[cName] = s.mergeSegStacks(childFooter, newStack)
+	}
+	return rv
+}
+
+func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
+	fileCompact File) (compactFooter *Footer, err error) {
+	var pos int64
+	if newSS.incarNum == 0 {
+		pos = int64(STORE_PAGE_SIZE)
+	} else {
+		finfo, err := fileCompact.Stat()
+		if err != nil {
+			return nil, err
+		}
+		pos = finfo.Size()
+	}
+
+	stats := newSS.Stats()
+
+	kvsBegPos := pageAlign(pos)
 	bufBegPos := pageAlign(kvsBegPos + 1 + (int64(8+8) * int64(stats.CurOps)))
 
 	compactionBufferPages := 0
@@ -184,30 +264,29 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 	onError := func(err error) error {
 		compactWriter.kvsWriter.Stop()
 		compactWriter.bufWriter.Stop()
-		frefCompact.DecRef()
 		return err
 	}
 
-	err = ss.mergeInto(0, len(ss.a), compactWriter, nil, false, false, nil)
+	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, false, false, nil)
 	if err != nil {
-		return onError(err)
+		return nil, onError(err)
 	}
 
 	if err = compactWriter.kvsWriter.Flush(); err != nil {
-		return onError(err)
+		return nil, onError(err)
 	}
 	if err = compactWriter.bufWriter.Flush(); err != nil {
-		return onError(err)
+		return nil, onError(err)
 	}
 
 	if err = compactWriter.kvsWriter.Stop(); err != nil {
-		return onError(err)
+		return nil, onError(err)
 	}
 	if err = compactWriter.bufWriter.Stop(); err != nil {
-		return onError(err)
+		return nil, onError(err)
 	}
 
-	compactFooter := &Footer{
+	compactFooter = &Footer{
 		refs: 1,
 		SegmentLocs: []SegmentLoc{
 			SegmentLoc{
@@ -224,35 +303,18 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 		},
 	}
 
-	sync := !persistOptions.NoSync
-	if !sync {
-		sync = s.options != nil && s.options.CompactionSync
+	for cName, childSegStack := range newSS.childSegStacks {
+		if compactFooter.ChildFooters == nil {
+			compactFooter.ChildFooters = make(map[string]*Footer)
+		}
+		childFooter, err := s.writeSegments(childSegStack,
+			frefCompact, fileCompact)
+		if err != nil {
+			return nil, err
+		}
+		compactFooter.ChildFooters[cName] = childFooter
 	}
-
-	err = s.persistFooter(fileCompact, compactFooter, sync)
-	if err != nil {
-		return onError(err)
-	}
-
-	footerReady, err := ReadFooter(s.options, fileCompact)
-	if err != nil {
-		return onError(err)
-	}
-
-	s.m.Lock()
-	footerPrev := s.footer
-	s.footer = footerReady // Owns the frefCompact ref-count.
-	s.totCompactions++
-	s.m.Unlock()
-
-	s.histograms["CompactUsecs"].Add(
-		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
-
-	if footerPrev != nil {
-		footerPrev.DecRef()
-	}
-
-	return nil
+	return compactFooter, nil
 }
 
 type compactWriter struct {

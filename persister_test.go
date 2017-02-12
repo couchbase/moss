@@ -257,11 +257,21 @@ func runTestPersister(t *testing.T, numItems int) {
 		t.Fatalf("error creating new batch: %v", err)
 	}
 
-	// put numItems in
-	for i := 0; i < numItems; i++ {
-		k := fmt.Sprintf("%d", i)
-		b.Set([]byte(k), []byte(k))
+	// Also create a child batch..
+	childB, err := b.NewChildCollectionBatch("child1", BatchOptions{0, 0})
+	if err != nil {
+		t.Fatalf("error creating new child batch: %v", err)
 	}
+
+	itemLoader := func(b Batch, numItems int) {
+		// put numItems in
+		for i := 0; i < numItems; i++ {
+			k := fmt.Sprintf("%d", i)
+			b.Set([]byte(k), []byte(k))
+		}
+	}
+	itemLoader(b, numItems)
+	itemLoader(childB, numItems)
 
 	err = m.ExecuteBatch(b, WriteOptions{})
 	if err != nil {
@@ -271,6 +281,15 @@ func runTestPersister(t *testing.T, numItems int) {
 	ss0, err := m.Snapshot()
 	if err != nil || ss0 == nil {
 		t.Fatalf("error snapshoting: %v", err)
+	}
+
+	childNames, err := ss0.ChildCollectionNames()
+	if len(childNames) != 1 {
+		t.Fatalf("Unable to retrieve child snapshot")
+	}
+	childSnap, err := ss0.ChildCollectionSnapshot("child1")
+	if err != nil || ss0 == nil {
+		t.Fatalf("error getting child snapshot: %v", err)
 	}
 
 	// cleanup that batch
@@ -358,6 +377,8 @@ func runTestPersister(t *testing.T, numItems int) {
 	checkSnapshot("ss1", ss1, numItems)
 	checkSnapshot("ss2", ss2, numItems)
 
+	checkSnapshot("ss0:child1", childSnap, numItems)
+
 	// cleanup that batch
 	err = b.Close()
 	if err != nil {
@@ -376,6 +397,11 @@ func runTestPersister(t *testing.T, numItems int) {
 		b.Del([]byte(k))
 	}
 
+	err = b.DelChildCollection("child1")
+	if err != nil {
+		t.Fatalf("error deleting child collection: %v", err)
+	}
+
 	err = m.ExecuteBatch(b, WriteOptions{})
 	if err != nil {
 		t.Fatalf("error executing batch: %v", err)
@@ -384,6 +410,10 @@ func runTestPersister(t *testing.T, numItems int) {
 	ssd0, err := m.Snapshot()
 	if err != nil || ssd0 == nil {
 		t.Fatalf("error snapshoting: %v", err)
+	}
+	childNames, err = ssd0.ChildCollectionNames()
+	if len(childNames) > 0 {
+		t.Fatalf("error child snapshot not deleted: %v", err)
 	}
 
 	// cleanup that batch
@@ -572,16 +602,20 @@ func (i *testPersisterIterator) CurrentEx() (entryEx EntryEx,
 	return EntryEx{OperationSet}, k, v, err
 }
 
+// Implements the moss.Snapshot interface
 type testPersister struct {
 	// stable snapshots through writes blocking reads
 	mutex sync.RWMutex
 
 	kvpairs map[string][]byte
+
+	childSnapshots map[string]*testPersister
 }
 
 func newTestPersister() *testPersister {
 	return &testPersister{
-		kvpairs: map[string][]byte{},
+		kvpairs:        map[string][]byte{},
+		childSnapshots: make(map[string]*testPersister),
 	}
 }
 
@@ -591,6 +625,28 @@ func (p *testPersister) cloneLOCKED() *testPersister {
 		c.kvpairs[k] = v
 	}
 	return c
+}
+
+// ChildCollectionNames returns an array of child collection name strings.
+func (p *testPersister) ChildCollectionNames() ([]string, error) {
+	var childCollections = make([]string, len(p.childSnapshots))
+	idx := 0
+	for name, _ := range p.childSnapshots {
+		childCollections[idx] = name
+		idx++
+	}
+	return childCollections, nil
+}
+
+// ChildCollectionSnapshot returns a Snapshot on a given child
+// collection by its name.
+func (p *testPersister) ChildCollectionSnapshot(childCollectionName string) (
+	Snapshot, error) {
+	childSnapshot, exists := p.childSnapshots[childCollectionName]
+	if !exists {
+		return nil, ErrNoSuchCollection
+	}
+	return childSnapshot, nil
 }
 
 func (p *testPersister) Close() error {

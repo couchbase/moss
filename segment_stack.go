@@ -30,6 +30,13 @@ type segmentStack struct {
 	refs int
 
 	lowerLevelSnapshot *snapshotWrapper
+
+	// incarNum represents this segmentStack's unique incarnation number assigned
+	// when the child collection was created. 0 for top-level collection.
+	incarNum uint64
+
+	// childSegStacks recursively store child collection segmentStacks.
+	childSegStacks map[string]*segmentStack
 }
 
 func (ss *segmentStack) addRef() {
@@ -57,7 +64,6 @@ func (ss *segmentStack) Close() error {
 	if ss != nil {
 		ss.decRef()
 	}
-
 	return nil
 }
 
@@ -183,4 +189,51 @@ func (ss *segmentStack) Stats() *SegmentStackStats {
 		rv.CurBytes += nk + nv
 	}
 	return rv
+}
+
+// ChildCollectionNames returns an array of child collection name strings.
+func (ss *segmentStack) ChildCollectionNames() ([]string, error) {
+	var childCollections = make([]string, len(ss.childSegStacks))
+	idx := 0
+	for name, _ := range ss.childSegStacks {
+		childCollections[idx] = name
+		idx++
+	}
+	return childCollections, nil
+}
+
+// ChildCollectionSnapshot returns a Snapshot on a given child
+// collection by its name.
+func (ss *segmentStack) ChildCollectionSnapshot(childCollectionName string) (
+	Snapshot, error) {
+	if ss.childSegStacks == nil {
+		return nil, nil
+	}
+	childSegStack, exists := ss.childSegStacks[childCollectionName]
+	if !exists {
+		return nil, nil
+	}
+	childSegStack.addRef()
+	return childSegStack, nil
+}
+
+// ensureFullySorted recursively ensures that all child segmentStacks
+// are sorted from 0 to end.
+func (ss *segmentStack) ensureFullySorted() {
+	ss.ensureSorted(0, len(ss.a)-1)
+	for _, childSnapshot := range ss.childSegStacks {
+		childSnapshot.ensureFullySorted()
+	}
+}
+
+func (ss *segmentStack) isEmpty() bool {
+	if len(ss.a) > 1 {
+		return false
+	}
+	for _, childSegStack := range ss.childSegStacks {
+		if !childSegStack.isEmpty() {
+			return false
+		}
+	}
+	return true
 }

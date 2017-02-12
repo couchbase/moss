@@ -94,6 +94,14 @@ var ErrCanceled = errors.New("canceled")
 // ErrClosed is returned when the collection is already closed.
 var ErrClosed = errors.New("closed")
 
+// ErrNoSuchCollection is returned when attempting to access or delete
+// an unknown child collection.
+var ErrNoSuchCollection = errors.New("no-such-collection")
+
+// ErrBadCollectionName is returned when the child collection
+// name is invalid, for example "".
+var ErrBadCollectionName = errors.New("bad-collection-name")
+
 // ErrIteratorDone is returned when the iterator has reached the end
 // range of the iterator or the end of the collection.
 var ErrIteratorDone = errors.New("iterator-done")
@@ -277,6 +285,12 @@ var DefaultCollectionOptions = CollectionOptions{
 	Log:   nil,
 }
 
+// BatchOptions are provided to NewChildCollectionBatch().
+type BatchOptions struct {
+	TotalOps         int
+	TotalKeyValBytes int
+}
+
 // A Batch is a set of mutations that will be incorporated atomically
 // into a Collection.  NOTE: the keys in a Batch must be unique.
 //
@@ -325,6 +339,17 @@ type Batch interface {
 	// AllocMerge is like Merge(), but the caller must provide []byte
 	// parameters that came from Alloc().
 	AllocMerge(keyFromAlloc, valFromAlloc []byte) error
+
+	// NewChildCollectionBatch returns a new Batch instance with preallocated
+	// resources for a specific child collection given its unique name.
+	// The child Batch will be executed atomically along with any
+	// other child batches and with the top-level Batch
+	// when the top-level Batch is executed.
+	NewChildCollectionBatch(collectionName string, options BatchOptions) (Batch, error)
+
+	// DelChildCollection records a child collection deletion given the name.
+	// It only takes effect when the top-level batch is executed.
+	DelChildCollection(collectionName string) error
 }
 
 // A Snapshot is a stable view of a Collection for readers, isolated
@@ -348,6 +373,13 @@ type Snapshot interface {
 	// key that's above the "top-most" possible key.
 	StartIterator(startKeyInclusive, endKeyExclusive []byte,
 		iteratorOptions IteratorOptions) (Iterator, error)
+
+	// ChildCollectionNames returns an array of child collection name strings.
+	ChildCollectionNames() ([]string, error)
+
+	// ChildCollectionSnapshot returns a Snapshot on a given child
+	// collection by its name.
+	ChildCollectionSnapshot(childCollectionName string) (Snapshot, error)
 }
 
 // An Iterator allows enumeration of key-val entries.
@@ -570,7 +602,7 @@ func NewCollection(options CollectionOptions) (
 		ghistogram.NewNamedHistogram("MergerUsecs", 10, 4, 4)
 
 	c := &collection{
-		options:            options,
+		options:            &options,
 		stopCh:             make(chan struct{}),
 		pingMergerCh:       make(chan ping, 10),
 		doneMergerCh:       make(chan struct{}),

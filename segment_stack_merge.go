@@ -42,8 +42,19 @@ func (ss *segmentStack) calcTargetTopLevel() int {
 
 // merge() returns a new segmentStack, merging all the segments that
 // are at the given newTopLevel and higher.
-func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
-	*segmentStack, error) {
+func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
+	*segmentStack, uint64, error) {
+	newTopLevel := 0
+	var numFullMerges uint64
+	if !mergeAll {
+		// If we have not been asked to merge all segments,
+		// then heuristically calc a newTopLevel.
+		newTopLevel = ss.calcTargetTopLevel()
+	}
+	if newTopLevel <= 0 {
+		numFullMerges++
+	}
+
 	// ----------------------------------------------------
 	// First, rough estimate the bytes neeeded.
 
@@ -61,24 +72,61 @@ func (ss *segmentStack) merge(newTopLevel int, base *segmentStack) (
 
 	mergedSegment, err := newSegment(totOps, int(totKeyBytes+totValBytes))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	err = ss.mergeInto(newTopLevel, len(ss.a), mergedSegment, base, true, true, nil)
+	err = ss.mergeInto(newTopLevel, len(ss.a), mergedSegment, base, true,
+		true, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	a := make([]Segment, 0, newTopLevel+1)
 	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
 
-	return &segmentStack{
+	rv := &segmentStack{
 		options:            ss.options,
 		a:                  a,
 		refs:               1,
 		lowerLevelSnapshot: ss.lowerLevelSnapshot.addRef(),
-	}, nil
+		incarNum:           ss.incarNum,
+	}
+
+	// ---------------------------------------------------
+	// Recursively merge all the child segmentStacks with the base stack
+	// Dropping any deleted collections present in base but not in me.
+	for cName, childSegStack := range ss.childSegStacks {
+		var baseSegStack *segmentStack
+		if base != nil {
+			var exists bool
+			if base.childSegStacks != nil {
+				baseSegStack, exists = base.childSegStacks[cName]
+			}
+			if exists {
+				if baseSegStack.incarNum != childSegStack.incarNum {
+					// The base segment stack carries a child collection
+					// which was subsequently recreated.
+					baseSegStack = nil
+					// The dirtyBase's old segmentStacks will be closed by
+					// the collection merger after successful merge.
+				}
+			}
+		}
+		mergedChildStack, fullMerges, err := childSegStack.merge(mergeAll,
+			baseSegStack)
+		if err != nil {
+			rv.Close()
+			return nil, numFullMerges, err
+		}
+		numFullMerges += fullMerges
+		if len(rv.childSegStacks) == 0 {
+			rv.childSegStacks = make(map[string]*segmentStack)
+		}
+		rv.childSegStacks[cName] = mergedChildStack
+	}
+
+	return rv, numFullMerges, nil
 }
 
 func (ss *segmentStack) mergeInto(minSegmentLevel, maxSegmentHeight int,
