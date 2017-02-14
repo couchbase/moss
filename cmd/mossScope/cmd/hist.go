@@ -59,8 +59,8 @@ func invokeHist(dirs []string) error {
 			return fmt.Errorf("Snaphot-StartItr() API failed, err: %v", err)
 		}
 
-		keySizes := ghistogram.NewHistogram(6, 10, 10.0)
-		valSizes := ghistogram.NewHistogram(6, 10, 10.0)
+		keySizes := ghistogram.NewNamedHistogram("KeySizes(B) ", 10, 4, 4)
+		valSizes := ghistogram.NewNamedHistogram("ValSizes(B) ", 10, 4, 4)
 
 		for {
 			k, v, err := iter.Current()
@@ -77,9 +77,7 @@ func invokeHist(dirs []string) error {
 		}
 
 		fmt.Printf("\"%s\"\n", dir)
-		fmt.Println("Key sizes:")
 		fmt.Println((keySizes.EmitGraph(nil, nil)).String())
-		fmt.Println("Val sizes:")
 		fmt.Println((valSizes.EmitGraph(nil, nil)).String())
 
 		iter.Close()
