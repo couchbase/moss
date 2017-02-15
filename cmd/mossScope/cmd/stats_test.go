@@ -130,6 +130,7 @@ const (
 	FOOTERSTATS        = 1
 	FRAGMENTATIONSTATS = 2
 	DIAGSTATS          = 3
+	HISTSTATS          = 4
 )
 
 func init2FootersAndInterceptStdout(t *testing.T, batches int,
@@ -156,6 +157,8 @@ func init2FootersAndInterceptStdout(t *testing.T, batches int,
 		err = invokeFragStats(dirs)
 	case DIAGSTATS:
 		err = invokeDiagStats(dirs)
+	case HISTSTATS:
+		err = invokeHistStats(dirs)
 	default:
 		t.Errorf("Unknown CMD: %d", command)
 	}
@@ -308,4 +311,36 @@ func TestDiagStats(t *testing.T) {
 	if stats["total_persists"] == nil {
 		t.Errorf("total_persists stat unavailable!")
 	}
+}
+
+func TestHistStats(t *testing.T) {
+	out := init2FootersAndInterceptStdout(t, 1, HISTSTATS)
+	expect := `"testStatsStore"
+KeySizes(B)  (5 Total)
+[4 - 16]  100.00%  100.00% ############################## (5)
+
+ValSizes(B)  (5 Total)
+[4 - 16]  100.00%  100.00% ############################## (5)
+
+`
+
+	if out != expect {
+		t.Errorf("Mismatch in output: Expected: %s, Got: %s", expect, out)
+	}
+
+	keyPrefix = "key2"
+	out = init2FootersAndInterceptStdout(t, 1, HISTSTATS)
+	expect = `"testStatsStore"
+KeySizes(B)  (1 Total)
+[4 - 16]  100.00%  100.00% ############################## (1)
+
+ValSizes(B)  (1 Total)
+[4 - 16]  100.00%  100.00% ############################## (1)
+
+`
+
+	if out != expect {
+		t.Errorf("Mismatch in output: Expected: %s, Got: %s", expect, out)
+	}
+
 }

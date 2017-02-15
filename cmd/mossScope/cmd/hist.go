@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/couchbase/ghistogram"
 	"github.com/couchbase/moss"
@@ -38,11 +39,13 @@ available from the store.
 	},
 
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return invokeHist(args)
+		return invokeHistStats(args)
 	},
 }
 
-func invokeHist(dirs []string) error {
+var keyPrefix string
+
+func invokeHistStats(dirs []string) error {
 	for _, dir := range dirs {
 		store, err := moss.OpenStore(dir, ReadOnlyMode)
 		if err != nil || store == nil {
@@ -68,8 +71,16 @@ func invokeHist(dirs []string) error {
 				break
 			}
 
-			keySizes.Add(uint64(len(k)), 1)
-			valSizes.Add(uint64(len(v)), 1)
+			if len(keyPrefix) != 0 {
+				// A specific keyPrefix has been requested
+				if strings.HasPrefix(string(k), keyPrefix) {
+					keySizes.Add(uint64(len(k)), 1)
+					valSizes.Add(uint64(len(v)), 1)
+				}
+			} else {
+				keySizes.Add(uint64(len(k)), 1)
+				valSizes.Add(uint64(len(v)), 1)
+			}
 
 			if iter.Next() == moss.ErrIteratorDone {
 				break
@@ -90,4 +101,8 @@ func invokeHist(dirs []string) error {
 
 func init() {
 	statsCmd.AddCommand(histCmd)
+
+	// Local flag that is intended to work as a flag over stats hist
+	histCmd.Flags().StringVar(&keyPrefix, "key-prefix", "",
+		"Emits histograms of keys that begin with the specified prefix")
 }
