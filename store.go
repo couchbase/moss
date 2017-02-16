@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // TODO: Improved version parsers / checkers / handling (semver?).
@@ -92,6 +94,8 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return s.Snapshot()
 	}
 
+	startTime := time.Now()
+
 	ss, ok := higher.(*segmentStack)
 	if !ok {
 		return nil, fmt.Errorf("store: can only persist segmentStack")
@@ -149,6 +153,9 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	s.footer = footer
 	s.totPersists++
 	s.m.Unlock()
+
+	s.histograms["PersistUsecs"].Add(
+		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
 
 	if prevFooter != nil {
 		prevFooter.DecRef()
@@ -357,6 +364,12 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			}
 	}
 
+	histograms := make(ghistogram.Histograms)
+	histograms["PersistUsecs"] =
+		ghistogram.NewNamedHistogram("PersistUsecs", 10, 4, 4)
+	histograms["CompactUsecs"] =
+		ghistogram.NewNamedHistogram("CompactUsecs", 10, 4, 4)
+
 	if len(fnames) <= 0 {
 		emptyFooter := &Footer{
 			refs: 1,
@@ -371,6 +384,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			refs:         1,
 			footer:       emptyFooter,
 			nextFNameSeq: 1,
+			histograms:   histograms,
 		}, nil
 	}
 
@@ -417,6 +431,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			refs:         1,
 			footer:       footer,
 			nextFNameSeq: maxFNameSeq + 1,
+			histograms:   histograms,
 		}, nil
 	}
 

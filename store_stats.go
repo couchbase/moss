@@ -13,6 +13,8 @@ package moss
 
 import (
 	"io/ioutil"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // Stats returns a map of stats.
@@ -68,4 +70,11 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 		"max_compaction_decrease_bytes":    maxCompactionDecreaseBytes,
 		"max_compaction_increase_bytes":    maxCompactionIncreaseBytes,
 	}, nil
+}
+
+// Histograms returns a snapshot of the histograms for this store.
+func (s *Store) Histograms() ghistogram.Histograms {
+	histogramsSnapshot := make(ghistogram.Histograms)
+	histogramsSnapshot.AddAll(s.histograms)
+	return histogramsSnapshot
 }

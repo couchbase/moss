@@ -14,6 +14,8 @@ package moss
 import (
 	"errors"
 	"sync"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // ErrNoValidFooter is returned when a valid footer could not be found
@@ -41,6 +43,8 @@ type Store struct {
 	totCompactionIncreaseBytes   uint64 // File size increase after all compactions
 	maxCompactionDecreaseBytes   uint64 // Max file size decrease from any compaction
 	maxCompactionIncreaseBytes   uint64 // Max file size increase from any compaction
+
+	histograms ghistogram.Histograms // Histograms from store operations
 }
 
 // StoreOptions are provided to OpenStore().

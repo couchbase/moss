@@ -14,6 +14,8 @@ package moss
 import (
 	"reflect"
 	"sync/atomic"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // Stats returns stats for this collection.
@@ -27,6 +29,12 @@ func (m *collection) Stats() (*CollectionStats, error) {
 	m.m.Unlock()
 
 	return rv, nil
+}
+
+func (m *collection) Histograms() ghistogram.Histograms {
+	histogramsSnapshot := make(ghistogram.Histograms)
+	histogramsSnapshot.AddAll(m.histograms)
+	return histogramsSnapshot
 }
 
 // statsSegmentsLOCKED retrieves stats related to segments.

@@ -120,6 +120,9 @@ OUTER:
 			continue OUTER
 		}
 
+		m.histograms["MergerUsecs"].Add(
+			uint64(time.Since(startTime).Nanoseconds()/1000), 1)
+
 		// ---------------------------------------------
 		// Notify persister.
 

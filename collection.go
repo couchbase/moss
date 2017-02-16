@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // A collection implements the Collection interface.
@@ -78,6 +80,9 @@ type collection struct {
 
 	// stats leverage sync/atomic counters.
 	stats *CollectionStats
+
+	// histograms from collection operations
+	histograms ghistogram.Histograms
 }
 
 // ------------------------------------------------------
@@ -217,6 +222,10 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	if b == nil || b.Len() <= 0 {
 		atomic.AddUint64(&m.stats.TotExecuteBatchEmpty, 1)
+
+		m.histograms["ExecuteBatchUsecs"].Add(
+			uint64(time.Since(startTime).Nanoseconds()/1000), 1)
+
 		return nil
 	}
 
@@ -295,6 +304,9 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	}
 
 	atomic.AddUint64(&m.stats.TotExecuteBatchEnd, 1)
+
+	m.histograms["ExecuteBatchUsecs"].Add(
+		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
 
 	return nil
 }

@@ -1703,7 +1703,7 @@ func TestStoreSnapshotRevert(t *testing.T) {
 }
 
 func openStoreAndWriteNItems(t *testing.T, tmpDir string,
-	n int, readOnly bool) (s *Store, c Collection) {
+	n int, numBatches int, readOnly bool) (s *Store, c Collection) {
 	var store *Store
 	var coll Collection
 	var err error
@@ -1741,25 +1741,43 @@ func openStoreAndWriteNItems(t *testing.T, tmpDir string,
 		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
 	}
 
-	batch, err := coll.NewBatch(n, n*10)
-	if err != nil {
-		t.Errorf("Expected NewBatch() to succeed!")
+	if n <= numBatches {
+		numBatches = 1
 	}
 
-	for i := 0; i < n; i++ {
-		k := []byte(fmt.Sprintf("key%d", i))
-		v := []byte(fmt.Sprintf("val%d", i))
+	itemsPerBatch := n / numBatches
+	itemCount := 0
 
-		batch.Set(k, v)
-	}
+	for bi := 0; bi < numBatches; bi++ {
+		if itemsPerBatch > n-itemCount {
+			itemsPerBatch = n - itemCount
+		}
 
-	m.Lock()
-	waitingForCleanCh = ch
-	m.Unlock()
+		if itemsPerBatch <= 0 {
+			break
+		}
 
-	err = coll.ExecuteBatch(batch, WriteOptions{})
-	if err != nil {
-		t.Errorf("Expected ExecuteBatch() to work!")
+		batch, err := coll.NewBatch(itemsPerBatch, itemsPerBatch*15)
+		if err != nil {
+			t.Errorf("Expected NewBatch() to succeed!")
+		}
+
+		for i := 0; i < itemsPerBatch; i++ {
+			k := []byte(fmt.Sprintf("key%d", i))
+			v := []byte(fmt.Sprintf("val%d", i))
+			itemCount++
+
+			batch.Set(k, v)
+		}
+
+		m.Lock()
+		waitingForCleanCh = ch
+		m.Unlock()
+
+		err = coll.ExecuteBatch(batch, WriteOptions{})
+		if err != nil {
+			t.Errorf("Expected ExecuteBatch() to work!")
+		}
 	}
 
 	if readOnly {
@@ -1808,7 +1826,7 @@ func TestStoreReadOnlyOption(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Open store, coll in Regular mode, and write 10 items
-	store, coll := openStoreAndWriteNItems(t, tmpDir, 10, false)
+	store, coll := openStoreAndWriteNItems(t, tmpDir, 10, 1, false)
 
 	if fetchOpsSetFromFooter(store) != 10 {
 		t.Errorf("Unexpected number of sets!")
@@ -1818,7 +1836,7 @@ func TestStoreReadOnlyOption(t *testing.T) {
 	store.Close()
 
 	// Reopen store, coll in ReadOnly mode, and write 10 more items
-	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, true)
+	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, 1, true)
 
 	// Expect no additional sets since the first batch
 	if fetchOpsSetFromFooter(store) != 10 {
@@ -1829,7 +1847,7 @@ func TestStoreReadOnlyOption(t *testing.T) {
 	store.Close()
 
 	// Reopen store, coll in regular mode, and write 10 more items
-	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, false)
+	store, coll = openStoreAndWriteNItems(t, tmpDir, 10, 1, false)
 
 	// Expect 10 more sets since the first batch
 	if fetchOpsSetFromFooter(store) != 20 {
@@ -1838,4 +1856,55 @@ func TestStoreReadOnlyOption(t *testing.T) {
 
 	coll.Close()
 	store.Close()
+}
+
+func TestStoreCollHistograms(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	// Open store, coll and write about 10000 items
+	store, coll := openStoreAndWriteNItems(t, tmpDir, 10000, 100, false)
+	defer coll.Close()
+	defer store.Close()
+
+	shistograms := store.Histograms()
+	num_histograms := len(shistograms)
+
+	if shistograms["PersistUsecs"].TotCount == 0 {
+		t.Errorf("Expected a few entries for PersistUsecs!")
+	}
+
+	if shistograms["CompactUsecs"].TotCount != 0 {
+		t.Errorf("Expected no entries for CompactUsecs!")
+	}
+
+	chistograms := coll.Histograms()
+
+	if chistograms["ExecuteBatchUsecs"].TotCount != 100 {
+		t.Errorf("Expected 100 ExecuteBatchUsecs stats!")
+	}
+
+	if chistograms["MergerUsecs"].TotCount == 0 {
+		t.Errorf("Expected a few entries for MergerUsecs!")
+	}
+
+	if shistograms.AddAll(chistograms) != nil {
+		t.Errorf("Expected AddAll to succeed")
+	}
+
+	if len(shistograms) != num_histograms+len(chistograms) {
+		t.Errorf("shistograms carries unexpected number of histograms")
+	}
+
+	if shistograms["ExecuteBatchUsecs"] == nil ||
+		shistograms["ExecuteBatchUsecs"].TotCount !=
+			chistograms["ExecuteBatchUsecs"].TotCount {
+		t.Errorf("Expected ExecutedBatchUsecs to match chistograms'")
+	}
+
+	if shistograms["MergerUsecs"] == nil ||
+		shistograms["MergerUsecs"].TotCount !=
+			chistograms["MergerUsecs"].TotCount {
+		t.Errorf("Expected MergerUsecs to match chistograms'")
+	}
 }

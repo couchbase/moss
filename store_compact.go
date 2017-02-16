@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"time"
 )
 
 func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions) (
@@ -132,6 +133,8 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 func (s *Store) compact(footer *Footer, higher Snapshot,
 	persistOptions StorePersistOptions) error {
+	startTime := time.Now()
+
 	_, ss := footer.SegmentStack()
 
 	defer footer.DecRef()
@@ -241,6 +244,9 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 	s.footer = footerReady // Owns the frefCompact ref-count.
 	s.totCompactions++
 	s.m.Unlock()
+
+	s.histograms["CompactUsecs"].Add(
+		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
 
 	if footerPrev != nil {
 		footerPrev.DecRef()

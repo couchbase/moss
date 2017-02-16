@@ -76,6 +76,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/couchbase/ghistogram"
 )
 
 // ErrAllocTooLarge is returned when the requested allocation cannot
@@ -148,6 +150,9 @@ type Collection interface {
 
 	// Stats returns stats for this collection.
 	Stats() (*CollectionStats, error)
+
+	// Histograms returns a snapshot of the histograms for this collection.
+	Histograms() ghistogram.Histograms
 }
 
 // CollectionOptions allows applications to specify config settings.
@@ -558,6 +563,12 @@ type CollectionStats struct {
 // NewCollection returns a new, unstarted Collection instance.
 func NewCollection(options CollectionOptions) (
 	Collection, error) {
+	histograms := make(ghistogram.Histograms)
+	histograms["ExecuteBatchUsecs"] =
+		ghistogram.NewNamedHistogram("ExecuteBatchUsecs", 10, 4, 4)
+	histograms["MergerUsecs"] =
+		ghistogram.NewNamedHistogram("MergerUsecs", 10, 4, 4)
+
 	c := &collection{
 		options:            options,
 		stopCh:             make(chan struct{}),
@@ -566,6 +577,7 @@ func NewCollection(options CollectionOptions) (
 		donePersisterCh:    make(chan struct{}),
 		lowerLevelSnapshot: NewSnapshotWrapper(options.LowerLevelInit, nil),
 		stats:              &CollectionStats{},
+		histograms:         histograms,
 	}
 
 	c.stackDirtyTopCond = sync.NewCond(&c.m)
