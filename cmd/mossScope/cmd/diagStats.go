@@ -44,6 +44,9 @@ var diagStatsCmd = &cobra.Command{
 func invokeDiagStats(dirs []string) error {
 	if jsonFormat {
 		fmt.Printf("[")
+	} else {
+		emitVersion()
+		fmt.Println()
 	}
 
 	for index, dir := range dirs {
