@@ -37,7 +37,7 @@ specified by a flag, into the store. For example:
 	./mossScope import <path_to_store> <flag(s)>
 Order of execution (if all flags included): stdin < cmdline < file
 Expected JSON file format:
-	[ {"K" : "key0", "V" : "val0"}, {"K" : "key1", "V" : "val1"} ]`,
+	[ {"k" : "key0", "v" : "val0"}, {"k" : "key1", "v" : "val1"} ]`,
 
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 {
