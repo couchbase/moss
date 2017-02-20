@@ -16,11 +16,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/edsrzf/mmap-go"
 )
 
 func (s *Store) persistFooter(file File, footer *Footer, sync bool) error {
+	startTime := time.Now()
 	if sync {
 		err := file.Sync()
 		if err != nil {
@@ -34,10 +36,15 @@ func (s *Store) persistFooter(file File, footer *Footer, sync bool) error {
 	}
 
 	if sync {
-		return file.Sync()
+		err = file.Sync()
 	}
 
-	return nil
+	if err == nil {
+		s.histograms["PersistFooterUsecs"].Add(
+			uint64(time.Since(startTime).Nanoseconds()/1000), 1)
+	}
+
+	return err
 }
 
 func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {

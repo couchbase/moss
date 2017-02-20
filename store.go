@@ -365,6 +365,8 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 	}
 
 	histograms := make(ghistogram.Histograms)
+	histograms["PersistFooterUsecs"] =
+		ghistogram.NewNamedHistogram("PersistFooterUsecs", 10, 4, 4)
 	histograms["PersistUsecs"] =
 		ghistogram.NewNamedHistogram("PersistUsecs", 10, 4, 4)
 	histograms["CompactUsecs"] =

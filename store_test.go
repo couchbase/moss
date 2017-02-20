@@ -1878,6 +1878,11 @@ func TestStoreCollHistograms(t *testing.T) {
 		t.Errorf("Expected no entries for CompactUsecs!")
 	}
 
+	if shistograms["PersistFooterUsecs"].TotCount !=
+		shistograms["PersistUsecs"].TotCount {
+		t.Errorf("Expected PersisterFooterUsecs to match PersistUsecs!")
+	}
+
 	chistograms := coll.Histograms()
 
 	if chistograms["ExecuteBatchUsecs"].TotCount != 100 {
