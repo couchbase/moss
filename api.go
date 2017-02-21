@@ -601,10 +601,18 @@ type CollectionStats struct {
 func NewCollection(options CollectionOptions) (
 	Collection, error) {
 	histograms := make(ghistogram.Histograms)
+	histograms["ExecuteBatchBytes"] =
+		ghistogram.NewNamedHistogram("ExecuteBatchBytes", 10, 4, 4)
+	histograms["ExecuteBatchOpsCount"] =
+		ghistogram.NewNamedHistogram("ExecuteBatchOpsCount", 10, 4, 4)
 	histograms["ExecuteBatchUsecs"] =
 		ghistogram.NewNamedHistogram("ExecuteBatchUsecs", 10, 4, 4)
 	histograms["MergerUsecs"] =
 		ghistogram.NewNamedHistogram("MergerUsecs", 10, 4, 4)
+	histograms["MutationKeyBytes"] =
+		ghistogram.NewNamedHistogram("MutationKeyBytes", 10, 4, 4)
+	histograms["MutationValBytes"] =
+		ghistogram.NewNamedHistogram("MutationValBytes", 10, 4, 4)
 
 	c := &collection{
 		options:            &options,

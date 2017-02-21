@@ -1883,8 +1883,12 @@ func TestStoreCollHistograms(t *testing.T) {
 	tmpDir, _ := ioutil.TempDir("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
+	itemCount := 10000
+	batchCount := 100
+
 	// Open store, coll and write about 10000 items
-	store, coll := openStoreAndWriteNItems(t, tmpDir, 10000, 100, false)
+	store, coll := openStoreAndWriteNItems(
+		t, tmpDir, itemCount, batchCount, false)
 	defer coll.Close()
 	defer store.Close()
 
@@ -1906,8 +1910,8 @@ func TestStoreCollHistograms(t *testing.T) {
 
 	chistograms := coll.Histograms()
 
-	if chistograms["ExecuteBatchUsecs"].TotCount != 100 {
-		t.Errorf("Expected 100 ExecuteBatchUsecs stats!")
+	if chistograms["ExecuteBatchUsecs"].TotCount != uint64(batchCount) {
+		t.Errorf("Unexpected number of ExecuteBatchUsecs samples!")
 	}
 
 	if chistograms["MergerUsecs"].TotCount == 0 {
@@ -1932,5 +1936,22 @@ func TestStoreCollHistograms(t *testing.T) {
 		shistograms["MergerUsecs"].TotCount !=
 			chistograms["MergerUsecs"].TotCount {
 		t.Errorf("Expected MergerUsecs to match chistograms'")
+	}
+
+	if chistograms["MutationKeyBytes"].TotCount != uint64(itemCount) {
+		t.Errorf("Unexpected number of MutationKeyBytes samples!")
+	}
+
+	if chistograms["MutationValBytes"].TotCount != uint64(itemCount) {
+		t.Errorf("Unexpected number of MutationValBytes samples!")
+	}
+
+	if chistograms["ExecuteBatchBytes"].TotCount != uint64(batchCount) {
+		t.Errorf("Unexpected number of ExecutedBatchBytes samples!")
+	}
+
+	if chistograms["ExecuteBatchOpsCount"].TotCount !=
+		uint64(itemCount/batchCount) {
+		t.Errorf("Unexpected number of ExecuteBatchOpsCount samples!")
 	}
 }

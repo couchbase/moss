@@ -308,6 +308,9 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	m.histograms["ExecuteBatchUsecs"].Add(
 		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
 
+	// Spin off a routine to update stats asynchronously
+	go m.updateStats(b)
+
 	return nil
 }
 
@@ -402,6 +405,30 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			childStack)
 	}
 	return rv
+}
+
+// ------------------------------------------------------
+
+// Helper function to update stats/histograms
+func (m *collection) updateStats(b *batch) {
+	if m.isClosed() {
+		return
+	}
+
+	a := b.segment
+
+	m.histograms["ExecuteBatchOpsCount"].Add(uint64(a.Len()), 1)
+	m.histograms["ExecuteBatchBytes"].Add(a.totKeyByte+a.totValByte, 1)
+
+	mutationKeyBytesHisto := m.histograms["MutationKeyBytes"]
+	mutationValBytesHisto := m.histograms["MutationValBytes"]
+
+	for i := 0; i < len(a.kvs); i += 2 {
+		opklvl := a.kvs[i]
+		_, keylen, vallen := decodeOpKeyLenValLen(opklvl)
+		mutationKeyBytesHisto.Add(uint64(keylen), 1)
+		mutationValBytesHisto.Add(uint64(vallen), 1)
+	}
 }
 
 // ------------------------------------------------------
