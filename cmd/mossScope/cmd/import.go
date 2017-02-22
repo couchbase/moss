@@ -32,12 +32,13 @@ var importCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Imports the docs from the JSON file into the store",
 	Long: `Imports the key-values from the specified file (required to be in
-JSON format - array of maps), taking into account the batch size
-specified by a flag, into the store. For example:
+JSON format - array of maps - mapping a string to string only),
+taking into account - batch size, which can be specified by an
+optional flag, into the store. For example:
 	./mossScope import <path_to_store> <flag(s)>
 Order of execution (if all flags included): stdin < cmdline < file
 Expected JSON file format:
-	[ {"k" : "key0", "v" : "val0"}, {"k" : "key1", "v" : "val1"} ]`,
+	[{"k" : "key0", "v" : "val0"}, {"k" : "key1", "v" : "val1"}]`,
 
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 {
@@ -105,8 +106,8 @@ var jsonInput string
 var readFromStdin bool
 
 type KV struct {
-	KEY string `json:"k"`
-	VAL string `json:"v"`
+	Key string `json:"k"`
+	Val string `json:"v"`
 }
 
 func invokeImport(jsonStr string, dir string) error {
@@ -171,6 +172,7 @@ func invokeImport(jsonStr string, dir string) error {
 	ch := make(chan struct{}, 1)
 
 	numBatches := 1
+	itemsWritten := 0
 
 	if batchSize <= 0 {
 		// All key-values in a single batch
@@ -178,7 +180,7 @@ func invokeImport(jsonStr string, dir string) error {
 		sizeOfBatch := 0
 		for i := 0; i < len(data); i++ {
 			// Get the size of the batch
-			sizeOfBatch += len(data[i].KEY) + len(data[i].VAL)
+			sizeOfBatch += len(data[i].Key) + len(data[i].Val)
 		}
 
 		if sizeOfBatch == 0 {
@@ -191,22 +193,27 @@ func invokeImport(jsonStr string, dir string) error {
 		}
 
 		for i := 0; i < len(data); i++ {
-			kbuf, err := batch.Alloc(len(data[i].KEY))
+			if len(data[i].Key) == 0 {
+				continue
+			}
+
+			kbuf, err := batch.Alloc(len(data[i].Key))
 			if err != nil {
 				return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 			}
-			vbuf, err := batch.Alloc(len(data[i].VAL))
+			vbuf, err := batch.Alloc(len(data[i].Val))
 			if err != nil {
 				return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 			}
 
-			copy(kbuf, data[i].KEY)
-			copy(vbuf, data[i].VAL)
+			copy(kbuf, data[i].Key)
+			copy(vbuf, data[i].Val)
 
 			err = batch.AllocSet(kbuf, vbuf)
 			if err != nil {
 				return fmt.Errorf("Batch-AllocSet() failed, err: %v", err)
 			}
+			itemsWritten++
 		}
 
 		m.Lock()
@@ -230,7 +237,7 @@ func invokeImport(jsonStr string, dir string) error {
 				if j >= len(data) {
 					break
 				}
-				sizeOfBatch += len(data[j].KEY) + len(data[j].VAL)
+				sizeOfBatch += len(data[j].Key) + len(data[j].Val)
 				numItemsInBatch++
 			}
 			if sizeOfBatch == 0 {
@@ -239,27 +246,33 @@ func invokeImport(jsonStr string, dir string) error {
 
 			batch, err := coll.NewBatch(numItemsInBatch, sizeOfBatch)
 			if err != nil {
-				fmt.Errorf("Collection-NewBatch() failed, err: %v", err)
+				return fmt.Errorf("Collection-NewBatch() failed, err: %v", err)
 			}
 
 			for j := 0; j < numItemsInBatch; j++ {
-				kbuf, err := batch.Alloc(len(data[cursor].KEY))
+				if len(data[cursor].Key) == 0 {
+					cursor++
+					continue
+				}
+
+				kbuf, err := batch.Alloc(len(data[cursor].Key))
 				if err != nil {
 					return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 				}
-				vbuf, err := batch.Alloc(len(data[cursor].VAL))
+				vbuf, err := batch.Alloc(len(data[cursor].Val))
 				if err != nil {
 					return fmt.Errorf("Batch-Alloc() failed, err: %v", err)
 				}
 
-				copy(kbuf, data[cursor].KEY)
-				copy(vbuf, data[cursor].VAL)
+				copy(kbuf, data[cursor].Key)
+				copy(vbuf, data[cursor].Val)
 
 				err = batch.AllocSet(kbuf, vbuf)
 				if err != nil {
 					return fmt.Errorf("Batch-AllocSet() failed, err: %v", err)
 				}
 				cursor++
+				itemsWritten++
 			}
 
 			m.Lock()
@@ -277,7 +290,7 @@ func invokeImport(jsonStr string, dir string) error {
 	<-ch
 
 	fmt.Printf("DONE! .. Wrote %d key-values, in %d batch(es)\n",
-		len(data), numBatches)
+		itemsWritten, numBatches)
 
 	return nil
 }

@@ -54,7 +54,7 @@ func invokeHistStats(dirs []string) error {
 
 		snap, err := store.Snapshot()
 		if err != nil || snap == nil {
-			fmt.Errorf("Store-Snapshot() API failed, err: %v", err)
+			return fmt.Errorf("Store-Snapshot() API failed, err: %v", err)
 		}
 
 		iter, err := snap.StartIterator(nil, nil, moss.IteratorOptions{})
