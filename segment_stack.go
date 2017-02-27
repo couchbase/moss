@@ -227,7 +227,7 @@ func (ss *segmentStack) ensureFullySorted() {
 }
 
 func (ss *segmentStack) isEmpty() bool {
-	if len(ss.a) > 1 {
+	if len(ss.a) > 0 {
 		return false
 	}
 	for _, childSegStack := range ss.childSegStacks {

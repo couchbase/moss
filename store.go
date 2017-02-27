@@ -165,12 +165,13 @@ func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
 	footer := &Footer{refs: 1, incarNum: ss.incarNum}
 
 	numSegmentLocs := len(ss.a)
+	var segmentLocs []SegmentLoc
 	if storeFooter != nil {
 		numSegmentLocs += len(storeFooter.SegmentLocs)
-	}
-	segmentLocs := make([]SegmentLoc, 0, numSegmentLocs)
-	if storeFooter != nil {
-		segmentLocs = append(segmentLocs, s.footer.SegmentLocs...)
+		segmentLocs = make([]SegmentLoc, 0, numSegmentLocs)
+		segmentLocs = append(segmentLocs, storeFooter.SegmentLocs...)
+	} else {
+		segmentLocs = make([]SegmentLoc, 0, numSegmentLocs)
 	}
 	footer.SegmentLocs = segmentLocs
 
@@ -179,7 +180,7 @@ func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
 		var storeChildFooter *Footer
 		if storeFooter != nil && storeFooter.ChildFooters != nil {
 			var exists bool
-			storeChildFooter, exists = footer.ChildFooters[cName]
+			storeChildFooter, exists = storeFooter.ChildFooters[cName]
 			if exists {
 				if storeChildFooter.incarNum != childStack.incarNum {
 					// This is a special case of deletion & recreate where an
@@ -215,6 +216,11 @@ func (s *Store) persistSegments(ss *segmentStack, footer *Footer,
 	}
 
 	for _, segment := range ss.a {
+		if segment.Len() <= 0 {
+			// With multiple child collections it is possible that some child
+			// collections segments are empty. Ok to skip these empty segments.
+			continue
+		}
 		segmentLoc, err := s.persistSegment(file, segment)
 		if err != nil {
 			return err

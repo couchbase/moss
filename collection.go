@@ -340,7 +340,9 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 	rv.incarNum = m.incarNum
 
 	if b != nil {
-		rv.a = append(rv.a, b.segment)
+		if b.Len() > 0 { // Current segment can be empty if it has just 1 child
+			rv.a = append(rv.a, b.segment) // collection batch.
+		}
 
 		for cName, cBatch := range b.childBatches {
 			if cBatch == deletedChildBatchMarker { // child1 in diagram above.

@@ -267,7 +267,7 @@ func (m *collection) mergerNotifyPersister() {
 	m.m.Lock()
 
 	if m.stackDirtyBase == nil &&
-		m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0 {
+		m.stackDirtyMid != nil && !m.stackDirtyMid.isEmpty() {
 		atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
 
 		m.stackDirtyBase = m.stackDirtyMid
