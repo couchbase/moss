@@ -131,7 +131,7 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 
 func (ss *segmentStack) mergeInto(minSegmentLevel, maxSegmentHeight int,
 	dest SegmentMutator, base *segmentStack, includeDeletions, optimizeTail bool,
-	cancelCh chan error) error {
+	cancelCh chan struct{}) error {
 	cancelCheckEvery := ss.options.MergerCancelCheckEvery
 	if cancelCheckEvery <= 0 {
 		cancelCheckEvery = DefaultCollectionOptions.MergerCancelCheckEvery
@@ -156,8 +156,8 @@ OUTER:
 	for i := 0; true; i++ {
 		if cancelCh != nil && i%cancelCheckEvery == 0 {
 			select {
-			case cancelErr := <-cancelCh:
-				return cancelErr
+			case <-cancelCh:
+				return ErrAborted
 			default:
 				// NO-OP.
 			}

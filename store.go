@@ -356,6 +356,9 @@ func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err err
 	if !ok {
 		return rv, fmt.Errorf("store: can only persist SegmentPersister type")
 	}
+	if s.IsAborted() {
+		return rv, ErrAborted
+	}
 	return segPersister.Persist(file)
 }
 
@@ -447,6 +450,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			footer:       emptyFooter,
 			nextFNameSeq: 1,
 			histograms:   histograms,
+			abortCh:      make(chan struct{}),
 		}, nil
 	}
 
@@ -495,6 +499,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			footer:       footer,
 			nextFNameSeq: maxFNameSeq + 1,
 			histograms:   histograms,
+			abortCh:      make(chan struct{}),
 		}, nil
 	}
 

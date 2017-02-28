@@ -45,6 +45,14 @@ type Store struct {
 	maxCompactionIncreaseBytes   uint64 // Max file size increase from any compaction
 
 	histograms ghistogram.Histograms // Histograms from store operations
+	abortCh    chan struct{}         // Forced close/abort channel
+}
+
+// StoreCloseExOptions represents store CloseEx options.
+type StoreCloseExOptions struct {
+	// Abort means stop as soon as possible, even if data might be lost,
+	// mutations not yet persisted might be lost.
+	Abort bool
 }
 
 // StoreOptions are provided to OpenStore().
@@ -209,19 +217,33 @@ func (s *Store) AddRef() {
 
 func (s *Store) Close() error {
 	s.m.Lock()
-
+	defer s.m.Unlock()
 	s.refs--
-	if s.refs > 0 {
-		s.m.Unlock()
+	if s.refs > 0 || s.footer == nil {
 		return nil
 	}
 
 	footer := s.footer
 	s.footer = nil
-
-	s.m.Unlock()
-
 	return footer.Close()
+}
+
+// CloseEx attempts a forced close with options
+func (s *Store) CloseEx(options StoreCloseExOptions) error {
+	if options.Abort {
+		close(s.abortCh)
+	}
+	return s.Close()
+}
+
+// IsAborted returns whether the store operations are aborted.
+func (s *Store) IsAborted() bool {
+	select {
+	case <-s.abortCh:
+		return true
+	default:
+		return false
+	}
 }
 
 // --------------------------------------------------------

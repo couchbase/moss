@@ -131,6 +131,9 @@ var ErrKeyTooLarge = errors.New("key-too-large")
 // ErrValueTooLarge is returned when the length of the value exceeds the limit of 2^28.
 var ErrValueTooLarge = errors.New("value-too-large")
 
+// ErrAborted is returned when any operations are aborted.
+var ErrAborted = errors.New("operation-aborted")
+
 // A Collection represents an ordered mapping of key-val entries,
 // where a Collection is snapshot'able and atomically updatable.
 type Collection interface {
@@ -280,7 +283,7 @@ var DefaultCollectionOptions = CollectionOptions{
 	MergeOperator:          nil,
 	MinMergePercentage:     0.8,
 	MaxPreMergerBatches:    10,
-	MergerCancelCheckEvery: 1024 * 1024,
+	MergerCancelCheckEvery: 10000,
 	Debug: 0,
 	Log:   nil,
 }

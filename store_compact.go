@@ -267,7 +267,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 		return err
 	}
 
-	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, false, false, nil)
+	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, false, false, s.abortCh)
 	if err != nil {
 		return nil, onError(err)
 	}
