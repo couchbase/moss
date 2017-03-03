@@ -768,7 +768,7 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 
 	seg, ok := store2.footer.ss.a[0].(*segment)
 	if !ok {
-		t.Errorf("expected segment")
+		t.Fatalf("expected segment")
 	}
 	if seg.kvs == nil || len(seg.kvs) <= 0 {
 		t.Errorf("expected seg.kvs")
