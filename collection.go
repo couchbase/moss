@@ -371,7 +371,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				// child2 from existing stackDirtyTop in diagram above.
 				prevChildSegStack = curStackTop.childSegStacks[cName]
 			}
-			// Recursively merge & build the child collection batches..
+			// Recursively merge & build the child collection batches.
 			rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(
 				cBatch, prevChildSegStack)
 		}

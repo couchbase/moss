@@ -114,7 +114,7 @@ func childCollectionLoader(m *collection, childName string,
 				return
 			}
 
-			// Also create a child batch..
+			// also create a child batch
 			childB, err := b.NewChildCollectionBatch(childName,
 				BatchOptions{0, 0})
 			if err != nil {
@@ -262,7 +262,7 @@ func testChildCollections(t *testing.T, args *collTestParams) {
 	ss.Close()      // top level close will not auto-close child snapshots.
 
 	// ----------------------------------------------------
-	// Now begin parallel collection load with child collections..
+	// Now begin parallel collection load with child collections.
 
 	args.doneCh = make(chan bool, args.numChildren)
 	for i := 0; i < args.numChildren; i++ {

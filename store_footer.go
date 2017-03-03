@@ -227,7 +227,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 
 func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 	mrefs []*mmapRef) (mrefsSoFar []*mmapRef, err error) {
-	// Recursively load the childFooters first..
+	// Recursively load the childFooters first.
 	for _, childFooter := range f.ChildFooters {
 		mrefs, err = childFooter.doLoadSegments(options, fref, mrefs)
 		if err != nil {

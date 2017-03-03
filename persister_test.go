@@ -257,7 +257,7 @@ func runTestPersister(t *testing.T, numItems int) {
 		t.Fatalf("error creating new batch: %v", err)
 	}
 
-	// Also create a child batch..
+	// also create a child batch
 	childB, err := b.NewChildCollectionBatch("child1", BatchOptions{0, 0})
 	if err != nil {
 		t.Fatalf("error creating new child batch: %v", err)
