@@ -25,6 +25,7 @@ var BASIC_SEGMENT_KIND = "a"
 
 func init() {
 	SegmentLoaders[BASIC_SEGMENT_KIND] = loadBasicSegment
+	SegmentPersisters[BASIC_SEGMENT_KIND] = persistBasicSegment
 }
 
 // A SegmentCursor represents a handle for iterating through consecutive
@@ -91,7 +92,7 @@ type SegmentMutator interface {
 
 // A SegmentPersister represents a segment that can be persisted.
 type SegmentPersister interface {
-	Persist(file File) (SegmentLoc, error)
+	Persist(file File, options *StoreOptions) (SegmentLoc, error)
 }
 
 // A segment is a basic implementation of the segment related
@@ -517,12 +518,76 @@ func (a *segment) doSort() {
 
 // Persist persists a basic segment, and allows a segment to meet the
 // SegmentPersister interface.
-func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
+func (seg *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, err error) {
 	finfo, err := file.Stat()
 	if err != nil {
 		return rv, err
 	}
 	pos := finfo.Size()
+
+	persistKind := DefaultPersistKind
+	if options.PersistKind != "" {
+		persistKind = options.PersistKind
+	}
+
+	segmentPersister, exists := SegmentPersisters[persistKind]
+	if !exists || segmentPersister == nil {
+		return rv, fmt.Errorf("store: unknown PersistKind: %+v", persistKind)
+	}
+
+	rv, err = segmentPersister(seg, file, pos, nil)
+	return
+}
+
+// ------------------------------------------------------
+
+// loadBasicSegment loads a basic segment.
+func loadBasicSegment(sloc *SegmentLoc) (Segment, error) {
+	var kvs []uint64
+	var buf []byte
+	var err error
+
+	if sloc.KvsBytes > 0 {
+		if sloc.KvsBytes > uint64(len(sloc.mref.buf)) {
+			return nil, fmt.Errorf("store: load basic segment KvsOffset/KvsBytes too big,"+
+				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
+		}
+
+		kvsBytes := sloc.mref.buf[0:sloc.KvsBytes]
+		kvs, err = ByteSliceToUint64Slice(kvsBytes)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if sloc.BufBytes > 0 {
+		bufStart := sloc.BufOffset - sloc.KvsOffset
+		if bufStart+sloc.BufBytes > uint64(len(sloc.mref.buf)) {
+			return nil, fmt.Errorf("store: load basic segment BufOffset/BufBytes too big,"+
+				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
+		}
+
+		buf = sloc.mref.buf[bufStart : bufStart+sloc.BufBytes]
+	}
+	return &segment{
+		kvs:             kvs,
+		buf:             buf,
+		totOperationSet: sloc.TotOpsSet,
+		totOperationDel: sloc.TotOpsDel,
+		totKeyByte:      sloc.TotKeyByte,
+		totValByte:      sloc.TotValByte,
+	}, nil
+}
+
+// ------------------------------------------------------
+
+func persistBasicSegment(
+	s Segment, file File, pos int64, options *StoreOptions) (rv SegmentLoc, err error) {
+
+	seg, ok := s.(*segment)
+	if !ok {
+		return rv, fmt.Errorf("wrong segment type")
+	}
 
 	kvsBuf, err := Uint64SliceToByteSlice(seg.kvs)
 	if err != nil {
@@ -606,46 +671,6 @@ func (s *segment) Valid() error {
 	}
 
 	return nil
-}
-
-// ------------------------------------------------------
-
-// loadBasicSegment loads a basic segment.
-func loadBasicSegment(sloc *SegmentLoc) (Segment, error) {
-	var kvs []uint64
-	var buf []byte
-	var err error
-
-	if sloc.KvsBytes > 0 {
-		if sloc.KvsBytes > uint64(len(sloc.mref.buf)) {
-			return nil, fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
-				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
-		}
-
-		kvsBytes := sloc.mref.buf[0:sloc.KvsBytes]
-		kvs, err = ByteSliceToUint64Slice(kvsBytes)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if sloc.BufBytes > 0 {
-		bufStart := sloc.BufOffset - sloc.KvsOffset
-		if bufStart+sloc.BufBytes > uint64(len(sloc.mref.buf)) {
-			return nil, fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
-				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
-		}
-
-		buf = sloc.mref.buf[bufStart : bufStart+sloc.BufBytes]
-	}
-	return &segment{
-		kvs:             kvs,
-		buf:             buf,
-		totOperationSet: sloc.TotOpsSet,
-		totOperationDel: sloc.TotOpsDel,
-		totKeyByte:      sloc.TotKeyByte,
-		totValByte:      sloc.TotValByte,
-	}, nil
 }
 
 // ------------------------------------------------------

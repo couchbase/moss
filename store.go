@@ -221,7 +221,7 @@ func (s *Store) persistSegments(ss *segmentStack, footer *Footer,
 			// collections segments are empty. Ok to skip these empty segments.
 			continue
 		}
-		segmentLoc, err := s.persistSegment(file, segment)
+		segmentLoc, err := s.persistSegment(file, segment, s.options)
 		if err != nil {
 			return err
 		}
@@ -357,7 +357,7 @@ func checkHeader(file File) error {
 
 // --------------------------------------------------------
 
-func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err error) {
+func (s *Store) persistSegment(file File, segIn Segment, options *StoreOptions) (rv SegmentLoc, err error) {
 	segPersister, ok := segIn.(SegmentPersister)
 	if !ok {
 		return rv, fmt.Errorf("store: can only persist SegmentPersister type")
@@ -365,7 +365,7 @@ func (s *Store) persistSegment(file File, segIn Segment) (rv SegmentLoc, err err
 	if s.IsAborted() {
 		return rv, ErrAborted
 	}
-	return segPersister.Persist(file)
+	return segPersister.Persist(file, options)
 }
 
 // --------------------------------------------------------

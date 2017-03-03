@@ -87,7 +87,15 @@ type StoreOptions struct {
 	// removed during OpenStore().  Keeping old files might be useful
 	// when diagnosing file corruption cases.
 	KeepFiles bool
+
+	// Choose which Kind of segment to persist, if unspecified defaults
+	// to the value of DefaultPersistKind.
+	PersistKind string
 }
+
+// DefaultPersistKind determines which persistence Kind to choose when
+// none is specified in StoreOptions.
+var DefaultPersistKind = BASIC_SEGMENT_KIND
 
 // DefaultStoreOptions are the default store options when the
 // application hasn't provided a meaningful configuration value.
@@ -178,6 +186,16 @@ type SegmentLoaderFunc func(
 // should be immutable after process init()'ialization.  It is keyed
 // by SegmentLoc.Kind.
 var SegmentLoaders = map[string]SegmentLoaderFunc{}
+
+// A SegmentPersisterFunc is able to persist a segment to a file,
+// and return a SegmentLoc describing it.
+type SegmentPersisterFunc func(
+	s Segment, f File, pos int64, options *StoreOptions) (SegmentLoc, error)
+
+// SegmentPersisters is a registry of available segment persisters,
+// which should be immutable after process init()'ialization.  It is keyed
+// by SegmentLoc.Lind.
+var SegmentPersisters = map[string]SegmentPersisterFunc{}
 
 // --------------------------------------------------------
 
