@@ -131,6 +131,21 @@ case is the reader's Snapshot or Iterator may delay the reclaimation
 of large, old segments, where incoming mutations have obsoleted the
 immutable segments that the reader is still holding onto.
 
+Error handling
+==============
+
+Please note that the background goroutines of moss may run into
+errors, for example during optional persistence operations.  To be
+notified of these cases, your application can provide (highly
+recomended) an optional CollectionOptions.OnError callback func which
+will be invoked by moss.
+
+Logging
+=======
+
+Please see the optional CollectionOptions.Log callback func and the
+CollectionOptions.Debug flag.
+
 Performance
 ===========
 

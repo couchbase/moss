@@ -230,7 +230,9 @@ type CollectionOptions struct {
 	Log func(format string, a ...interface{}) `json:"-"`
 
 	// OnError is an optional callback invoked when the Collection
-	// encounters an error.
+	// encounters an error.  This might happen when the background
+	// goroutines of moss encounter errors, such as during segment
+	// merging or optional persistence operations.
 	OnError func(error) `json:"-"`
 
 	// OnEvent is an optional callback invoked on Collection related
