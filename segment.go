@@ -457,7 +457,33 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 // ------------------------------------------------------
 
 // loadBasicSegment loads a basic segment.
-func loadBasicSegment(sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, error) {
+func loadBasicSegment(sloc *SegmentLoc) (Segment, error) {
+	var kvs []uint64
+	var buf []byte
+	var err error
+
+	if sloc.KvsBytes > 0 {
+		if sloc.KvsBytes > uint64(len(sloc.mref.buf)) {
+			return nil, fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
+				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
+		}
+
+		kvsBytes := sloc.mref.buf[0:sloc.KvsBytes]
+		kvs, err = ByteSliceToUint64Slice(kvsBytes)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if sloc.BufBytes > 0 {
+		bufStart := sloc.BufOffset - sloc.KvsOffset
+		if bufStart+sloc.BufBytes > uint64(len(sloc.mref.buf)) {
+			return nil, fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
+				" len(mref.buf): %d, sloc: %+v", len(sloc.mref.buf), sloc)
+		}
+
+		buf = sloc.mref.buf[bufStart : bufStart+sloc.BufBytes]
+	}
 	return &segment{
 		kvs:             kvs,
 		buf:             buf,

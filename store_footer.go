@@ -291,39 +291,10 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			return mrefs, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
 		}
 
-		var kvs []uint64
-		var buf []byte
-
-		if sloc.KvsBytes > 0 {
-			if sloc.KvsBytes > uint64(len(mref.buf)) {
-				return mrefs, fmt.Errorf("store_footer: KvsOffset/KvsBytes too big,"+
-					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
-					" f.SegmentLocs: %+v, i: %d, options: %v",
-					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
-			}
-
-			kvsBytes := mref.buf[0:sloc.KvsBytes]
-			kvs, err = ByteSliceToUint64Slice(kvsBytes)
-			if err != nil {
-				return mrefs, err
-			}
-		}
-
-		if sloc.BufBytes > 0 {
-			bufStart := sloc.BufOffset - sloc.KvsOffset
-			if bufStart+sloc.BufBytes > uint64(len(mref.buf)) {
-				return mrefs, fmt.Errorf("store_footer: BufOffset/BufBytes too big,"+
-					" len(mref.buf): %d, sloc: %+v, footer: %+v,"+
-					" f.SegmentLocs: %+v, i: %d, options: %v",
-					len(mref.buf), sloc, f, f.SegmentLocs, i, options)
-			}
-
-			buf = mref.buf[bufStart : bufStart+sloc.BufBytes]
-		}
-
-		seg, err := segmentLoader(sloc, kvs, buf)
+		seg, err := segmentLoader(sloc)
 		if err != nil {
-			return mrefs, err
+			return mrefs, fmt.Errorf("store: segmentLoader failed, footer: %+v,"+
+				" f.SegmentLocs: %+v, i: %d, options: %v err: %+v", f, f.SegmentLocs, i, options, err)
 		}
 
 		a[i] = seg

@@ -172,7 +172,7 @@ func (slocs SegmentLocs) Close() error {
 
 // A SegmentLoaderFunc is able to load a segment from a SegmentLoc.
 type SegmentLoaderFunc func(
-	sloc *SegmentLoc, kvs []uint64, buf []byte) (Segment, error)
+	sloc *SegmentLoc) (Segment, error)
 
 // SegmentLoaders is a registry of available segment loaders, which
 // should be immutable after process init()'ialization.  It is keyed
