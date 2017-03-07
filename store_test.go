@@ -766,39 +766,10 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 		t.Errorf("expected segStack2.lowerLevelSnapshot nil")
 	}
 
-	seg, ok := store2.footer.ss.a[0].(*segment)
-	if !ok {
-		t.Fatalf("expected segment")
-	}
-	if seg.kvs == nil || len(seg.kvs) <= 0 {
-		t.Errorf("expected seg.kvs")
-	}
-	if seg.buf == nil || len(seg.buf) <= 0 {
-		t.Errorf("expected seg.buf")
-	}
-	for pos := 0; pos < seg.Len(); pos++ {
-		x := pos * 2
-		if x < 0 || x >= len(seg.kvs) {
-			t.Errorf("pos to x error")
-		}
-
-		opklvl := seg.kvs[x]
-
-		operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
-		if operation == 0 {
-			t.Errorf("should have some nonzero op")
-		}
-
-		kstart := int(seg.kvs[x+1])
-		vstart := kstart + keyLen
-
-		if kstart+keyLen > len(seg.buf) {
-			t.Errorf("key larger than buf, pos: %d, kstart: %d, keyLen: %d, len(buf): %d, op: %x",
-				pos, kstart, keyLen, len(seg.buf), operation)
-		}
-		if vstart+valLen > len(seg.buf) {
-			t.Errorf("val larger than buf, pos: %d, vstart: %d, valLen: %d, len(buf): %d, op: %x",
-				pos, vstart, valLen, len(seg.buf), operation)
+	if seg, ok := store2.footer.ss.a[0].(SegmentValidater); ok {
+		err = seg.Valid()
+		if err != nil {
+			t.Fatalf("expected valid segment, got: %v", err)
 		}
 	}
 

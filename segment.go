@@ -53,6 +53,17 @@ type Segment interface {
 	RequestSort(synchronous bool) bool
 }
 
+// SegmentValidater is an optional interface that can be implemented by
+// any Segment to allow additional validation in test cases.  The
+// method of this interface is NOT invoked during the normal
+// runtime usage of a Segment.
+type SegmentValidater interface {
+
+	// Valid examines the state of the segment, any problem is returned
+	// as an error.
+	Valid() error
+}
+
 // A SegmentMutator represents the mutation methods of a segment.
 type SegmentMutator interface {
 	Mutate(operation uint64, key, val []byte) error
@@ -452,6 +463,42 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 		TotKeyByte: seg.totKeyByte,
 		TotValByte: seg.totValByte,
 	}, nil
+}
+
+func (s *segment) Valid() error {
+	if s.kvs == nil || len(s.kvs) <= 0 {
+		return fmt.Errorf("expected kvs")
+	}
+	if s.buf == nil || len(s.buf) <= 0 {
+		return fmt.Errorf("expected buf")
+	}
+	for pos := 0; pos < s.Len(); pos++ {
+		x := pos * 2
+		if x < 0 || x >= len(s.kvs) {
+			return fmt.Errorf("pos to x error")
+		}
+
+		opklvl := s.kvs[x]
+
+		operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
+		if operation == 0 {
+			return fmt.Errorf("should have some nonzero op")
+		}
+
+		kstart := int(s.kvs[x+1])
+		vstart := kstart + keyLen
+
+		if kstart+keyLen > len(s.buf) {
+			return fmt.Errorf("key larger than buf, pos: %d, kstart: %d, keyLen: %d, len(buf): %d, op: %x",
+				pos, kstart, keyLen, len(s.buf), operation)
+		}
+		if vstart+valLen > len(s.buf) {
+			return fmt.Errorf("val larger than buf, pos: %d, vstart: %d, valLen: %d, len(buf): %d, op: %x",
+				pos, vstart, valLen, len(s.buf), operation)
+		}
+	}
+
+	return nil
 }
 
 // ------------------------------------------------------
