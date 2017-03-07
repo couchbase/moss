@@ -38,6 +38,13 @@ type Segment interface {
 	// NumKeyValBytes returns the number of bytes used for key-val data.
 	NumKeyValBytes() (uint64, uint64)
 
+	// FindKeyPos() returns the logical entry position for
+	// the given key.  If the key does not exist in this segment
+	// the return value will be -1.  With segment keys of [b, d, f],
+	// looking for 'c' will return -1.  Looking for 'd' will return 1.
+	// Looking for 'g' will return -1.  Looking for 'a' will return -1.
+	FindKeyPos(key []byte) int
+
 	// FindStartKeyInclusivePos() returns the logical entry position for
 	// the given (inclusive) start key.  With segment keys of [b, d, f],
 	// looking for 'c' will return 1.  Looking for 'd' will return 1.
@@ -308,6 +315,29 @@ func (a *segment) Less(i, j int) bool {
 }
 
 // ------------------------------------------------------
+
+func (a *segment) FindKeyPos(key []byte) int {
+	kvs := a.kvs
+	buf := a.buf
+
+	i, j := 0, a.Len()
+	for i < j {
+		h := i + (j-i)/2 // Keep i <= h < j.
+		x := h * 2
+		klen := int((maskKeyLength & kvs[x]) >> 32)
+		kbeg := int(kvs[x+1])
+		cmp := bytes.Compare(buf[kbeg:kbeg+klen], key)
+		if cmp == 0 {
+			return h
+		} else if cmp < 0 {
+			i = h + 1
+		} else {
+			j = h
+		}
+	}
+
+	return -1
+}
 
 // FindStartKeyInclusivePos() returns the logical entry position for
 // the given (inclusive) start key.  With segment keys of [b, d, f],

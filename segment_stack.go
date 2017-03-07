@@ -11,10 +11,7 @@
 
 package moss
 
-import (
-	"bytes"
-	"sync"
-)
+import "sync"
 
 // A segmentStack is a stack of segments, where higher (later) entries
 // in the stack have higher precedence, and should "shadow" any
@@ -86,9 +83,10 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 		for seg := segStart; seg >= 0; seg-- {
 			b := ss.a[seg]
 
-			operation, k, v :=
-				b.GetOperationKeyVal(b.FindStartKeyInclusivePos(key))
-			if k != nil && bytes.Equal(k, key) {
+			pos := b.FindKeyPos(key)
+			if pos >= 0 {
+				operation, k, v :=
+					b.GetOperationKeyVal(b.FindStartKeyInclusivePos(key))
 				if operation == OperationDel {
 					return nil, nil
 				}
