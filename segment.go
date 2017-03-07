@@ -321,7 +321,10 @@ func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
 		x := h * 2
 		klen := int((maskKeyLength & kvs[x]) >> 32)
 		kbeg := int(kvs[x+1])
-		if bytes.Compare(buf[kbeg:kbeg+klen], startKeyInclusive) < 0 {
+		cmp := bytes.Compare(buf[kbeg:kbeg+klen], startKeyInclusive)
+		if cmp == 0 {
+			return h
+		} else if cmp < 0 {
 			i = h + 1
 		} else {
 			j = h
