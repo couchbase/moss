@@ -159,10 +159,13 @@ type Collection interface {
 	// not reused after ExecuteBatch() returns.
 	ExecuteBatch(b Batch, writeOptions WriteOptions) error
 
-	// Stats returns stats for this collection.
+	// Stats returns stats for this collection.  Note that stats might
+	// be updated asynchronously.
 	Stats() (*CollectionStats, error)
 
-	// Histograms returns a snapshot of the histograms for this collection.
+	// Histograms returns a snapshot of the histograms for this
+	// collection.  Note that histograms might be updated
+	// asynchronously.
 	Histograms() ghistogram.Histograms
 }
 

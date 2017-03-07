@@ -108,6 +108,8 @@ type segment struct {
 	totOperationMerge uint64
 	totKeyByte        uint64
 	totValByte        uint64
+
+	rootCollection *collection // Non-nil when segment is from a batch.
 }
 
 // See the OperationXxx consts.
@@ -391,7 +393,7 @@ func (a *segment) RequestSort(synchronous bool) bool {
 
 	iAmTheSorter := <-a.needSorterCh
 	if iAmTheSorter {
-		sort.Sort(a)
+		a.doSort()
 		close(a.waitSortedCh) // Signal any waiters.
 		return true
 	}
@@ -406,7 +408,11 @@ func (a *segment) RequestSort(synchronous bool) bool {
 
 // doSort() will immediately sort this segment.
 func (a *segment) doSort() {
+	// After sorting, the segment is immutable and then safe for
+	// concurrent reads.
 	sort.Sort(a)
+
+	go a.rootCollection.updateStats(a)
 }
 
 // ------------------------------------------------------
@@ -559,44 +565,44 @@ type batch struct {
 var deletedChildBatchMarker = &batch{}
 
 // newBatch() allocates a segment with hinted amount of resources.
-func newBatch(collectionName string, options BatchOptions) (
+func newBatch(rootCollection *collection, options BatchOptions) (
 	*batch, error) {
 	return &batch{
 		segment: &segment{
-			kvs: make([]uint64, 0, options.TotalOps*2),
-			buf: make([]byte, 0, options.TotalKeyValBytes),
+			kvs:            make([]uint64, 0, options.TotalOps*2),
+			buf:            make([]byte, 0, options.TotalKeyValBytes),
+			rootCollection: rootCollection,
 		},
-		childBatches: nil, // created later on demand
+		childBatches: nil, // Created later on demand.
 	}, nil
 }
 
-func (seg *batch) NewChildCollectionBatch(collectionName string,
-	options BatchOptions) (b Batch, err error) {
+func (b *batch) NewChildCollectionBatch(collectionName string,
+	options BatchOptions) (Batch, error) {
 	if len(collectionName) == 0 {
 		return nil, ErrBadCollectionName
 	}
 
-	childBatch, err := newBatch(collectionName, options)
+	childBatch, err := newBatch(b.rootCollection, options)
 
-	if seg.childBatches == nil { // First creation of child batch.
-		seg.childBatches = make(map[string]*batch)
+	if b.childBatches == nil { // First creation of child batch.
+		b.childBatches = make(map[string]*batch)
 	}
+	b.childBatches[collectionName] = childBatch
 
-	seg.childBatches[collectionName] = childBatch
-
-	// Directly return the child batch, allowing recursive recreations.
 	return childBatch, err
 }
 
-func (seg *batch) DelChildCollection(collectionName string) error {
+func (b *batch) DelChildCollection(collectionName string) error {
 	if len(collectionName) == 0 {
 		return ErrNoSuchCollection
 	}
-	if seg.childBatches == nil { // No previous child batches seen.
-		seg.childBatches = make(map[string]*batch)
+
+	if b.childBatches == nil { // No previous child batches seen.
+		b.childBatches = make(map[string]*batch)
 	}
 	// Load the parent batch with this batch having special signature.
-	seg.childBatches[collectionName] = deletedChildBatchMarker
+	b.childBatches[collectionName] = deletedChildBatchMarker
 
 	return nil
 }
@@ -631,7 +637,7 @@ func (b *batch) doSort() {
 	if b == deletedChildBatchMarker {
 		return
 	}
-	sort.Sort(b.segment)
+	b.segment.doSort()
 	for _, childBatch := range b.childBatches {
 		childBatch.doSort()
 	}

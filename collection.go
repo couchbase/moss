@@ -215,7 +215,7 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 	atomic.AddUint64(&m.stats.TotNewBatchTotalOps, uint64(totalOps))
 	atomic.AddUint64(&m.stats.TotNewBatchTotalKeyValBytes, uint64(totalKeyValBytes))
 
-	return newBatch("", BatchOptions{totalOps, totalKeyValBytes})
+	return newBatch(m, BatchOptions{totalOps, totalKeyValBytes})
 }
 
 // ExecuteBatch atomically incorporates the provided Batch into the
@@ -307,9 +307,6 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	m.histograms["ExecuteBatchUsecs"].Add(
 		uint64(time.Since(startTime).Nanoseconds()/1000), 1)
-
-	// Spin off a routine to update stats asynchronously
-	go m.updateStats(b)
 
 	return nil
 }
@@ -409,13 +406,11 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 
 // ------------------------------------------------------
 
-// Helper function to update stats/histograms
-func (m *collection) updateStats(b *batch) {
-	if m.isClosed() {
+// Update stats/histograms given an immutable segment.
+func (m *collection) updateStats(a *segment) {
+	if m == nil || m.isClosed() {
 		return
 	}
-
-	a := b.segment
 
 	m.histograms["ExecuteBatchOpsCount"].Add(uint64(a.Len()), 1)
 	m.histograms["ExecuteBatchBytes"].Add(a.totKeyByte+a.totValByte, 1)

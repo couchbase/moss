@@ -1860,8 +1860,8 @@ func TestStoreCollHistograms(t *testing.T) {
 	// Open store, coll and write about 10000 items
 	store, coll := openStoreAndWriteNItems(
 		t, tmpDir, itemCount, batchCount, false)
-	defer coll.Close()
-	defer store.Close()
+	coll.Close()
+	store.Close()
 
 	shistograms := store.Histograms()
 	num_histograms := len(shistograms)
