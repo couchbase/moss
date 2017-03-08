@@ -126,7 +126,7 @@ func init() {
 	pct := 100 / len(actionMap)
 	for _, actionId := range ids {
 		runningPercentActions = append(runningPercentActions,
-			smat.PercentAction{pct, smat.ActionID(actionId)})
+			smat.PercentAction{Percent: pct, Action: smat.ActionID(actionId)})
 	}
 
 	actionMap[smat.ActionID('S')] = action("SETUP", setupFunc)
