@@ -415,15 +415,24 @@ func (m *collection) updateStats(a *segment) {
 	m.histograms["ExecuteBatchOpsCount"].Add(uint64(a.Len()), 1)
 	m.histograms["ExecuteBatchBytes"].Add(a.totKeyByte+a.totValByte, 1)
 
-	mutationKeyBytesHisto := m.histograms["MutationKeyBytes"]
-	mutationValBytesHisto := m.histograms["MutationValBytes"]
-
-	for i := 0; i < len(a.kvs); i += 2 {
-		opklvl := a.kvs[i]
-		_, keylen, vallen := decodeOpKeyLenValLen(opklvl)
-		mutationKeyBytesHisto.Add(uint64(keylen), 1)
-		mutationValBytesHisto.Add(uint64(vallen), 1)
+	recordKeyLens := func(hist ghistogram.HistogramMutator) {
+		for i := 0; i < len(a.kvs); i += 2 {
+			opklvl := a.kvs[i]
+			_, length, _ := decodeOpKeyLenValLen(opklvl)
+			hist.Add(uint64(length), 1)
+		}
 	}
+
+	recordValLens := func(hist ghistogram.HistogramMutator) {
+		for i := 0; i < len(a.kvs); i += 2 {
+			opklvl := a.kvs[i]
+			_, _, length := decodeOpKeyLenValLen(opklvl)
+			hist.Add(uint64(length), 1)
+		}
+	}
+
+	m.histograms["MutationKeyBytes"].CallSyncEx(recordKeyLens)
+	m.histograms["MutationValBytes"].CallSyncEx(recordValLens)
 }
 
 // ------------------------------------------------------
