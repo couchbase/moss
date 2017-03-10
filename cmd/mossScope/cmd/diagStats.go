@@ -17,6 +17,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/couchbase/moss"
 	"github.com/spf13/cobra"
@@ -86,8 +87,13 @@ func invokeDiagStats(dirs []string) error {
 			fmt.Printf("{\"%s\":%s}", dir, string(jBuf))
 		} else {
 			fmt.Println(dir)
-			for k, v := range stats {
-				fmt.Printf("%35s : %v\n", k, v)
+			var keys []string
+			for k := range stats {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Printf("%35s : %v\n", k, stats[k])
 			}
 			fmt.Println()
 		}
