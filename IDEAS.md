@@ -20,7 +20,6 @@ todo / future ideas
   * API for synchronous storage
   * non-batch API
 * benchmarks against other KV stores
-* tool to examine/diagnose mossStore files (e.g., finishing up the "mossScope" tool)
 * incremental compaction, as opposed to the existing full compaction
   * hole punching / punch-line algorithm?
   * block reuse algorithm?
