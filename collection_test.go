@@ -1324,3 +1324,84 @@ func TestCollectionStatsClose(t *testing.T) {
 		t.Errorf("expected no dirty segments after close, %#v", s)
 	}
 }
+
+func TestCollectionGet(t *testing.T) {
+	m, _ := NewCollection(CollectionOptions{})
+	m.Start()
+
+	b, err := m.NewBatch(5, 5*4)
+	if err != nil {
+		t.Errorf("Expected NewBatch() to succeed!")
+	}
+
+	for i := 0; i < 5; i++ {
+		k := []byte(fmt.Sprintf("k%d", i))
+		v := []byte(fmt.Sprintf("v%d", i))
+		b.Set(k, v)
+	}
+
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("Expected ExecuteBatch() to succeed!")
+	}
+
+	b, err = m.NewBatch(3, 3*4)
+	if err != nil {
+		t.Errorf("Expected NewBatch() to succeed!")
+	}
+
+	for i := 0; i < 3; i++ {
+		k := []byte(fmt.Sprintf("k%d", i))
+		v := []byte(fmt.Sprintf("n%d", i))
+		b.Set(k, v)
+	}
+
+	err = m.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("Expected ExecuteBatch() to succeed!")
+	}
+
+	val, err := m.Get([]byte("k1"), ReadOptions{})
+	if err != nil || val == nil {
+		t.Errorf("Expected Get() to succeed!")
+	}
+	if string(val[:]) != "n1" {
+		t.Errorf("Unexpected value for k1")
+	}
+
+	val, err = m.Get([]byte("k2"), ReadOptions{})
+	if err != nil || val == nil {
+		t.Errorf("Expected Get() to succeed!")
+	}
+	if string(val[:]) != "n2" {
+		t.Errorf("Unexpected value for k2")
+	}
+
+	val, err = m.Get([]byte("k4"), ReadOptions{})
+	if err != nil || val == nil {
+		t.Errorf("Expected Get() to succeed!")
+	}
+	if string(val[:]) != "v4" {
+		t.Errorf("Unexpected value for k1")
+	}
+
+	val, err = m.Get([]byte("k6"), ReadOptions{})
+	if val != nil {
+		t.Errorf("Expected Get() to fail!")
+	}
+
+	m.Close()
+
+	s, err := m.Stats()
+	if err != nil || s == nil {
+		t.Errorf("Expect some stats")
+	}
+
+	if s.TotGet != 4 {
+		t.Errorf("Unexpected number of Gets attempted!")
+	}
+
+	if s.TotGetErr != 0 {
+		t.Errorf("Unexpected number of Get errors!")
+	}
+}

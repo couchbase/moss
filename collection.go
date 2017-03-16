@@ -203,6 +203,24 @@ func (m *collection) Snapshot() (Snapshot, error) {
 	return rv, nil
 }
 
+// Get retrieves a value by iterating over all the segments within
+// the collection, if the key is not found a nil val is returned.
+func (m *collection) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	if m.isClosed() {
+		return nil, ErrClosed
+	}
+
+	atomic.AddUint64(&m.stats.TotGet, 1)
+
+	val, err := m.get(key, readOptions)
+
+	if err != nil {
+		atomic.AddUint64(&m.stats.TotGetErr, 1)
+	}
+
+	return val, err
+}
+
 // NewBatch returns a new Batch instance with hinted amount of
 // resources expected to be required.
 func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
@@ -536,6 +554,59 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	atomic.AddUint64(&m.stats.TotSnapshotInternalEnd, 1)
 
 	return rv, heightClean, heightDirtyBase, heightDirtyMid, heightDirtyTop
+}
+
+// get() retrieves a value by iterating over all the segment stacks,
+// and then the lower level snapshot of the collection in pursuit of
+// the key, if not found, a nil val is returned.
+func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	// Create a pointer to the lower level snapshot by incrementing it's ref
+	// count and then pointers to stackClean, stackDirtyBase, stackDirtyMid
+	// and stackDirtyTop for the collection within lock.
+
+	m.m.Lock()
+
+	lowerLevelSnapshot := m.lowerLevelSnapshot.addRef()
+	stackClean := m.stackClean
+	stackDirtyBase := m.stackDirtyBase
+	stackDirtyMid := m.stackDirtyMid
+	stackDirtyTop := m.stackDirtyTop
+
+	m.m.Unlock()
+
+	var val []byte
+	var err error
+
+	// Look for the key-value in the collection's segment stacks starting
+	// with the latest (stackDirtyTop), followed by stackDirtyMid,
+	// stackDirtyBase, stackClean and if still not found look for it in
+	// the lowerLevelSnapshot.
+
+	if stackDirtyTop != nil {
+		val, err = stackDirtyTop.Get(key, readOptions)
+	}
+
+	if val == nil && err == nil && stackDirtyMid != nil {
+		val, err = stackDirtyMid.Get(key, readOptions)
+	}
+
+	if val == nil && err == nil && stackDirtyBase != nil {
+		val, err = stackDirtyBase.Get(key, readOptions)
+	}
+
+	if val == nil && err == nil && stackClean != nil {
+		val, err = stackClean.Get(key, readOptions)
+	}
+
+	if lowerLevelSnapshot != nil {
+		if val == nil && err == nil {
+			val, err = lowerLevelSnapshot.Get(key, readOptions)
+		}
+
+		lowerLevelSnapshot.decRef()
+	}
+
+	return val, err
 }
 
 func (m *collection) getOrInitChildStack(ss *segmentStack,

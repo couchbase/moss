@@ -150,6 +150,10 @@ type Collection interface {
 	// Snapshot returns a stable Snapshot of the key-value entries.
 	Snapshot() (Snapshot, error)
 
+	// Get retrieves a value from the collection for a given key
+	// and returns nil if the key is not found.
+	Get(key []byte, readOptions ReadOptions) ([]byte, error)
+
 	// NewBatch returns a new Batch instance with preallocated
 	// resources.  See the Batch.Alloc() method.
 	NewBatch(totalOps, totalKeyValBytes int) (Batch, error)
@@ -529,6 +533,9 @@ type CollectionStats struct {
 	TotSnapshotInternalBeg uint64
 	TotSnapshotInternalEnd uint64
 	TotSnapshotEnd         uint64
+
+	TotGet    uint64
+	TotGetErr uint64
 
 	TotNewBatch                 uint64
 	TotNewBatchTotalOps         uint64
