@@ -32,6 +32,7 @@ Features
 * unit tests
 * fuzz tests via go-fuzz & smat (github.com/mschoch/smat);
   see README-smat.md
+* moss store's diagnostic tool: [mossScope](https://github.com/couchbase/mossScope)
 
 License
 =======
