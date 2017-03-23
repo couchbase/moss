@@ -63,6 +63,9 @@ Example
     val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
     valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
 
+    // A Get can also be issued directly against the collection
+    val1, err := c.Get([]byte("car-1"), ropts) // val1 == []byte("honda").
+
 For persistence, you can use...
 
     store, collection, err := moss.OpenStoreCollection(directoryPath,
