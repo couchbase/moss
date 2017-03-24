@@ -85,8 +85,7 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 
 			pos := b.FindKeyPos(key)
 			if pos >= 0 {
-				operation, k, v :=
-					b.GetOperationKeyVal(b.FindStartKeyInclusivePos(key))
+				operation, k, v := b.GetOperationKeyVal(pos)
 				if operation == OperationDel {
 					return nil, nil
 				}
