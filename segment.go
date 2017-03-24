@@ -529,8 +529,8 @@ func (seg *segment) Persist(file File) (rv SegmentLoc, err error) {
 		return rv, err
 	}
 
-	kvsPos := pageAlign(pos)
-	bufPos := pageAlign(kvsPos + int64(len(kvsBuf)))
+	kvsPos := pageAlignCeil(pos)
+	bufPos := pageAlignCeil(kvsPos + int64(len(kvsBuf)))
 
 	ioCh := make(chan ioResult)
 

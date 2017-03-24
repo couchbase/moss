@@ -59,7 +59,7 @@ func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 		return err
 	}
 
-	footerPos := pageAlign(finfo.Size())
+	footerPos := pageAlignCeil(finfo.Size())
 	footerLen := footerBegLen + len(jBuf) + footerEndLen
 
 	footerBuf := bytes.NewBuffer(make([]byte, 0, footerLen))
@@ -114,95 +114,102 @@ func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 // Footer, adding ref-counts to fref on success.
 func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 	pos int64) (*Footer, error) {
-	footerEnd := make([]byte, footerEndLen)
+	footerBeg := make([]byte, footerBegLen)
+
+	// Align pos to the start of a page (floor).
+	pos = pageAlignFloor(pos)
+
 	for {
-		for { // Scan backwards for STORE_MAGIC_END, which might be a potential footer.
-			if pos <= int64(footerBegLen+footerEndLen) {
+		for { // Scan the page for STORE_MAGIC_BEG, which might be a potential footer.
+			if pos <= 0 {
 				return nil, ErrNoValidFooter
 			}
-			n, err := fref.file.ReadAt(footerEnd, pos-int64(footerEndLen))
+			n, err := fref.file.ReadAt(footerBeg, pos)
 			if err != nil {
 				return nil, err
 			}
-			if n != footerEndLen {
-				return nil, fmt.Errorf("store: read footer too small")
-			}
-			if bytes.Equal(STORE_MAGIC_END, footerEnd[8+4:8+4+lenMagicEnd]) &&
-				bytes.Equal(STORE_MAGIC_END, footerEnd[8+4+lenMagicEnd:]) {
-				break
-			}
 
-			pos-- // TODO: optimizations to scan backwards faster.
+			if n == footerBegLen &&
+				bytes.Equal(STORE_MAGIC_BEG, footerBeg[:lenMagicBeg]) &&
+				bytes.Equal(STORE_MAGIC_BEG, footerBeg[lenMagicBeg:2*lenMagicBeg]) {
+				break
+			} // Else, file pos out of bounds likely.
+
+			// Move pos back by page size.
+			pos -= int64(STORE_PAGE_SIZE)
 		}
 
 		// Read and check the potential footer.
-		footerEndBuf := bytes.NewBuffer(footerEnd)
+		footerBegBuf := bytes.NewBuffer(footerBeg[2*lenMagicBeg:])
 
-		var offset int64
-		if err := binary.Read(footerEndBuf, STORE_ENDIAN, &offset); err != nil {
+		var version uint32
+		if err := binary.Read(footerBegBuf, STORE_ENDIAN, &version); err != nil {
 			return nil, err
+		}
+		if version != STORE_VERSION {
+			return nil, fmt.Errorf("store: version mismatch, "+
+				"current: %v != found: %v", STORE_VERSION, version)
 		}
 
 		var length uint32
-		if err := binary.Read(footerEndBuf, STORE_ENDIAN, &length); err != nil {
+		if err := binary.Read(footerBegBuf, STORE_ENDIAN, &length); err != nil {
 			return nil, err
 		}
 
-		if offset > 0 &&
-			offset < pos-int64(footerBegLen+footerEndLen) &&
-			length == uint32(pos-offset) {
-			data := make([]byte, pos-offset-int64(footerEndLen))
+		data := make([]byte, int64(length)-int64(footerBegLen))
 
-			n, err := fref.file.ReadAt(data, offset)
+		n, err := fref.file.ReadAt(data, pos+int64(footerBegLen))
+		if err != nil {
+			return nil, err
+		}
+
+		if n == len(data) &&
+			bytes.Equal(STORE_MAGIC_END, data[n-lenMagicEnd*2:n-lenMagicEnd]) &&
+			bytes.Equal(STORE_MAGIC_END, data[n-lenMagicEnd:]) {
+
+			content := int(length) - footerBegLen - footerEndLen
+			b := bytes.NewBuffer(data[content:])
+
+			var offset int64
+			if err := binary.Read(b, STORE_ENDIAN, &offset); err != nil {
+				return nil, err
+			}
+			if offset != pos {
+				return nil, fmt.Errorf("store: offset mismatch, "+
+					"wanted: %v != found: %v", offset, pos)
+			}
+
+			var length1 uint32
+			if err := binary.Read(b, STORE_ENDIAN, &length1); err != nil {
+				return nil, err
+			}
+			if length1 != length {
+				return nil, fmt.Errorf("store: length mismatch, "+
+					"wanted: %v != found: %v", length1, length)
+			}
+
+			f := &Footer{refs: 1, fileName: fileName, filePos: offset}
+
+			err = json.Unmarshal(data[:content], f)
 			if err != nil {
 				return nil, err
 			}
-			if n != len(data) {
-				return nil, fmt.Errorf("store: read footer data too small")
+
+			// json.Unmarshal would have just loaded the map.
+			// We now need to load the segments into the map.
+			// Recursively load the Child Footer segment stacks.
+			err = f.loadSegments(options, fref)
+			if err != nil {
+				return nil, err
 			}
 
-			if bytes.Equal(STORE_MAGIC_BEG, data[:lenMagicBeg]) &&
-				bytes.Equal(STORE_MAGIC_BEG, data[lenMagicBeg:2*lenMagicBeg]) {
-				b := bytes.NewBuffer(data[2*lenMagicBeg:])
+			return f, nil
+		}
+		// Else, invalid footer - STORE_MAGIC_END missing and/or file
+		// pos out of bounds.
 
-				var version uint32
-				if err := binary.Read(b, STORE_ENDIAN, &version); err != nil {
-					return nil, err
-				}
-				if version != STORE_VERSION {
-					return nil, fmt.Errorf("store: version mismatch, "+
-						"current: %v != found: %v", STORE_VERSION, version)
-				}
-
-				var length0 uint32
-				if err := binary.Read(b, STORE_ENDIAN, &length0); err != nil {
-					return nil, err
-				}
-				if length0 != length {
-					return nil, fmt.Errorf("store: length mismatch, "+
-						"wanted: %v != found: %v", length0, length)
-				}
-
-				f := &Footer{refs: 1, fileName: fileName, filePos: offset}
-
-				err = json.Unmarshal(data[2*lenMagicBeg+4+4:], f)
-				if err != nil {
-					return nil, err
-				}
-
-				// json.Unmarshal would have just loaded the map.
-				// We now need to load the segments into the map.
-				// Recursively load the Child Footer segment stacks.
-				err = f.loadSegments(options, fref)
-				if err != nil {
-					return nil, err
-				}
-
-				return f, nil
-			} // Else, perhaps file was unlucky in having STORE_MAGIC_END's.
-		} // Else, perhaps a persist file was stored in a file.
-
-		pos-- // Footer was invalid, so keep scanning.
+		// Footer was invalid, so keep scanning.
+		pos -= int64(STORE_PAGE_SIZE)
 	}
 }
 

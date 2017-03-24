@@ -245,8 +245,8 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 
 	stats := newSS.Stats()
 
-	kvsBegPos := pageAlign(pos)
-	bufBegPos := pageAlign(kvsBegPos + 1 + (int64(8+8) * int64(stats.CurOps)))
+	kvsBegPos := pageAlignCeil(pos)
+	bufBegPos := pageAlignCeil(kvsBegPos + 1 + (int64(8+8) * int64(stats.CurOps)))
 
 	compactionBufferPages := 0
 	if s.options != nil {

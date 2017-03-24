@@ -233,7 +233,7 @@ implementation called mossStore.  It follows an append-only design,
 where mossStore appends new segments and a "footer" to the end of a
 file, with page-aligned start offsets.  The footer contains metadata
 such as the offsets and lengths of the segments written to the file.
-See: store.go / SegmentLoc struct and pageAlign().
+See: store.go / SegmentLoc struct and pageAlignCeil().
 
 Once the file footer is appended, mossStore performs an mmap() to read
 the just-appended segments.  See: store_footer.go /

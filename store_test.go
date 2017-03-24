@@ -26,19 +26,35 @@ import (
 )
 
 func TestPageAlign(t *testing.T) {
-	if pageAlign(0) != 0 {
+	if pageAlignCeil(0) != 0 {
 		t.Errorf("expect 0")
 	}
-	if pageAlign(1) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(1) != int64(STORE_PAGE_SIZE) {
 		t.Errorf("expect sps")
 	}
-	if pageAlign(int64(STORE_PAGE_SIZE-1)) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(STORE_PAGE_SIZE-1)) != int64(STORE_PAGE_SIZE) {
 		t.Errorf("expect sps")
 	}
-	if pageAlign(int64(STORE_PAGE_SIZE)) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(STORE_PAGE_SIZE)) != int64(STORE_PAGE_SIZE) {
 		t.Errorf("expect sps")
 	}
-	if pageAlign(int64(STORE_PAGE_SIZE+1)) != int64(2*STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(STORE_PAGE_SIZE+1)) != int64(2*STORE_PAGE_SIZE) {
+		t.Errorf("expect sps")
+	}
+
+	if pageAlignFloor(0) != 0 {
+		t.Errorf("expect 0")
+	}
+	if pageAlignFloor(1) != 0 {
+		t.Errorf("expect 0")
+	}
+	if pageAlignFloor(int64(STORE_PAGE_SIZE)+1) != int64(STORE_PAGE_SIZE) {
+		t.Errorf("expect sps")
+	}
+	if pageAlignFloor(int64(STORE_PAGE_SIZE)) != int64(STORE_PAGE_SIZE) {
+		t.Errorf("expect sps")
+	}
+	if pageAlignFloor(int64(2*STORE_PAGE_SIZE)-1) != int64(STORE_PAGE_SIZE) {
 		t.Errorf("expect sps")
 	}
 }

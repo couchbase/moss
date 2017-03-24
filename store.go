@@ -383,13 +383,24 @@ func FormatFName(seq int64) string {
 
 // --------------------------------------------------------
 
-// pageAlign returns the pos if it's at the start of a page.  Else,
-// pageAlign() returns pos bumped up to the next multiple of
-// STORE_PAGE_SIZE.
-func pageAlign(pos int64) int64 {
+// pageAlignCeil returns the pos if it's at the start of a page.
+// Else, pageAlignCeil() returns pos bumped up to the next multiple
+// of STORE_PAGE_SIZE.
+func pageAlignCeil(pos int64) int64 {
 	rem := pos % int64(STORE_PAGE_SIZE)
 	if rem != 0 {
 		return pos + int64(STORE_PAGE_SIZE) - rem
+	}
+	return pos
+}
+
+// pageAlignFloor returns the pos if it's at the start of a page.
+// Else, pageAlignFloor() returns pos bumped down to the previous multiple
+// of STORE_PAGE_SIZE.
+func pageAlignFloor(pos int64) int64 {
+	rem := pos % int64(STORE_PAGE_SIZE)
+	if rem != 0 {
+		return pos - rem
 	}
 	return pos
 }
