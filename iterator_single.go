@@ -21,10 +21,8 @@ import (
 // there's no lower-level iterator.  In contrast to the main iterator
 // implementation, iteratorSingle doesn't have any heap operations.
 type iteratorSingle struct {
-	s      *segment
-	posBeg int
-	posEnd int // Found via endKeyExclusive, or the segment length.
-	pos    int // Logical entry position into segment.
+	s  *segment
+	sc SegmentCursor
 
 	op uint64
 	k  []byte
@@ -57,18 +55,18 @@ func (iter *iteratorSingle) InitCloser(closer io.Closer) error {
 
 // Next returns ErrIteratorDone if the iterator is done.
 func (iter *iteratorSingle) Next() error {
-	iter.pos++
-	if iter.pos < iter.posEnd {
-		iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
-		if iter.op != OperationDel ||
-			iter.iteratorOptions.IncludeDeletions {
-			return nil
-		}
-
-		return iter.Next()
+	err := iter.sc.Next()
+	if err != nil {
+		// we DO want to return ErrIteratorDone here
+		return err
+	}
+	iter.op, iter.k, iter.v = iter.sc.Current()
+	if iter.op != OperationDel ||
+		iter.iteratorOptions.IncludeDeletions {
+		return nil
 	}
 
-	return ErrIteratorDone
+	return iter.Next()
 }
 
 func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
@@ -96,15 +94,13 @@ func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
 	iter.k = nil
 	iter.v = nil
 
-	iter.pos = iter.s.FindStartKeyInclusivePos(seekToKey)
-	if iter.pos < iter.posBeg {
-		iter.pos = iter.posBeg
-	}
-	if iter.pos >= iter.posEnd {
-		return ErrIteratorDone
+	err = iter.sc.Seek(seekToKey)
+	if err != nil {
+		// we DO want to return ErrIteratorDone here
+		return err
 	}
 
-	iter.op, iter.k, iter.v = iter.s.GetOperationKeyVal(iter.pos)
+	iter.op, iter.k, iter.v = iter.sc.Current()
 	if !iter.iteratorOptions.IncludeDeletions &&
 		iter.op == OperationDel {
 		return iter.Next()
@@ -118,10 +114,6 @@ func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
 func (iter *iteratorSingle) Current() ([]byte, []byte, error) {
-	if iter.pos >= iter.posEnd {
-		return nil, nil, ErrIteratorDone
-	}
-
 	if iter.op == OperationDel {
 		return nil, nil, nil
 	}
@@ -151,9 +143,5 @@ func (iter *iteratorSingle) Current() ([]byte, []byte, error) {
 // Otherwise, the current operation, key, val are returned.
 func (iter *iteratorSingle) CurrentEx() (
 	entryEx EntryEx, key, val []byte, err error) {
-	if iter.pos >= iter.posEnd {
-		return EntryEx{}, nil, nil, ErrIteratorDone
-	}
-
 	return EntryEx{Operation: iter.op}, iter.k, iter.v, nil
 }

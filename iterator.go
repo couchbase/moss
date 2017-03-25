@@ -47,8 +47,7 @@ type iterator struct {
 // from the lowerLevelIter.
 type cursor struct {
 	ssIndex int // Index into Iterator.ss.a.
-	posEnd  int // Found via endKeyExclusive, or the segment length.
-	pos     int // Logical entry position into Iterator.ss.a[ssIndex].
+	sc      SegmentCursor
 
 	op uint64
 	k  []byte
@@ -134,25 +133,18 @@ func (ss *segmentStack) startIterator(
 	for ssIndex := minSegmentLevel; ssIndex <= maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
-		posEnd := b.Len()
-		if endKeyExclusive != nil {
-			posEnd = b.FindStartKeyInclusivePos(endKeyExclusive)
+		sc, err := b.Cursor(startKeyInclusive, endKeyExclusive)
+		if err != nil {
+			return nil, err
 		}
-
-		pos := b.FindStartKeyInclusivePos(startKeyInclusive)
-		if pos >= posEnd {
-			continue
-		}
-
-		op, k, v := b.GetOperationKeyVal(pos)
+		op, k, v := sc.Current()
 		if op == 0 && k == nil && v == nil {
 			continue
 		}
 
 		iter.cursors = append(iter.cursors, &cursor{
 			ssIndex: ssIndex,
-			posEnd:  posEnd,
-			pos:     pos,
+			sc:      sc,
 			op:      op,
 			k:       k,
 			v:       v,
@@ -186,7 +178,6 @@ func (ss *segmentStack) startIterator(
 				if err == nil {
 					iter.cursors = append(iter.cursors, &cursor{
 						ssIndex: -1,
-						pos:     -1,
 						op:      OperationSet,
 						k:       k,
 						v:       v,
@@ -247,7 +238,7 @@ func (iter *iterator) Next() error {
 	for len(iter.cursors) > 0 {
 		next := iter.cursors[0]
 
-		if next.ssIndex < 0 && next.pos < 0 {
+		if next.ssIndex < 0 && next.sc == nil {
 			err := iter.lowerLevelIter.Next()
 			if err == nil {
 				next.k, next.v, err = iter.lowerLevelIter.Current()
@@ -263,12 +254,14 @@ func (iter *iterator) Next() error {
 				heap.Pop(iter)
 			}
 		} else {
-			next.pos++
-			if next.pos >= next.posEnd {
+			err := next.sc.Next()
+			if err != nil {
+				if err != ErrIteratorDone {
+					return err
+				}
 				heap.Pop(iter)
 			} else {
-				next.op, next.k, next.v =
-					iter.ss.a[next.ssIndex].GetOperationKeyVal(next.pos)
+				next.op, next.k, next.v = next.sc.Current()
 				if next.op == 0 {
 					heap.Pop(iter)
 				} else if len(iter.cursors) > 1 {
@@ -466,7 +459,7 @@ func (iter *iterator) optimize() (Iterator, error) {
 
 	cur := iter.cursors[0]
 
-	if cur.ssIndex == -1 && cur.pos == -1 {
+	if cur.ssIndex == -1 && cur.sc == nil {
 		// Optimization to return lowerLevelIter directly.
 		return iter.lowerLevelIter, nil
 	}
@@ -478,9 +471,7 @@ func (iter *iterator) optimize() (Iterator, error) {
 
 	return &iteratorSingle{
 		s:       seg,
-		posBeg:  cur.pos,
-		posEnd:  cur.posEnd,
-		pos:     cur.pos,
+		sc:      cur.sc,
 		op:      cur.op,
 		k:       cur.k,
 		v:       cur.v,

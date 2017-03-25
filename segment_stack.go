@@ -83,18 +83,18 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 		for seg := segStart; seg >= 0; seg-- {
 			b := ss.a[seg]
 
-			pos := b.FindKeyPos(key)
-			if pos >= 0 {
-				operation, k, v := b.GetOperationKeyVal(pos)
-				if operation == OperationDel {
+			op, val, err := b.Get(key)
+			if err != nil {
+				return nil, err
+			}
+			if val != nil {
+				if op == OperationDel {
 					return nil, nil
 				}
-
-				if operation == OperationMerge {
-					return ss.getMerged(k, v, seg-1, base, readOptions)
+				if op == OperationMerge {
+					return ss.getMerged(key, val, seg-1, base, readOptions)
 				}
-
-				return v, nil
+				return val, nil
 			}
 		}
 	}

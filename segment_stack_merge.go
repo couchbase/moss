@@ -177,16 +177,22 @@ OUTER:
 			// through the iterator.
 			cursor := iter.cursors[0]
 
-			segment := iter.ss.a[cursor.ssIndex]
-			segmentOps := segment.Len()
-
-			for pos := cursor.pos; pos < segmentOps; pos++ {
-				op, k, v := segment.GetOperationKeyVal(pos)
-
+			var op uint64
+			var k, v []byte
+			op, k, v = cursor.sc.Current()
+			for op != 0 {
 				err = dest.Mutate(op, k, v)
 				if err != nil {
 					return err
 				}
+				err = cursor.sc.Next()
+				if err != nil {
+					break
+				}
+				op, k, v = cursor.sc.Current()
+			}
+			if err != nil && err != ErrIteratorDone {
+				return err
 			}
 
 			break OUTER

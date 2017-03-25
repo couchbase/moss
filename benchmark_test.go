@@ -206,11 +206,12 @@ func benchmarkSetsParallel(b *testing.B, batchSize int, batchKind string) {
 
 func BenchmarkGetOperationKeyVal(b *testing.B) {
 	s, _ := newBatch(nil, BatchOptions{100, 200})
-	s.Set([]byte("a"), []byte("A"))
+	key := []byte("a")
+	s.Set(key, []byte("A"))
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		s.GetOperationKeyVal(0)
+		s.Get(key)
 	}
 }

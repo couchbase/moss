@@ -27,6 +27,25 @@ func init() {
 	SegmentLoaders[BASIC_SEGMENT_KIND] = loadBasicSegment
 }
 
+// A SegmentCursor represents a handle for iterating through consecutive
+// op/key/value tuples.
+type SegmentCursor interface {
+	// Current returns the operation/key/value pointed to by the cursor.
+	Current() (operation uint64, key []byte, val []byte)
+
+	// Seek advances current to point to specified key.
+	// If the seek key is less than the original startKeyInclusive
+	// used to create this cursor, it will seek to that startKeyInclusive
+	// instead.
+	// If the cursor is not pointing at a valid entry ErrIteratorDone
+	// is returned.
+	Seek(startKeyInclusive []byte) error
+
+	// Next moves the cursor to the next entry.  If there is no Next
+	// entry, ErrIteratorDone is returned.
+	Next() error
+}
+
 // A Segment represents the read-oriented interface for a segment.
 type Segment interface {
 	// Returns the kind of segment, used for persistence.
@@ -38,22 +57,16 @@ type Segment interface {
 	// NumKeyValBytes returns the number of bytes used for key-val data.
 	NumKeyValBytes() (uint64, uint64)
 
-	// FindKeyPos() returns the logical entry position for
-	// the given key.  If the key does not exist in this segment
-	// the return value will be -1.  With segment keys of [b, d, f],
-	// looking for 'c' will return -1.  Looking for 'd' will return 1.
-	// Looking for 'g' will return -1.  Looking for 'a' will return -1.
-	FindKeyPos(key []byte) int
+	// Get returns the operation and value associated with the given key.
+	// If the key does not exist, the operation is 0, and the val is nil.
+	// If an error occurs it is returned instead of the operation and value.
+	Get(key []byte) (operation uint64, val []byte, err error)
 
-	// FindStartKeyInclusivePos() returns the logical entry position for
-	// the given (inclusive) start key.  With segment keys of [b, d, f],
-	// looking for 'c' will return 1.  Looking for 'd' will return 1.
-	// Looking for 'g' will return 3.  Looking for 'a' will return 0.
-	FindStartKeyInclusivePos(startKeyInclusive []byte) int
-
-	// GetOperationKeyVal() returns the operation, key, val for a given
-	// logical entry position in the segment.
-	GetOperationKeyVal(pos int) (operation uint64, key []byte, val []byte)
+	// Cursor returns an SegmentCursor that will iterate over entries
+	// from the given (inclusive) start key, through the given (exclusive)
+	// end key.
+	Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (SegmentCursor,
+		error)
 
 	// Returns true if the segment is already sorted, and returns
 	// false if the sorting is only asynchronously scheduled.
@@ -316,7 +329,62 @@ func (a *segment) Less(i, j int) bool {
 
 // ------------------------------------------------------
 
-func (a *segment) FindKeyPos(key []byte) int {
+type segmentCursor struct {
+	s     *segment
+	start int
+	end   int
+	curr  int
+}
+
+func (c *segmentCursor) Current() (operation uint64, key []byte, val []byte) {
+	if c.curr >= c.start && c.curr < c.end {
+		operation, key, val = c.s.getOperationKeyVal(c.curr)
+	}
+	return
+}
+
+func (c *segmentCursor) Seek(startKeyInclusive []byte) error {
+	c.curr = c.s.findStartKeyInclusivePos(startKeyInclusive)
+	if c.curr < c.start {
+		c.curr = c.start
+	}
+	if c.curr >= c.end {
+		return ErrIteratorDone
+	}
+	return nil
+}
+
+func (c *segmentCursor) Next() error {
+	c.curr++
+	if c.curr >= c.end {
+		return ErrIteratorDone
+	}
+	return nil
+}
+
+func (a *segment) Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (SegmentCursor,
+	error) {
+	rv := &segmentCursor{
+		s:   a,
+		end: a.Len(),
+	}
+	rv.start = a.findStartKeyInclusivePos(startKeyInclusive)
+	if endKeyExclusive != nil {
+		rv.end = a.findStartKeyInclusivePos(endKeyExclusive)
+	}
+	rv.curr = rv.start
+	return rv, nil
+}
+
+func (a *segment) Get(key []byte) (operation uint64, val []byte, err error) {
+	pos := a.findKeyPos(key)
+	if pos >= 0 {
+		operation, _, val = a.getOperationKeyVal(pos)
+	}
+	return
+}
+
+func (a *segment) findKeyPos(key []byte) int {
 	kvs := a.kvs
 	buf := a.buf
 
@@ -343,7 +411,7 @@ func (a *segment) FindKeyPos(key []byte) int {
 // the given (inclusive) start key.  With segment keys of [b, d, f],
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
-func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
+func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	kvs := a.kvs
 	buf := a.buf
 
@@ -371,7 +439,7 @@ func (a *segment) FindStartKeyInclusivePos(startKeyInclusive []byte) int {
 
 // GetOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
-func (a *segment) GetOperationKeyVal(pos int) (uint64, []byte, []byte) {
+func (a *segment) getOperationKeyVal(pos int) (uint64, []byte, []byte) {
 	x := pos * 2
 	if x < len(a.kvs) {
 		opklvl := a.kvs[x]
