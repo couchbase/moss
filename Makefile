@@ -6,6 +6,7 @@ devsetup:
 
 test:
 	go test ./
+
 fasttest:
 	go test -short ./
 
@@ -16,10 +17,10 @@ checkerrs:
 	errcheck -blank -asserts -ignoretests ./
 
 checkfmt:
-	! gofmt -l -d ./ 2>&1 | read
+	gofmt -l -d ./
 
 checkvet:
-	go tool vet -all -shadow=false ./
+	go tool vet -all ./
 
 checkiea:
 	ineffassign ./
@@ -27,10 +28,10 @@ checkiea:
 checkspell:
 	misspell -error ./
 
-lint: checkfmt checkerrs checkvet checkiea checkspell
+lint:
 	golint -set_exit_status -min_confidence 0.81 ./
 
-check: lint
-	go test -cover -race ./
+race:
+	go test -race ./
 
 .PHONY: all test devsetup fasttest lint cover checkerrs checkfmt checkvet checkiea checkspell check
