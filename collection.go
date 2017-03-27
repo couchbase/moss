@@ -406,7 +406,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if rv.childSegStacks[cName] != nil {
-			// this child collection was already procesed as part of batch.
+			// this child collection was already processed as part of batch.
 			continue // Do not copy over to new stackDirtyTop
 		} // else we have a child collection in existing stackDirtyTop
 		// that was NOT in the incoming batch.

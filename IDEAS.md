@@ -27,7 +27,7 @@ todo / future ideas
 * faster Get()'s by explicitly caching top-level binary-search positions
 * compression (key-prefix?)
 * callback API so apps can hook into compaction (e.g., for TTL expirations)
-* C-based verison of moss?
+* C-based version of moss?
   * might be named "mossc" (pronounced like "mossy" or "mosque")?
     or, perhaps cmoss ("sea moss" / "CMOS")?
 * Optimizations using posix_fadvise()

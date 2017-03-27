@@ -19,7 +19,7 @@ type ping struct {
 	pongCh chan struct{}
 }
 
-// replyToPings() is a helper funciton to respond to ping requests.
+// replyToPings() is a helper function to respond to ping requests.
 func replyToPings(pings []ping) {
 	for _, ping := range pings {
 		if ping.pongCh != nil {

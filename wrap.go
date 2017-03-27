@@ -17,7 +17,7 @@ import (
 )
 
 // Must implement the moss.Snapshot interface.
-// This is required for compatability with the moss adapter within bleve.
+// This is required for compatibility with the moss adapter within bleve.
 type snapshotWrapper struct {
 	m        sync.Mutex
 	refCount uint64
