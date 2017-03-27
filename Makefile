@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 devsetup:
 	go get "github.com/kisielk/errcheck"
 	go get "github.com/golang/lint/golint"
@@ -17,7 +19,7 @@ checkerrs:
 	errcheck -blank -asserts -ignoretests ./
 
 checkfmt:
-	gofmt -l -d ./
+	! gofmt -l -d ./ 2>&1 | read
 
 checkvet:
 	go tool vet -all ./
