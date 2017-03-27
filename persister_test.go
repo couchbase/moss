@@ -284,6 +284,9 @@ func runTestPersister(t *testing.T, numItems int) {
 	}
 
 	childNames, err := ss0.ChildCollectionNames()
+	if err != nil {
+		t.Fatalf("error getting child collection names: %v", err)
+	}
 	if len(childNames) != 1 {
 		t.Fatalf("Unable to retrieve child snapshot")
 	}

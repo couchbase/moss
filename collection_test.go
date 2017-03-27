@@ -1386,8 +1386,11 @@ func TestCollectionGet(t *testing.T) {
 	}
 
 	val, err = m.Get([]byte("k6"), ReadOptions{})
+	if err != nil {
+		t.Errorf("Expected Get() to succeed!")
+	}
 	if val != nil {
-		t.Errorf("Expected Get() to fail!")
+		t.Errorf("Expected Get() to not return value!")
 	}
 
 	m.Close()
