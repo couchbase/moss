@@ -95,7 +95,7 @@ type StoreOptions struct {
 
 // DefaultPersistKind determines which persistence Kind to choose when
 // none is specified in StoreOptions.
-var DefaultPersistKind = BASIC_SEGMENT_KIND
+var DefaultPersistKind = SegmentKindBasic
 
 // DefaultStoreOptions are the default store options when the
 // application hasn't provided a meaningful configuration value.

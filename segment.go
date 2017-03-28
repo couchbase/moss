@@ -17,15 +17,15 @@ import (
 	"sort"
 )
 
-// BASIC_SEGMENT_KIND is the code for a basic, persistable segment
+// SegmentKindBasic is the code for a basic, persistable segment
 // implementation, which represents a segment as two arrays: an array
 // of contiguous key-val bytes [key0, val0, key1, val1, ... keyN,
 // valN], and an array of offsets plus lengths into the first array.
-var BASIC_SEGMENT_KIND = "a"
+var SegmentKindBasic = "a"
 
 func init() {
-	SegmentLoaders[BASIC_SEGMENT_KIND] = loadBasicSegment
-	SegmentPersisters[BASIC_SEGMENT_KIND] = persistBasicSegment
+	SegmentLoaders[SegmentKindBasic] = loadBasicSegment
+	SegmentPersisters[SegmentKindBasic] = persistBasicSegment
 }
 
 // A SegmentCursor represents a handle for iterating through consecutive
@@ -156,7 +156,7 @@ func newSegment(totalOps, totalKeyValBytes int) (*segment, error) {
 	}, nil
 }
 
-func (a *segment) Kind() string { return BASIC_SEGMENT_KIND }
+func (a *segment) Kind() string { return SegmentKindBasic }
 
 // Close releases resources associated with the segment.
 func (a *segment) Close() error {
