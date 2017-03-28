@@ -258,8 +258,8 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	compactionBufferSize := StorePageSize * compactionBufferPages
 
 	compactWriter := &compactWriter{
-		kvsWriter: NewBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize),
-		bufWriter: NewBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize),
+		kvsWriter: newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize),
+		bufWriter: newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize),
 	}
 	onError := func(err error) error {
 		compactWriter.kvsWriter.Stop()

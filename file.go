@@ -166,9 +166,9 @@ type ioBuf struct {
 	err error
 }
 
-// NewBufferedSectionWriter converts incoming Write() requests into
+// newBufferedSectionWriter converts incoming Write() requests into
 // buffered, asynchronous WriteAt()'s in a section of a file.
-func NewBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
+func newBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
 	bufSize int) *bufferedSectionWriter {
 	stopCh := make(chan struct{})
 	doneCh := make(chan struct{})
