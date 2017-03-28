@@ -317,7 +317,8 @@ func runTestPersister(t *testing.T, numItems int) {
 	checkSnapshot := func(msg string, ss Snapshot, expectedNum int) {
 		for i := 0; i < numItems; i++ {
 			k := fmt.Sprintf("%d", i)
-			v, err := ss.Get([]byte(k), ReadOptions{})
+			var v []byte
+			v, err = ss.Get([]byte(k), ReadOptions{})
 			if err != nil {
 				t.Fatalf("error %s getting key: %s, %v", msg, k, err)
 			}
@@ -326,7 +327,8 @@ func runTestPersister(t *testing.T, numItems int) {
 			}
 		}
 
-		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		var iter Iterator
+		iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 		if err != nil {
 			t.Fatalf("error %s checkSnapshot iter, err: %v", msg, err)
 		}
@@ -334,7 +336,9 @@ func runTestPersister(t *testing.T, numItems int) {
 		n := 0
 		var lastKey []byte
 		for {
-			ex, key, val, err := iter.CurrentEx()
+			var ex EntryEx
+			var key, val []byte
+			ex, key, val, err = iter.CurrentEx()
 			if err == ErrIteratorDone {
 				break
 			}
@@ -445,7 +449,8 @@ func runTestPersister(t *testing.T, numItems int) {
 	checkGetsGone := func(ss Snapshot) {
 		for i := 0; i < numItems; i++ {
 			k := fmt.Sprintf("%d", i)
-			v, err := ss.Get([]byte(k), ReadOptions{})
+			var v []byte
+			v, err = ss.Get([]byte(k), ReadOptions{})
 			if err != nil {
 				t.Fatalf("error getting key: %s, %v", k, err)
 			}
@@ -807,7 +812,8 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	go mc.runPersister()
 
 	mergeVal := func(v string) {
-		b, err := m.NewBatch(0, 0)
+		var b Batch
+		b, err = m.NewBatch(0, 0)
 		if err != nil || b == nil {
 			t.Errorf("expected b ok")
 		}
@@ -961,19 +967,23 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	// --------------------------------------------
 
 	checkVal := func(msg, expected string) {
-		ss, err := m.Snapshot()
+		var ss Snapshot
+		ss, err = m.Snapshot()
 		if err != nil {
 			t.Errorf("%s - expected ss ok", msg)
 		}
-		getv, err := ss.Get([]byte("k"), ReadOptions{})
+		var getv []byte
+		getv, err = ss.Get([]byte("k"), ReadOptions{})
 		if err != nil || string(getv) != expected {
 			t.Errorf("%s - expected Get %s, got: %s, err: %v", msg, expected, getv, err)
 		}
-		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		var iter Iterator
+		iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 		if err != nil || iter == nil {
 			t.Errorf("%s - expected iter", msg)
 		}
-		k, v, err := iter.Current()
+		var k []byte
+		k, v, err = iter.Current()
 		if err != nil {
 			t.Errorf("%s - expected iter current no err", msg)
 		}

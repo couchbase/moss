@@ -35,9 +35,9 @@ func receivePings(pingCh chan ping, pings []ping,
 	kindMatch string, kindSeen bool) ([]ping, bool) {
 	for {
 		select {
-		case ping := <-pingCh:
-			pings = append(pings, ping)
-			if ping.kind == kindMatch {
+		case pingVal := <-pingCh:
+			pings = append(pings, pingVal)
+			if pingVal.kind == kindMatch {
 				kindSeen = true
 			}
 

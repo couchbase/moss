@@ -236,7 +236,8 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	if newSS.incarNum == 0 {
 		pos = int64(StorePageSize)
 	} else {
-		finfo, err := fileCompact.Stat()
+		var finfo os.FileInfo
+		finfo, err = fileCompact.Stat()
 		if err != nil {
 			return nil, err
 		}

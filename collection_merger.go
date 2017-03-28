@@ -177,9 +177,9 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 			atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
 			return true, mergeAll, pings
 
-		case ping := <-m.pingMergerCh:
-			pings = append(pings, ping)
-			if ping.kind == "mergeAll" {
+		case pingVal := <-m.pingMergerCh:
+			pings = append(pings, pingVal)
+			if pingVal.kind == "mergeAll" {
 				mergeAll = true
 			}
 

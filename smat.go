@@ -459,7 +459,8 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 			smatLog(prefix, "iteratorNext check itr: %p, %#v\n", itr, itr)
 			i := 0
 			for {
-				ik, iv, err := itr.Current()
+				var ik, iv []byte
+				ik, iv, err = itr.Current()
 				smatLog(prefix, "== iteratorNext, check itr i: %d, k: %s, v: %s, err: %v\n", i, ik, iv, err)
 				if err == ErrIteratorDone {
 					break
@@ -529,7 +530,8 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 	waitUntilClean := func() error {
 		for c.coll != nil &&
 			c.coll.(*collection) != nil { // Wait until dirty ops are drained.
-			stats, err := c.coll.Stats()
+			var stats *CollectionStats
+			stats, err = c.coll.Stats()
 			if err != nil {
 				return err
 			}
@@ -592,7 +594,8 @@ func closeReopenFunc(ctx smat.Context) (next smat.State, err error) {
 		smatLog(prefix, "LowerLevelUpdate... higher: %+v\n", higher)
 		smatLog(prefix, "LowerLevelUpdate... higher.a: %+v\n", higher.(*segmentStack).a)
 
-		ss, err := store.Persist(higher, StorePersistOptions{
+		var ss Snapshot
+		ss, err = store.Persist(higher, StorePersistOptions{
 			CompactionConcern: smatCompactionConcern,
 		})
 

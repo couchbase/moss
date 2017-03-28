@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const LARGE_PRIME = int64(9576890767)
+const LargePrime = int64(9576890767)
 
 type benchStoreSpec struct {
 	numItems, keySize, valSize, batchSize int
@@ -301,12 +301,14 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 				phaseDo("access", access.kind, false, func() {
 					fmt.Printf("  <<access %d: %+v>>\n", accessi, access)
 
-					batch, err := coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
+					var batch Batch
+					batch, err = coll.NewBatch(access.batchSize, access.batchSize*(spec.keySize+spec.valSize))
 					if err != nil {
 						b.Fatal(err)
 					}
 
-					ss, err := coll.Snapshot()
+					var ss Snapshot
+					ss, err = coll.Snapshot()
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -319,14 +321,15 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 						binary.PutVarint(buf, pos+int64(access.domainFrom))
 
 						if access.random {
-							pos = pos + LARGE_PRIME
+							pos = pos + LargePrime
 						} else {
 							pos++
 						}
 						pos = pos % domainSize64
 
 						if float32(i%100)/100.0 < access.pctGet {
-							v, err := ss.Get(buf[0:spec.keySize], readOptions)
+							var v []byte
+							v, err = ss.Get(buf[0:spec.keySize], readOptions)
 							if err != nil {
 								b.Fatal(err)
 							}
@@ -384,7 +387,8 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	// ------------------------------------------------
 
 	phase("load", "w", func() {
-		batch, err := coll.NewBatch(spec.batchSize, spec.batchSize*(spec.keySize+spec.valSize))
+		var batch Batch
+		batch, err = coll.NewBatch(spec.batchSize, spec.batchSize*(spec.keySize+spec.valSize))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -397,7 +401,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 			binary.PutVarint(buf, pos)
 
 			if spec.randomLoad {
-				pos = (pos + LARGE_PRIME) % numItems64
+				pos = (pos + LargePrime) % numItems64
 			} else {
 				pos++
 			}
@@ -430,7 +434,8 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	phase("drain", "w", func() {
 		for {
-			stats, err := coll.Stats()
+			var stats *CollectionStats
+			stats, err = coll.Stats()
 			if err != nil {
 				b.Fatal(b)
 			}
@@ -475,18 +480,21 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	// ------------------------------------------------
 
 	phase("iter", "r", func() {
-		ss, err := coll.Snapshot()
+		var ss Snapshot
+		ss, err = coll.Snapshot()
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		var iter Iterator
+		iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 		if err != nil {
 			b.Fatal(err)
 		}
 
 		for {
-			k, v, err := iter.Current()
+			var k, v []byte
+			k, v, err = iter.Current()
 			if err == ErrIteratorDone {
 				break
 			}

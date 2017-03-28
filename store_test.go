@@ -634,9 +634,9 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 	co2 := co
 	co2.LowerLevelInit = ssInit
 	co2.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
-		ss, err := store.Persist(higher, spo)
+		ss, errx := store.Persist(higher, spo)
 		persistCh <- struct{}{}
-		return ss, err
+		return ss, errx
 	}
 
 	m, err := NewCollection(co2)
@@ -961,7 +961,8 @@ func TestOpenStoreCollection(t *testing.T) {
 
 	waitUntilClean := func() error {
 		for {
-			stats, err := m.Stats()
+			var stats *CollectionStats
+			stats, err = m.Stats()
 			if err != nil {
 				return err
 			}
@@ -1141,26 +1142,31 @@ func TestStoreCompactionDeletions(t *testing.T) {
 	// Helper function to test that a collection is logically empty
 	// from Get()'s and iteration.
 	testEmpty := func(m Collection, includeDeletions bool) {
-		ss, err := m.Snapshot()
+		var ss Snapshot
+		ss, err = m.Snapshot()
 		if ss == nil || err != nil {
 			t.Errorf("expected no err")
 		}
 
 		for i := 0; i < 100; i++ {
 			xs := fmt.Sprintf("%d", i)
-			v, err := ss.Get([]byte(xs), ReadOptions{})
+			var v []byte
+			v, err = ss.Get([]byte(xs), ReadOptions{})
 			if err != nil || v != nil {
 				t.Errorf("expected no keys")
 			}
 		}
 
-		itr, err := ss.StartIterator(nil, nil, IteratorOptions{
+		var itr Iterator
+		itr, err = ss.StartIterator(nil, nil, IteratorOptions{
 			IncludeDeletions: includeDeletions,
 		})
 		if err != nil || itr == nil {
 			t.Errorf("expected no err iterator")
 		}
-		entryEx, k, v, err := itr.CurrentEx()
+		var entryEx EntryEx
+		var k, v []byte
+		entryEx, k, v, err = itr.CurrentEx()
 		if err != ErrIteratorDone {
 			t.Errorf("expected empty iterator")
 		}
@@ -1263,14 +1269,16 @@ func TestStoreNilValue(t *testing.T) {
 	close(persistedCh)
 
 	checkCollection := func(m Collection) {
-		ss, err := m.Snapshot()
+		var ss Snapshot
+		ss, err = m.Snapshot()
 		if ss == nil || err != nil {
 			t.Errorf("expected no err")
 		}
 
 		for i := 0; i < 100; i++ {
 			xs := fmt.Sprintf("%d", i)
-			v, err := ss.Get([]byte(xs), ReadOptions{})
+			var v []byte
+			v, err = ss.Get([]byte(xs), ReadOptions{})
 			if err != nil {
 				t.Errorf("expected no get err, got err: %v", err)
 			}
@@ -1299,7 +1307,8 @@ func TestStoreNilValue(t *testing.T) {
 			}
 		}
 
-		v, err := ss.Get([]byte("not-there"), ReadOptions{})
+		var v []byte
+		v, err = ss.Get([]byte("not-there"), ReadOptions{})
 		if err != nil {
 			t.Errorf("expected no get err for not-there, got err: %v", err)
 		}
@@ -1374,7 +1383,8 @@ func TestStoreSnapshotPrevious(t *testing.T) {
 	b.Close()
 
 	checkIterator := func(ss Snapshot, start, delta int) {
-		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		var iter Iterator
+		iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 		if err != nil {
 			t.Errorf("expected nil iter err, got: %v", err)
 		}
@@ -1386,7 +1396,8 @@ func TestStoreSnapshotPrevious(t *testing.T) {
 				t.Errorf("expected nil lastNextErr, got: %v", lastNextErr)
 			}
 
-			k, v, err := iter.Current()
+			var k, v []byte
+			k, v, err = iter.Current()
 			if err != nil {
 				xs := fmt.Sprintf("%d", i)
 				if string(k) != xs || string(v) != xs {
@@ -1406,7 +1417,8 @@ func TestStoreSnapshotPrevious(t *testing.T) {
 
 	waitUntilClean := func() error {
 		for {
-			stats, err := m.Stats()
+			var stats *CollectionStats
+			stats, err = m.Stats()
 			if err != nil {
 				return err
 			}
@@ -1532,7 +1544,8 @@ func TestStoreSnapshotRevert(t *testing.T) {
 	b.Close()
 
 	checkIterator := func(ss Snapshot, start, delta int) {
-		iter, err := ss.StartIterator(nil, nil, IteratorOptions{})
+		var iter Iterator
+		iter, err = ss.StartIterator(nil, nil, IteratorOptions{})
 		if err != nil {
 			t.Errorf("expected nil iter err, got: %v", err)
 		}
@@ -1544,7 +1557,8 @@ func TestStoreSnapshotRevert(t *testing.T) {
 				t.Errorf("expected nil lastNextErr, got: %v", lastNextErr)
 			}
 
-			k, v, err := iter.Current()
+			var k, v []byte
+			k, v, err = iter.Current()
 			if err != nil {
 				xs := fmt.Sprintf("%d", i)
 				if string(k) != xs || string(v) != xs {
@@ -1564,7 +1578,8 @@ func TestStoreSnapshotRevert(t *testing.T) {
 
 	waitUntilClean := func() error {
 		for {
-			stats, err := m.Stats()
+			var stats *CollectionStats
+			stats, err = m.Stats()
 			if err != nil {
 				return err
 			}
@@ -1724,7 +1739,8 @@ func openStoreAndWriteNItems(t *testing.T, tmpDir string,
 	co = CollectionOptions{
 		OnEvent: func(event Event) {
 			if event.Kind == EventKindPersisterProgress {
-				stats, err := coll.Stats()
+				var stats *CollectionStats
+				stats, err = coll.Stats()
 				if err == nil && stats.CurDirtyOps <= 0 &&
 					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
 					m.Lock()

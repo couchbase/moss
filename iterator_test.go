@@ -394,7 +394,7 @@ func testIteratorSeekTo(t *testing.T, startEarly, oneBatch bool,
 			t.Errorf("expected done, got: %v", err)
 		}
 
-		gotk, _, err := itr.Current()
+		gotk, _, err = itr.Current()
 		if err != nil {
 			t.Errorf("expected no Current err, got: %v", err)
 		}
@@ -413,7 +413,7 @@ func testIteratorSeekTo(t *testing.T, startEarly, oneBatch bool,
 			t.Errorf("expected no SeekTo err, got: %v", err)
 		}
 
-		gotk, _, err := itr.Current()
+		gotk, _, err = itr.Current()
 		if err != nil {
 			t.Errorf("expected no Current err, got: %v", err)
 		}

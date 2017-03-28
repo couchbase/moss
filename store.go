@@ -546,7 +546,8 @@ func (s *Store) openCollection(
 	co := options.CollectionOptions
 	co.LowerLevelInit = storeSnapshotInit
 	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
-		ss, err := s.Persist(higher, persistOptions)
+		var ss Snapshot
+		ss, err = s.Persist(higher, persistOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -584,7 +585,8 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 	rv *collection, err error) {
 	var coll *collection
 	if storeFooter.incarNum == 0 {
-		newColl, err := NewCollection(*co)
+		var newColl Collection
+		newColl, err = NewCollection(*co)
 		if err != nil {
 			return nil, err
 		}
@@ -612,7 +614,8 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 		coll.highestIncarNum++
 		childFooter.incarNum = coll.highestIncarNum
 
-		childCollection, err := restoreCollection(co, childFooter)
+		var childCollection *collection
+		childCollection, err = restoreCollection(co, childFooter)
 		if err != nil {
 			break
 		}

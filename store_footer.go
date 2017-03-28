@@ -171,7 +171,7 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 			b := bytes.NewBuffer(data[content:])
 
 			var offset int64
-			if err := binary.Read(b, StoreEndian, &offset); err != nil {
+			if err = binary.Read(b, StoreEndian, &offset); err != nil {
 				return nil, err
 			}
 			if offset != pos {
@@ -180,7 +180,7 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 			}
 
 			var length1 uint32
-			if err := binary.Read(b, StoreEndian, &length1); err != nil {
+			if err = binary.Read(b, StoreEndian, &length1); err != nil {
 				return nil, err
 			}
 			if length1 != length {

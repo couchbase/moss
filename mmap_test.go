@@ -273,7 +273,8 @@ func TestRefCounting(t *testing.T) {
 
 	waitUntilClean := func() error {
 		for {
-			stats, err := m.Stats()
+			var stats *CollectionStats
+			stats, err = m.Stats()
 			if err != nil {
 				return err
 			}
