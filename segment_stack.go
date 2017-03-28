@@ -192,7 +192,7 @@ func (ss *segmentStack) Stats() *SegmentStackStats {
 func (ss *segmentStack) ChildCollectionNames() ([]string, error) {
 	var childCollections = make([]string, len(ss.childSegStacks))
 	idx := 0
-	for name, _ := range ss.childSegStacks {
+	for name := range ss.childSegStacks {
 		childCollections[idx] = name
 		idx++
 	}

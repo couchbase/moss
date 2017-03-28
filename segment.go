@@ -518,7 +518,7 @@ func (a *segment) doSort() {
 
 // Persist persists a basic segment, and allows a segment to meet the
 // SegmentPersister interface.
-func (seg *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, err error) {
+func (a *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, err error) {
 	finfo, err := file.Stat()
 	if err != nil {
 		return rv, err
@@ -535,7 +535,7 @@ func (seg *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, er
 		return rv, fmt.Errorf("store: unknown PersistKind: %+v", persistKind)
 	}
 
-	rv, err = segmentPersister(seg, file, pos, nil)
+	rv, err = segmentPersister(a, file, pos, nil)
 	return
 }
 
@@ -637,36 +637,36 @@ func persistBasicSegment(
 	}, nil
 }
 
-func (s *segment) Valid() error {
-	if s.kvs == nil || len(s.kvs) <= 0 {
+func (a *segment) Valid() error {
+	if a.kvs == nil || len(a.kvs) <= 0 {
 		return fmt.Errorf("expected kvs")
 	}
-	if s.buf == nil || len(s.buf) <= 0 {
+	if a.buf == nil || len(a.buf) <= 0 {
 		return fmt.Errorf("expected buf")
 	}
-	for pos := 0; pos < s.Len(); pos++ {
+	for pos := 0; pos < a.Len(); pos++ {
 		x := pos * 2
-		if x < 0 || x >= len(s.kvs) {
+		if x < 0 || x >= len(a.kvs) {
 			return fmt.Errorf("pos to x error")
 		}
 
-		opklvl := s.kvs[x]
+		opklvl := a.kvs[x]
 
 		operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
 		if operation == 0 {
 			return fmt.Errorf("should have some nonzero op")
 		}
 
-		kstart := int(s.kvs[x+1])
+		kstart := int(a.kvs[x+1])
 		vstart := kstart + keyLen
 
-		if kstart+keyLen > len(s.buf) {
+		if kstart+keyLen > len(a.buf) {
 			return fmt.Errorf("key larger than buf, pos: %d, kstart: %d, keyLen: %d, len(buf): %d, op: %x",
-				pos, kstart, keyLen, len(s.buf), operation)
+				pos, kstart, keyLen, len(a.buf), operation)
 		}
-		if vstart+valLen > len(s.buf) {
+		if vstart+valLen > len(a.buf) {
 			return fmt.Errorf("val larger than buf, pos: %d, vstart: %d, valLen: %d, len(buf): %d, op: %x",
-				pos, vstart, valLen, len(s.buf), operation)
+				pos, vstart, valLen, len(a.buf), operation)
 		}
 	}
 

@@ -29,16 +29,16 @@ func TestPageAlign(t *testing.T) {
 	if pageAlignCeil(0) != 0 {
 		t.Errorf("expect 0")
 	}
-	if pageAlignCeil(1) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(1) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
-	if pageAlignCeil(int64(STORE_PAGE_SIZE-1)) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(StorePageSize-1)) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
-	if pageAlignCeil(int64(STORE_PAGE_SIZE)) != int64(STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(StorePageSize)) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
-	if pageAlignCeil(int64(STORE_PAGE_SIZE+1)) != int64(2*STORE_PAGE_SIZE) {
+	if pageAlignCeil(int64(StorePageSize+1)) != int64(2*StorePageSize) {
 		t.Errorf("expect sps")
 	}
 
@@ -48,19 +48,19 @@ func TestPageAlign(t *testing.T) {
 	if pageAlignFloor(1) != 0 {
 		t.Errorf("expect 0")
 	}
-	if pageAlignFloor(int64(STORE_PAGE_SIZE)+1) != int64(STORE_PAGE_SIZE) {
+	if pageAlignFloor(int64(StorePageSize)+1) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
-	if pageAlignFloor(int64(STORE_PAGE_SIZE)) != int64(STORE_PAGE_SIZE) {
+	if pageAlignFloor(int64(StorePageSize)) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
-	if pageAlignFloor(int64(2*STORE_PAGE_SIZE)-1) != int64(STORE_PAGE_SIZE) {
+	if pageAlignFloor(int64(2*StorePageSize)-1) != int64(StorePageSize) {
 		t.Errorf("expect sps")
 	}
 }
 
 func TestPageOffset(t *testing.T) {
-	p := int64(STORE_PAGE_SIZE)
+	p := int64(StorePageSize)
 
 	tests := []struct {
 		pos, exp int64
@@ -1811,22 +1811,22 @@ func fetchOpsSetFromFooter(store *Store) uint64 {
 		return 0
 	}
 
-	curr_snap, err := store.Snapshot()
-	if err != nil || curr_snap == nil {
+	currSnap, err := store.Snapshot()
+	if err != nil || currSnap == nil {
 		return 0
 	}
 
-	var ops_set uint64
+	var opsSet uint64
 
-	footer := curr_snap.(*Footer)
+	footer := currSnap.(*Footer)
 	for i := range footer.SegmentLocs {
 		sloc := &footer.SegmentLocs[i]
-		ops_set += sloc.TotOpsSet
+		opsSet += sloc.TotOpsSet
 	}
 
-	curr_snap.Close()
+	currSnap.Close()
 
-	return ops_set
+	return opsSet
 }
 
 func TestStoreReadOnlyOption(t *testing.T) {
@@ -1880,7 +1880,7 @@ func TestStoreCollHistograms(t *testing.T) {
 	store.Close()
 
 	shistograms := store.Histograms()
-	num_histograms := len(shistograms)
+	numHistograms := len(shistograms)
 
 	if shistograms["PersistUsecs"].TotCount == 0 {
 		t.Errorf("Expected a few entries for PersistUsecs!")
@@ -1909,7 +1909,7 @@ func TestStoreCollHistograms(t *testing.T) {
 		t.Errorf("Expected AddAll to succeed")
 	}
 
-	if len(shistograms) != num_histograms+len(chistograms) {
+	if len(shistograms) != numHistograms+len(chistograms) {
 		t.Errorf("shistograms carries unexpected number of histograms")
 	}
 

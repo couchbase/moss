@@ -63,15 +63,15 @@ func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 	footerLen := footerBegLen + len(jBuf) + footerEndLen
 
 	footerBuf := bytes.NewBuffer(make([]byte, 0, footerLen))
-	footerBuf.Write(STORE_MAGIC_BEG)
-	footerBuf.Write(STORE_MAGIC_BEG)
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(STORE_VERSION))
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(footerLen))
+	footerBuf.Write(StoreMagicBeg)
+	footerBuf.Write(StoreMagicBeg)
+	binary.Write(footerBuf, StoreEndian, uint32(StoreVersion))
+	binary.Write(footerBuf, StoreEndian, uint32(footerLen))
 	footerBuf.Write(jBuf)
-	binary.Write(footerBuf, STORE_ENDIAN, footerPos)
-	binary.Write(footerBuf, STORE_ENDIAN, uint32(footerLen))
-	footerBuf.Write(STORE_MAGIC_END)
-	footerBuf.Write(STORE_MAGIC_END)
+	binary.Write(footerBuf, StoreEndian, footerPos)
+	binary.Write(footerBuf, StoreEndian, uint32(footerLen))
+	footerBuf.Write(StoreMagicEnd)
+	footerBuf.Write(StoreMagicEnd)
 
 	footerWritten, err := file.WriteAt(footerBuf.Bytes(), footerPos)
 	if err != nil {
@@ -120,7 +120,7 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 	pos = pageAlignFloor(pos)
 
 	for {
-		for { // Scan the page for STORE_MAGIC_BEG, which might be a potential footer.
+		for { // Scan the page for StoreMagicBeg, which might be a potential footer.
 			if pos <= 0 {
 				return nil, ErrNoValidFooter
 			}
@@ -130,29 +130,29 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 			}
 
 			if n == footerBegLen &&
-				bytes.Equal(STORE_MAGIC_BEG, footerBeg[:lenMagicBeg]) &&
-				bytes.Equal(STORE_MAGIC_BEG, footerBeg[lenMagicBeg:2*lenMagicBeg]) {
+				bytes.Equal(StoreMagicBeg, footerBeg[:lenMagicBeg]) &&
+				bytes.Equal(StoreMagicBeg, footerBeg[lenMagicBeg:2*lenMagicBeg]) {
 				break
 			} // Else, file pos out of bounds likely.
 
 			// Move pos back by page size.
-			pos -= int64(STORE_PAGE_SIZE)
+			pos -= int64(StorePageSize)
 		}
 
 		// Read and check the potential footer.
 		footerBegBuf := bytes.NewBuffer(footerBeg[2*lenMagicBeg:])
 
 		var version uint32
-		if err := binary.Read(footerBegBuf, STORE_ENDIAN, &version); err != nil {
+		if err := binary.Read(footerBegBuf, StoreEndian, &version); err != nil {
 			return nil, err
 		}
-		if version != STORE_VERSION {
+		if version != StoreVersion {
 			return nil, fmt.Errorf("store: version mismatch, "+
-				"current: %v != found: %v", STORE_VERSION, version)
+				"current: %v != found: %v", StoreVersion, version)
 		}
 
 		var length uint32
-		if err := binary.Read(footerBegBuf, STORE_ENDIAN, &length); err != nil {
+		if err := binary.Read(footerBegBuf, StoreEndian, &length); err != nil {
 			return nil, err
 		}
 
@@ -164,14 +164,14 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 		}
 
 		if n == len(data) &&
-			bytes.Equal(STORE_MAGIC_END, data[n-lenMagicEnd*2:n-lenMagicEnd]) &&
-			bytes.Equal(STORE_MAGIC_END, data[n-lenMagicEnd:]) {
+			bytes.Equal(StoreMagicEnd, data[n-lenMagicEnd*2:n-lenMagicEnd]) &&
+			bytes.Equal(StoreMagicEnd, data[n-lenMagicEnd:]) {
 
 			content := int(length) - footerBegLen - footerEndLen
 			b := bytes.NewBuffer(data[content:])
 
 			var offset int64
-			if err := binary.Read(b, STORE_ENDIAN, &offset); err != nil {
+			if err := binary.Read(b, StoreEndian, &offset); err != nil {
 				return nil, err
 			}
 			if offset != pos {
@@ -180,7 +180,7 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 			}
 
 			var length1 uint32
-			if err := binary.Read(b, STORE_ENDIAN, &length1); err != nil {
+			if err := binary.Read(b, StoreEndian, &length1); err != nil {
 				return nil, err
 			}
 			if length1 != length {
@@ -205,11 +205,11 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 
 			return f, nil
 		}
-		// Else, invalid footer - STORE_MAGIC_END missing and/or file
+		// Else, invalid footer - StoreMagicEnd missing and/or file
 		// pos out of bounds.
 
 		// Footer was invalid, so keep scanning.
-		pos -= int64(STORE_PAGE_SIZE)
+		pos -= int64(StorePageSize)
 	}
 }
 
@@ -322,7 +322,7 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 func (f *Footer) ChildCollectionNames() ([]string, error) {
 	var childNames = make([]string, len(f.ChildFooters))
 	idx := 0
-	for name, _ := range f.ChildFooters {
+	for name := range f.ChildFooters {
 		childNames[idx] = name
 		idx++
 	}
@@ -341,17 +341,20 @@ func (f *Footer) ChildCollectionSnapshot(childCollectionName string) (
 	return childFooter, nil
 }
 
+// Close decrements the ref count on this footer
 func (f *Footer) Close() error {
 	f.DecRef()
 	return nil
 }
 
+// AddRef increases the ref count on this footer
 func (f *Footer) AddRef() {
 	f.m.Lock()
 	f.refs++
 	f.m.Unlock()
 }
 
+// DecRef decreases the ref count on this footer
 func (f *Footer) DecRef() {
 	f.m.Lock()
 	f.refs--
@@ -363,6 +366,7 @@ func (f *Footer) DecRef() {
 	f.m.Unlock()
 }
 
+// Length returns the length of this footer
 func (f *Footer) Length() uint64 {
 	jBuf, err := json.Marshal(f)
 	if err != nil {
@@ -375,7 +379,7 @@ func (f *Footer) Length() uint64 {
 
 // --------------------------------------------------------
 
-// SegmentStack() returns the current SegmentLocs and segmentStack for
+// SegmentStack returns the current SegmentLocs and segmentStack for
 // a footer, while also incrementing the ref-count on the footer.  The
 // caller must DecRef() the footer when done.
 func (f *Footer) SegmentStack() (SegmentLocs, *segmentStack) {

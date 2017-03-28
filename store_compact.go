@@ -80,7 +80,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		return false, err
 	}
 
-	var size_before, size_after int64
+	var sizeBefore, sizeAfter int64
 
 	if len(slocs) > 0 {
 		mref := slocs[0].mref
@@ -88,7 +88,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 			finfo, err := mref.fref.file.Stat()
 			if err == nil && len(finfo.Name()) > 0 {
 				// Fetch size of old file
-				size_before = finfo.Size()
+				sizeBefore = finfo.Size()
 				mref.fref.OnAfterClose(func() {
 					os.Remove(path.Join(s.dir, finfo.Name()))
 				})
@@ -105,15 +105,15 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 			finfo, err := mref.fref.file.Stat()
 			if err == nil && len(finfo.Name()) > 0 {
 				// Fetch size of new file
-				size_after = finfo.Size()
+				sizeAfter = finfo.Size()
 			}
 		}
 	}
 
 	s.m.Lock()
-	s.numLastCompactionBeforeBytes = uint64(size_before)
-	s.numLastCompactionAfterBytes = uint64(size_after)
-	delta := size_before - size_after
+	s.numLastCompactionBeforeBytes = uint64(sizeBefore)
+	s.numLastCompactionAfterBytes = uint64(sizeAfter)
+	delta := sizeBefore - sizeAfter
 	if delta > 0 {
 		s.totCompactionDecreaseBytes += uint64(delta)
 		if s.maxCompactionDecreaseBytes < uint64(delta) {
@@ -234,7 +234,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	fileCompact File) (compactFooter *Footer, err error) {
 	var pos int64
 	if newSS.incarNum == 0 {
-		pos = int64(STORE_PAGE_SIZE)
+		pos = int64(StorePageSize)
 	} else {
 		finfo, err := fileCompact.Stat()
 		if err != nil {
@@ -255,7 +255,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	if compactionBufferPages <= 0 {
 		compactionBufferPages = DefaultStoreOptions.CompactionBufferPages
 	}
-	compactionBufferSize := STORE_PAGE_SIZE * compactionBufferPages
+	compactionBufferSize := StorePageSize * compactionBufferPages
 
 	compactWriter := &compactWriter{
 		kvsWriter: NewBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize),

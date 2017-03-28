@@ -634,7 +634,7 @@ func (p *testPersister) cloneLOCKED() *testPersister {
 func (p *testPersister) ChildCollectionNames() ([]string, error) {
 	var childCollections = make([]string, len(p.childSnapshots))
 	idx := 0
-	for name, _ := range p.childSnapshots {
+	for name := range p.childSnapshots {
 		childCollections[idx] = name
 		idx++
 	}

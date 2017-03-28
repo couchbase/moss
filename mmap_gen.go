@@ -13,4 +13,6 @@
 
 package moss
 
-var AllocationGranularity = STORE_PAGE_SIZE
+// AllocationGranularity sets the granularity of allocation.  Some operating
+// systems require this to occur on particular boundaries.
+var AllocationGranularity = StorePageSize

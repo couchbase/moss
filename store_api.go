@@ -116,7 +116,9 @@ type StorePersistOptions struct {
 	CompactionConcern CompactionConcern
 }
 
-type CompactionConcern int // See StorePersistOptions.CompactionConcern.
+// CompactionConcern is a type representing various possible compaction
+// behaviors associated with persistence.
+type CompactionConcern int
 
 // CompactionDisable means no compaction.
 var CompactionDisable = CompactionConcern(0)
@@ -153,8 +155,10 @@ func (sloc *SegmentLoc) TotOps() int { return int(sloc.KvsBytes / 8 / 2) }
 
 // --------------------------------------------------------
 
+// SegmentLocs represents a slice of SegmentLoc
 type SegmentLocs []SegmentLoc
 
+// AddRef increases the ref count on each SegmentLoc in this SegmentLocs
 func (slocs SegmentLocs) AddRef() {
 	for _, sloc := range slocs {
 		if sloc.mref != nil {
@@ -163,6 +167,7 @@ func (slocs SegmentLocs) AddRef() {
 	}
 }
 
+// DecRef decreases the ref count on each SegmentLoc in this SegmentLocs
 func (slocs SegmentLocs) DecRef() {
 	for _, sloc := range slocs {
 		if sloc.mref != nil {
@@ -171,6 +176,9 @@ func (slocs SegmentLocs) DecRef() {
 	}
 }
 
+// Close allows the SegmentLocs to implement the io.Closer interface.  It
+// actually just performs what should be the final DecRef() call which takes the
+// reference count to 0.
 func (slocs SegmentLocs) Close() error {
 	slocs.DecRef()
 	return nil
@@ -205,14 +213,17 @@ func OpenStore(dir string, options StoreOptions) (*Store, error) {
 	return openStore(dir, options)
 }
 
+// Dir returns the directory for this store
 func (s *Store) Dir() string {
 	return s.dir
 }
 
+// Options a copy of this Store's StoreOptions
 func (s *Store) Options() StoreOptions {
 	return *s.options // Copy.
 }
 
+// Snapshot creates a Snapshot to access this Store
 func (s *Store) Snapshot() (Snapshot, error) {
 	return s.snapshot()
 }
@@ -227,12 +238,15 @@ func (s *Store) snapshot() (*Footer, error) {
 	return footer, nil
 }
 
+// AddRef increases the ref count on this store
 func (s *Store) AddRef() {
 	s.m.Lock()
 	s.refs++
 	s.m.Unlock()
 }
 
+// Close decreases the ref count on this store, and if the count is 0 proceeds
+// to close the store.
 func (s *Store) Close() error {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -301,10 +315,10 @@ func OpenStoreCollection(dir string,
 // OpenCollection opens a collection based on a store.  Applications
 // should open at most a single collection per store for performing
 // read/write work.
-func (store *Store) OpenCollection(
+func (s *Store) OpenCollection(
 	options StoreOptions,
 	persistOptions StorePersistOptions) (Collection, error) {
-	return store.openCollection(options, persistOptions)
+	return s.openCollection(options, persistOptions)
 }
 
 // --------------------------------------------------------

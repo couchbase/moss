@@ -24,10 +24,12 @@ type MergeOperatorStringAppend struct {
 	numPartial int
 }
 
+// Name returns the name of this merge operator implemenation
 func (mo *MergeOperatorStringAppend) Name() string {
 	return "MergeOperatorStringAppend"
 }
 
+// FullMerge performs the full merge of a string append operation
 func (mo *MergeOperatorStringAppend) FullMerge(key, existingValue []byte,
 	operands [][]byte) ([]byte, bool) {
 	mo.m.Lock()
@@ -41,6 +43,7 @@ func (mo *MergeOperatorStringAppend) FullMerge(key, existingValue []byte,
 	return []byte(s), true
 }
 
+// PartialMerge performs the partial merge of a string append operation
 func (mo *MergeOperatorStringAppend) PartialMerge(key,
 	leftOperand, rightOperand []byte) ([]byte, bool) {
 	mo.m.Lock()

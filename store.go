@@ -29,33 +29,44 @@ import (
 
 // TODO: Improved version parsers / checkers / handling (semver?).
 
-var STORE_PREFIX = "data-" // File name prefix.
-var STORE_SUFFIX = ".moss" // File name suffix.
+// StorePrefix is the file name prefix
+var StorePrefix = "data-"
 
-var STORE_ENDIAN = binary.LittleEndian
-var STORE_PAGE_SIZE = 4096
+// StoreSuffix is the file name suffix
+var StoreSuffix = ".moss"
 
-// STORE_VERSION must be bumped whenever the file format changes.
-var STORE_VERSION = uint32(4)
+// StoreEndian is the preferred endianness used by moss
+var StoreEndian = binary.LittleEndian
 
-var STORE_MAGIC_BEG []byte = []byte("0m1o2s")
-var STORE_MAGIC_END []byte = []byte("3s4p5s")
+// StorePageSize is the page size used by moss
+var StorePageSize = 4096
 
-var lenMagicBeg int = len(STORE_MAGIC_BEG)
-var lenMagicEnd int = len(STORE_MAGIC_END)
+var STORE_VERSION = StoreVersion // FIXME temporary until mossScope is updated
 
-// footerBegLen includes STORE_VERSION(uint32) & footerLen(uint32).
-var footerBegLen int = lenMagicBeg + lenMagicBeg + 4 + 4
+// StoreVersion must be bumped whenever the file format changes.
+var StoreVersion = uint32(4)
+
+// StoreMagicBeg is the magic byte sequence at the start of a footer
+var StoreMagicBeg = []byte("0m1o2s")
+
+// StoreMagicEnd is the magic byte sequence at the end of a footer
+var StoreMagicEnd = []byte("3s4p5s")
+
+var lenMagicBeg = len(StoreMagicBeg)
+var lenMagicEnd = len(StoreMagicEnd)
+
+// footerBegLen includes StoreVersion(uint32) & footerLen(uint32).
+var footerBegLen = lenMagicBeg + lenMagicBeg + 4 + 4
 
 // footerEndLen includes footerOffset(int64) & footerLen(uint32) again.
-var footerEndLen int = 8 + 4 + lenMagicEnd + lenMagicEnd
+var footerEndLen = 8 + 4 + lenMagicEnd + lenMagicEnd
 
 // --------------------------------------------------------
 
 // Header represents the JSON stored at the head of a file, where the
-// file header bytes should be less than STORE_PAGE_SIZE length.
+// file header bytes should be less than StorePageSize length.
 type Header struct {
-	Version       uint32 // The file format / STORE_VERSION.
+	Version       uint32 // The file format / StoreVersion.
 	CreatedAt     string
 	CreatedEndian string // The endian() of the file creator.
 }
@@ -289,13 +300,14 @@ func (s *Store) createNextFileLOCKED() (string, File, error) {
 
 // --------------------------------------------------------
 
+// HeaderLength returns the length of the header
 func HeaderLength() uint64 {
-	return uint64(STORE_PAGE_SIZE)
+	return uint64(StorePageSize)
 }
 
 func (s *Store) persistHeader(file File) error {
 	buf, err := json.Marshal(Header{
-		Version:       STORE_VERSION,
+		Version:       StoreVersion,
 		CreatedAt:     time.Now().Format(time.RFC3339),
 		CreatedEndian: endian(),
 	})
@@ -304,10 +316,10 @@ func (s *Store) persistHeader(file File) error {
 	}
 
 	str := "moss-data-store:\n" + string(buf) + "\n"
-	if len(str) >= STORE_PAGE_SIZE {
+	if len(str) >= StorePageSize {
 		return fmt.Errorf("store: header size too big")
 	}
-	str = str + strings.Repeat("\n", STORE_PAGE_SIZE-len(str))
+	str = str + strings.Repeat("\n", StorePageSize-len(str))
 
 	n, err := file.WriteAt([]byte(str), 0)
 	if err != nil {
@@ -321,7 +333,7 @@ func (s *Store) persistHeader(file File) error {
 }
 
 func checkHeader(file File) error {
-	buf := make([]byte, STORE_PAGE_SIZE)
+	buf := make([]byte, StorePageSize)
 
 	n, err := file.ReadAt(buf, int64(0))
 	if err != nil {
@@ -344,7 +356,7 @@ func checkHeader(file File) error {
 	if err != nil {
 		return err
 	}
-	if hdr.Version != STORE_VERSION {
+	if hdr.Version != StoreVersion {
 		return fmt.Errorf("store: readHeader wrong version")
 	}
 	if hdr.CreatedEndian != endian() {
@@ -372,33 +384,33 @@ func (s *Store) persistSegment(file File, segIn Segment, options *StoreOptions) 
 
 // ParseFNameSeq parses a file name like "data-000123.moss" into 123.
 func ParseFNameSeq(fname string) (int64, error) {
-	seqStr := fname[len(STORE_PREFIX) : len(fname)-len(STORE_SUFFIX)]
+	seqStr := fname[len(StorePrefix) : len(fname)-len(StoreSuffix)]
 	return strconv.ParseInt(seqStr, 16, 64)
 }
 
 // FormatFName returns a file name like "data-000123.moss" given a seq of 123.
 func FormatFName(seq int64) string {
-	return fmt.Sprintf("%s%016x%s", STORE_PREFIX, seq, STORE_SUFFIX)
+	return fmt.Sprintf("%s%016x%s", StorePrefix, seq, StoreSuffix)
 }
 
 // --------------------------------------------------------
 
 // pageAlignCeil returns the pos if it's at the start of a page.
 // Else, pageAlignCeil() returns pos bumped up to the next multiple
-// of STORE_PAGE_SIZE.
+// of StorePageSize.
 func pageAlignCeil(pos int64) int64 {
-	rem := pos % int64(STORE_PAGE_SIZE)
+	rem := pos % int64(StorePageSize)
 	if rem != 0 {
-		return pos + int64(STORE_PAGE_SIZE) - rem
+		return pos + int64(StorePageSize) - rem
 	}
 	return pos
 }
 
 // pageAlignFloor returns the pos if it's at the start of a page.
 // Else, pageAlignFloor() returns pos bumped down to the previous multiple
-// of STORE_PAGE_SIZE.
+// of StorePageSize.
 func pageAlignFloor(pos int64) int64 {
-	rem := pos % int64(STORE_PAGE_SIZE)
+	rem := pos % int64(StorePageSize)
 	if rem != 0 {
 		return pos - rem
 	}
@@ -427,8 +439,8 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 	var fnames []string
 	for _, fileInfo := range fileInfos { // Find candidate file names.
 		fname := fileInfo.Name()
-		if strings.HasPrefix(fname, STORE_PREFIX) &&
-			strings.HasSuffix(fname, STORE_SUFFIX) {
+		if strings.HasPrefix(fname, StorePrefix) &&
+			strings.HasSuffix(fname, StoreSuffix) {
 			fnames = append(fnames, fname)
 		}
 
@@ -525,10 +537,10 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 
 // --------------------------------------------------------
 
-func (store *Store) openCollection(
+func (s *Store) openCollection(
 	options StoreOptions,
 	persistOptions StorePersistOptions) (Collection, error) {
-	storeSnapshotInit, err := store.Snapshot()
+	storeSnapshotInit, err := s.Snapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +548,7 @@ func (store *Store) openCollection(
 	co := options.CollectionOptions
 	co.LowerLevelInit = storeSnapshotInit
 	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
-		ss, err := store.Persist(higher, persistOptions)
+		ss, err := s.Persist(higher, persistOptions)
 		if err != nil {
 			return nil, err
 		}

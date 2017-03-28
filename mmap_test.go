@@ -406,7 +406,7 @@ func TestRefCounting(t *testing.T) {
 // ---------------------------------------------
 
 // SKIPPED because segfault isn't caught by recover()
-func SKIPPED_TestAccessAfterUnmap(t *testing.T) {
+func SKIPPEDTestAccessAfterUnmap(t *testing.T) {
 	tmpDir, _ := ioutil.TempDir("", "mossMMap")
 	defer os.RemoveAll(tmpDir)
 

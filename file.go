@@ -118,6 +118,9 @@ func (r *FileRef) DecRef() (err error) {
 	return err
 }
 
+// Close allows the FileRef to implement the io.Closer interface.  It actually
+// just performs what should be the final DecRef() call which takes the
+// reference count to 0.  Once 0, it allows the file to actually be closed.
 func (r *FileRef) Close() error {
 	return r.DecRef()
 }
