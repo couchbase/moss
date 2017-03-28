@@ -33,6 +33,8 @@ type benchStoreSpec struct {
 	noCopyValue bool
 
 	accesses []benchStoreSpecAccess
+
+	compactionPercentage float64 // when set to a non-zero value triggers compactions
 }
 
 type benchStoreSpecAccess struct {
@@ -153,6 +155,13 @@ func BenchmarkStore_numItems100M_keySize20_valSize100_batchSize10000(b *testing.
 	})
 }
 
+func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize10_compact(b *testing.B) {
+	benchmarkStore(b, benchStoreSpec{
+		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100,
+		compactionPercentage: 0.2,
+	})
+}
+
 func benchmarkStore(b *testing.B, spec benchStoreSpec) {
 	bufSize := spec.valSize
 	if bufSize < spec.keySize {
@@ -200,6 +209,12 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 	so := StoreOptions{CollectionOptions: co}
 
 	spo := StorePersistOptions{CompactionConcern: CompactionAllow}
+
+	if spec.compactionPercentage > 0 {
+		so.CompactionPercentage = spec.compactionPercentage
+		so.CompactionSync = true
+		spo.CompactionConcern = CompactionAllow
+	}
 
 	var store *Store
 

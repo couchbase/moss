@@ -118,6 +118,12 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	if err != nil {
 		return nil, err
 	}
+	// MB-23561: The file reference is only temporarily incremented to prevent
+	// deletion by a parallel compactor. Therefore its ref count must be
+	// released when this function returns otherwise we have a file cleanup
+	// issue where the extra ref counts prevent file deletion on compaction.
+	// Note that the valid SegmentLocs will already hold ref counts on the file.
+	defer fref.DecRef()
 
 	// TODO: Pre-allocate file space up front?
 
@@ -132,14 +138,12 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	// Recursively write out all the segments of the snapshot.
 	err = s.persistSegments(ss, footer, file, fref)
 	if err != nil {
-		fref.DecRef()
 		return nil, err
 	}
 
 	// Recursively load all segments of the newly persisted footer.
 	err = footer.loadSegments(s.options, fref)
 	if err != nil {
-		fref.DecRef()
 		return nil, err
 	}
 
