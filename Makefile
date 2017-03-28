@@ -5,6 +5,7 @@ devsetup:
 	go get "github.com/golang/lint/golint"
 	go get "github.com/gordonklaus/ineffassign"
 	go get "github.com/client9/misspell/cmd/misspell"
+	go get "gopkg.in/alecthomas/gometalinter.v1"
 
 test:
 	go test ./
@@ -36,4 +37,7 @@ lint:
 race:
 	go test -race ./
 
-.PHONY: all test devsetup fasttest lint cover checkerrs checkfmt checkvet checkiea checkspell check
+metalinter:
+	gometalinter.v1 --vendor --disable-all --enable=vet --enable=vetshadow --enable=golint --enable=ineffassign --enable=misspell --tests ./
+
+.PHONY: all test devsetup fasttest lint cover checkerrs checkfmt checkvet checkiea checkspell race metalinter
