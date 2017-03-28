@@ -57,9 +57,14 @@ func (iter *iteratorSingle) InitCloser(closer io.Closer) error {
 func (iter *iteratorSingle) Next() error {
 	err := iter.sc.Next()
 	if err != nil {
+		iter.op = 0
+		iter.k = nil
+		iter.v = nil
+
 		// we DO want to return ErrIteratorDone here
 		return err
 	}
+
 	iter.op, iter.k, iter.v = iter.sc.Current()
 	if iter.op != OperationDel ||
 		iter.iteratorOptions.IncludeDeletions {
@@ -114,6 +119,10 @@ func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
 // be treated as immutable or read-only.  The key and val bytes will
 // remain available until the next call to Next() or Close().
 func (iter *iteratorSingle) Current() ([]byte, []byte, error) {
+	if iter.op == 0 {
+		return nil, nil, ErrIteratorDone
+	}
+
 	if iter.op == OperationDel {
 		return nil, nil, nil
 	}
@@ -143,5 +152,9 @@ func (iter *iteratorSingle) Current() ([]byte, []byte, error) {
 // Otherwise, the current operation, key, val are returned.
 func (iter *iteratorSingle) CurrentEx() (
 	entryEx EntryEx, key, val []byte, err error) {
+	if iter.op == 0 {
+		return EntryEx{}, nil, nil, ErrIteratorDone
+	}
+
 	return EntryEx{Operation: iter.op}, iter.k, iter.v, nil
 }
