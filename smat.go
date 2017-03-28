@@ -440,9 +440,9 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 	}
 	smatLog(prefix, "numIterators: %d\n", len(c.iterators))
 
-	i := c.curIterator % len(c.iterators)
-	iter := c.iterators[i]
-	iterMirror := c.iteratorMirrors[i]
+	iterIdx := c.curIterator % len(c.iterators)
+	iter := c.iterators[iterIdx]
+	iterMirror := c.iteratorMirrors[iterIdx]
 
 	smatLog(prefix, "iteratorNext: %p, %#v\n", iter, iter)
 
@@ -477,8 +477,8 @@ func iteratorNextFunc(ctx smat.Context) (next smat.State, err error) {
 
 	err = iter.Next()
 	iterMirror.pos++
-	smatLog(prefix, "curIterator: %d, iterMirror.pos: %d, iterMirror.iter.ss: %+v\n",
-		i, iterMirror.pos, iterMirror.ss)
+	smatLog(prefix, "iterIdx: %d, iterMirror.pos: %d, iterMirror.iter.ss: %+v\n",
+		iterIdx, iterMirror.pos, iterMirror.ss)
 	if err != nil && err != ErrIteratorDone {
 		return nil, err
 	}
