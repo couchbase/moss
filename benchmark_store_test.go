@@ -69,8 +69,8 @@ func BenchmarkStore_numItems1M_keySize20_valSize100_batchSize100_ACCESSES_afterL
 		numItems: 1000000, keySize: 20, valSize: 100, batchSize: 100,
 		noCopyValue: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 200000, random: true, batchSize: 100},
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 100000, ops: 200000, random: true, pctGet: 1.0},
+			{after: "load", kind: "w", domainTo: 100000, ops: 200000, random: true, batchSize: 100},
+			{after: "iter", kind: "r", domainTo: 100000, ops: 200000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -97,7 +97,7 @@ func BenchmarkStore_numItems20M_keySize16_valSize0_batchSize10000_randomLoad(b *
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 20000000, keySize: 16, valSize: 0, batchSize: 10000, randomLoad: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+			{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -106,7 +106,7 @@ func BenchmarkStore_numItems20M_keySize32_valSize0_batchSize10000_randomLoad(b *
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 20000000, keySize: 32, valSize: 0, batchSize: 10000, randomLoad: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+			{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -115,7 +115,7 @@ func BenchmarkStore_numItems20M_keySize64_valSize0_batchSize10000_randomLoad(b *
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 20000000, keySize: 64, valSize: 0, batchSize: 10000, randomLoad: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+			{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -124,7 +124,7 @@ func BenchmarkStore_numItems20M_keySize128_valSize0_batchSize10000_randomLoad(b 
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 20000000, keySize: 128, valSize: 0, batchSize: 10000, randomLoad: true,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+			{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
 		},
 	})
 }
@@ -139,7 +139,7 @@ func BenchmarkStore_numItems50M_keySize20_valSize100_batchSize10000_ACCESSES_dom
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 50000000, keySize: 20, valSize: 100, batchSize: 10000,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "load", kind: "w", domainTo: 100000, ops: 1000000, batchSize: 10000},
+			{after: "load", kind: "w", domainTo: 100000, ops: 1000000, batchSize: 10000},
 		},
 	})
 }
@@ -148,7 +148,7 @@ func BenchmarkStore_numItems100M_keySize20_valSize100_batchSize10000(b *testing.
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 100000000, keySize: 20, valSize: 100, batchSize: 10000,
 		accesses: []benchStoreSpecAccess{
-			benchStoreSpecAccess{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
+			{after: "iter", kind: "r", domainTo: 20000000, ops: 1000000, random: true, pctGet: 1.0},
 		},
 	})
 }

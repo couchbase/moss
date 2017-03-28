@@ -289,7 +289,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	compactFooter = &Footer{
 		refs: 1,
 		SegmentLocs: []SegmentLoc{
-			SegmentLoc{
+			{
 				Kind:       BASIC_SEGMENT_KIND,
 				KvsOffset:  uint64(kvsBegPos),
 				KvsBytes:   uint64(compactWriter.kvsWriter.Offset() - kvsBegPos),
