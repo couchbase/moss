@@ -38,6 +38,6 @@ race:
 	go test -race ./
 
 metalinter:
-	gometalinter.v1 --vendor --disable-all --enable=vet --enable=vetshadow --enable=golint --enable=ineffassign --enable=misspell --tests ./
+	gometalinter.v1 --vendor --disable-all --enable=vet --enable=vetshadow --enable=golint --enable=ineffassign --enable=misspell --enable=gofmt --tests ./
 
 .PHONY: all test devsetup fasttest lint cover checkerrs checkfmt checkvet checkiea checkspell race metalinter
