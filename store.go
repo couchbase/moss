@@ -253,7 +253,7 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 	defer s.m.Unlock()
 
 	if s.footer != nil {
-		slocs, _ := s.footer.SegmentStack()
+		slocs, _ := s.footer.segmentLocs()
 		defer s.footer.DecRef()
 
 		if len(slocs) > 0 {

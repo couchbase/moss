@@ -21,7 +21,7 @@ func (s *Store) snapshotPrevious(ss Snapshot) (Snapshot, error) {
 		return nil, fmt.Errorf("snapshot not a footer")
 	}
 
-	slocs, _ := footer.SegmentStack()
+	slocs, _ := footer.segmentLocs()
 	defer footer.DecRef()
 
 	if len(slocs) <= 0 {

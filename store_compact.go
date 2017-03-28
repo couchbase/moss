@@ -37,7 +37,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 	defer footer.DecRef()
 
-	slocs, ss := footer.SegmentStack()
+	slocs, ss := footer.segmentLocs()
 
 	defer footer.DecRef()
 
@@ -96,7 +96,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 		}
 	}
 
-	slocs, _ = footer.SegmentStack()
+	slocs, _ = footer.segmentLocs()
 	defer footer.DecRef()
 
 	if len(slocs) > 0 {

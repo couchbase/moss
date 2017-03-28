@@ -379,10 +379,10 @@ func (f *Footer) Length() uint64 {
 
 // --------------------------------------------------------
 
-// SegmentStack returns the current SegmentLocs and segmentStack for
+// segmentLocs returns the current SegmentLocs and segmentStack for
 // a footer, while also incrementing the ref-count on the footer.  The
 // caller must DecRef() the footer when done.
-func (f *Footer) SegmentStack() (SegmentLocs, *segmentStack) {
+func (f *Footer) segmentLocs() (SegmentLocs, *segmentStack) {
 	f.m.Lock()
 
 	f.refs++
@@ -399,7 +399,7 @@ func (f *Footer) SegmentStack() (SegmentLocs, *segmentStack) {
 // Get retrieves a val from the footer, and will return nil val
 // if the entry does not exist in the footer.
 func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
-	_, ss := f.SegmentStack()
+	_, ss := f.segmentLocs()
 	if ss == nil {
 		f.DecRef()
 		return nil, nil
@@ -425,7 +425,7 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 // and an endKeyExcl of nil means the logical "top-most" possible key.
 func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
-	_, ss := f.SegmentStack()
+	_, ss := f.segmentLocs()
 	if ss == nil {
 		f.DecRef()
 		return nil, nil
