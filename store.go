@@ -41,8 +41,6 @@ var StoreEndian = binary.LittleEndian
 // StorePageSize is the page size used by moss
 var StorePageSize = 4096
 
-var STORE_VERSION = StoreVersion // FIXME temporary until mossScope is updated
-
 // StoreVersion must be bumped whenever the file format changes.
 var StoreVersion = uint32(4)
 
