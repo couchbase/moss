@@ -159,9 +159,8 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 		return err
 	}
 
-	sync := !persistOptions.NoSync
-	if !sync {
-		sync = s.options != nil && s.options.CompactionSync
+	if s.options != nil && s.options.CompactionSync {
+		persistOptions.NoSync = false
 	}
 
 	err = s.persistFooter(fileCompact, compactFooter, persistOptions)
