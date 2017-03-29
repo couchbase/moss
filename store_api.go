@@ -45,6 +45,7 @@ type Store struct {
 	maxCompactionIncreaseBytes   uint64 // Max file size increase from any compaction
 
 	histograms ghistogram.Histograms // Histograms from store operations
+	fileRefMap map[string]*FileRef   // Map to contain the FileRefs
 	abortCh    chan struct{}         // Forced close/abort channel
 }
 

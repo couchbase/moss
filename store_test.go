@@ -273,6 +273,7 @@ func testSimpleStoreCleanupBadFiles(t *testing.T,
 						return os.OpenFile(name, flag, perm)
 					},
 				},
+				fileRefMap: make(map[string]*FileRef),
 			}
 
 			fref, file, err := s.startFileLOCKED()
@@ -396,6 +397,18 @@ func testSimpleStoreEx(t *testing.T,
 	}
 	if sstats["total_persists"].(uint64) <= 0 {
 		t.Errorf("expected >0 total_persists")
+	}
+	if sstats["num_files"].(int) != 1 {
+		t.Errorf("expected 1 file on disk")
+	}
+	if sstats["num_files_open"].(int) != 1 {
+		t.Errorf("expected 1 tracked open file")
+	}
+
+	files := sstats["files"].(map[string]interface{})
+	data := files["data-0000000000000001.moss"].(map[string]interface{})
+	if data["ref_count"].(int) < 1 {
+		t.Errorf("expected ref count of file to be >= 1")
 	}
 
 	if store.Close() != nil {

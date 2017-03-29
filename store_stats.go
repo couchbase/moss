@@ -58,6 +58,8 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 
 	footer.Close()
 
+	files, numFilesOpen := s.allFiles()
+
 	return map[string]interface{}{
 		"num_bytes_used_disk":              numBytesUsedDisk,
 		"total_persists":                   totPersists,
@@ -69,6 +71,9 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 		"total_compaction_increase_bytes":  totCompactionIncreaseBytes,
 		"max_compaction_decrease_bytes":    maxCompactionDecreaseBytes,
 		"max_compaction_increase_bytes":    maxCompactionIncreaseBytes,
+		"num_files":                        len(files),
+		"num_files_open":                   numFilesOpen,
+		"files":                            files,
 	}, nil
 }
 

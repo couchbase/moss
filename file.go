@@ -125,6 +125,19 @@ func (r *FileRef) Close() error {
 	return r.DecRef()
 }
 
+// FetchRefCount fetches the ref-count on the file ref.
+func (r *FileRef) FetchRefCount() int {
+	if r == nil {
+		return 0
+	}
+
+	r.m.Lock()
+	ref := r.refs
+	r.m.Unlock()
+
+	return ref
+}
+
 // --------------------------------------------------------
 
 // OsFile interface allows conversion from a File to an os.File.

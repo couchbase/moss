@@ -281,7 +281,10 @@ func (s *Store) startFileLOCKED() (*FileRef, File, error) {
 		return nil, nil, err
 	}
 
-	return &FileRef{file: file, refs: 1}, file, nil
+	fref := &FileRef{file: file, refs: 1}
+	s.fileRefMap[fname] = fref
+
+	return fref, file, nil
 }
 
 func (s *Store) createNextFileLOCKED() (string, File, error) {
@@ -298,6 +301,43 @@ func (s *Store) createNextFileLOCKED() (string, File, error) {
 	}
 
 	return fname, file, nil
+}
+
+// --------------------------------------------------------
+
+// Fetch all the files within the store, and the number of those
+// files that are open/in-use.
+func (s *Store) allFiles() (map[string]interface{}, int) {
+	files := make(map[string]interface{})
+
+	s.m.Lock()
+	for filename, ref := range s.fileRefMap {
+		if ref != nil {
+			files[filename] =
+				map[string]interface{}{"ref_count": ref.FetchRefCount()}
+		}
+	}
+	s.m.Unlock()
+
+	numFilesOpen := len(files)
+
+	fd, err := os.Open(s.dir)
+	if err == nil {
+		filelist, err := fd.Readdir(-1)
+		fd.Close()
+		if err == nil {
+			for _, finfo := range filelist {
+				// Add an entry for the file into the files map
+				// if one doesn't exist already.
+				if _, found := files[finfo.Name()]; !found {
+					files[finfo.Name()] =
+						map[string]interface{}{"ref_count": nil}
+				}
+			}
+		}
+	}
+
+	return files, numFilesOpen
 }
 
 // --------------------------------------------------------
@@ -481,6 +521,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			footer:       emptyFooter,
 			nextFNameSeq: 1,
 			histograms:   histograms,
+			fileRefMap:   make(map[string]*FileRef),
 			abortCh:      make(chan struct{}),
 		}, nil
 	}
@@ -530,6 +571,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			footer:       footer,
 			nextFNameSeq: maxFNameSeq + 1,
 			histograms:   histograms,
+			fileRefMap:   make(map[string]*FileRef),
 			abortCh:      make(chan struct{}),
 		}, nil
 	}
