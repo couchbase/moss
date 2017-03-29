@@ -13,8 +13,11 @@ package moss
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestIteratorMergeOps(t *testing.T) {
@@ -478,6 +481,105 @@ func TestSharedPrefixLen(t *testing.T) {
 	for _, test := range tests {
 		if sharedPrefixLen([]byte(test.a), []byte(test.b)) != test.exp {
 			t.Errorf("didn't match on test: %#v", test)
+		}
+	}
+}
+
+func TestIteratorSingleDone(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	store, m, err := OpenStoreCollection(tmpDir,
+		StoreOptions{}, StorePersistOptions{CompactionConcern: CompactionForce})
+	if err != nil || m == nil || store == nil {
+		t.Errorf("expected open empty store collection to work")
+	}
+	defer m.Close()
+	defer store.Close()
+
+	mc := m.(*collection)
+
+	setVal := func(s string) {
+		b, err2 := m.NewBatch(0, 0)
+		if err2 != nil || b == nil {
+			t.Errorf("expected b ok")
+		}
+		b.Set([]byte(s), []byte(s))
+		err2 = m.ExecuteBatch(b, WriteOptions{})
+		if err2 != nil {
+			t.Errorf("expected execute batch ok")
+		}
+	}
+
+	for _, mv := range []string{"a", "b"} {
+		setVal(mv)
+	}
+
+	mc.NotifyMerger("mergeAll", true)
+
+	waitUntilClean := func() error {
+		for {
+			stats, err2 := m.Stats()
+			if err2 != nil {
+				return err2
+			}
+
+			if stats.CurDirtyOps <= 0 &&
+				stats.CurDirtyBytes <= 0 &&
+				stats.CurDirtySegments <= 0 {
+				break
+			}
+
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		return nil
+	}
+
+	waitUntilClean()
+
+	ss, err := m.Snapshot()
+	if err != nil {
+		t.Errorf("expected ss ok")
+	}
+	iter, err := ss.StartIterator([]byte("b"), nil, IteratorOptions{})
+	if err != nil || iter == nil {
+		t.Errorf("expected iter")
+	}
+	_, ok := iter.(*iteratorSingle)
+	if !ok {
+		t.Errorf("expected iteratorSingle")
+	}
+
+	k, v, err := iter.Current()
+	if err != nil {
+		t.Errorf("expected nil err")
+	}
+	if string(k) != "b" {
+		t.Errorf("expected b key")
+	}
+	if string(v) != "b" {
+		t.Errorf("expected b val")
+	}
+	err = iter.Next()
+	if err != ErrIteratorDone {
+		t.Errorf("expected Next() ErrIteratorDone, got: %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		k, v, err := iter.Current()
+		if err != ErrIteratorDone {
+			t.Errorf("loop - expected Current() ErrIteratorDone, got: %v", err)
+		}
+		if k != nil {
+			t.Errorf("loop - expected nil key, got: %v", k)
+		}
+		if v != nil {
+			t.Errorf("loop - expected nil val, got: %v", v)
+		}
+		err = iter.Next()
+		if err != ErrIteratorDone {
+			t.Errorf("loop - expected Next() ErrIteratorDone, got: %v", err)
 		}
 	}
 }
