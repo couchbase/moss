@@ -16,9 +16,8 @@ import (
 	"sync"
 )
 
-// Must implement the moss.Snapshot interface.
-// This is required for compatibility with the moss adapter within bleve.
-type snapshotWrapper struct {
+// SnapshotWrapper implements the moss.Snapshot interface.
+type SnapshotWrapper struct {
 	m        sync.Mutex
 	refCount uint64
 	ss       Snapshot
@@ -28,15 +27,15 @@ type snapshotWrapper struct {
 // NewSnapshotWrapper creates a wrapper which provides ref-counting
 // around a snapshot.  The snapshot (and an optional io.Closer) will
 // be closed when the ref-count reaches zero.
-func NewSnapshotWrapper(ss Snapshot, closer io.Closer) *snapshotWrapper {
+func NewSnapshotWrapper(ss Snapshot, closer io.Closer) *SnapshotWrapper {
 	if ss == nil {
 		return nil
 	}
 
-	return &snapshotWrapper{refCount: 1, ss: ss, closer: closer}
+	return &SnapshotWrapper{refCount: 1, ss: ss, closer: closer}
 }
 
-func (w *snapshotWrapper) addRef() *snapshotWrapper {
+func (w *SnapshotWrapper) addRef() *SnapshotWrapper {
 	if w != nil {
 		w.m.Lock()
 		w.refCount++
@@ -46,7 +45,7 @@ func (w *snapshotWrapper) addRef() *snapshotWrapper {
 	return w
 }
 
-func (w *snapshotWrapper) decRef() (err error) {
+func (w *SnapshotWrapper) decRef() (err error) {
 	w.m.Lock()
 	w.refCount--
 	if w.refCount <= 0 {
@@ -64,7 +63,7 @@ func (w *snapshotWrapper) decRef() (err error) {
 }
 
 // ChildCollectionNames returns an array of child collection name strings.
-func (w *snapshotWrapper) ChildCollectionNames() ([]string, error) {
+func (w *SnapshotWrapper) ChildCollectionNames() ([]string, error) {
 	w.m.Lock()
 	defer w.m.Unlock()
 	if w.ss != nil {
@@ -75,7 +74,7 @@ func (w *snapshotWrapper) ChildCollectionNames() ([]string, error) {
 
 // ChildCollectionSnapshot returns a Snapshot on a given child
 // collection by its name.
-func (w *snapshotWrapper) ChildCollectionSnapshot(childCollectionName string) (
+func (w *SnapshotWrapper) ChildCollectionSnapshot(childCollectionName string) (
 	Snapshot, error) {
 	w.m.Lock()
 	defer w.m.Unlock()
@@ -85,16 +84,19 @@ func (w *snapshotWrapper) ChildCollectionSnapshot(childCollectionName string) (
 	return nil, nil
 }
 
-func (w *snapshotWrapper) Close() (err error) {
+// Close will decRef the underlying snapshot.
+func (w *SnapshotWrapper) Close() (err error) {
 	return w.decRef()
 }
 
-func (w *snapshotWrapper) Get(key []byte, readOptions ReadOptions) (
+// Get returns the key from the underlying snapshot.
+func (w *SnapshotWrapper) Get(key []byte, readOptions ReadOptions) (
 	[]byte, error) {
 	return w.ss.Get(key, readOptions)
 }
 
-func (w *snapshotWrapper) StartIterator(
+// StartIterator initiates a start iterator over the underlying snapshot.
+func (w *SnapshotWrapper) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions,
 ) (Iterator, error) {

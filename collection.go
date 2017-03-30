@@ -86,7 +86,7 @@ type collection struct {
 
 	// lowerLevelSnapshot provides an optional, lower-level storage
 	// implementation, when using the Collection as a cache.
-	lowerLevelSnapshot *snapshotWrapper
+	lowerLevelSnapshot *SnapshotWrapper
 
 	// histograms from collection operations
 	histograms ghistogram.Histograms

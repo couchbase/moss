@@ -26,7 +26,7 @@ type segmentStack struct {
 
 	refs int
 
-	lowerLevelSnapshot *snapshotWrapper
+	lowerLevelSnapshot *SnapshotWrapper
 
 	// incarNum represents this segmentStack's unique incarnation number assigned
 	// when the child collection was created. 0 for top-level collection.
