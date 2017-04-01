@@ -89,7 +89,7 @@ type Footer struct {
 
 // --------------------------------------------------------
 
-// Persist helps the store implement the lower-level-update func.  The
+// persist helps the store implement the lower-level-update func.  The
 // higher snapshot may be nil.
 func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	Snapshot, error) {
@@ -118,11 +118,6 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 	if err != nil {
 		return nil, err
 	}
-	// MB-23561: The file reference is only temporarily incremented to prevent
-	// deletion by a parallel compactor. Therefore its ref count must be
-	// released when this function returns otherwise we have a file cleanup
-	// issue where the extra ref counts prevent file deletion on compaction.
-	// Note that the valid SegmentLocs will already hold ref counts on the file.
 	defer fref.DecRef()
 
 	// TODO: Pre-allocate file space up front?
@@ -210,6 +205,7 @@ func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
 		}
 		footer.ChildFooters[cName] = childFooter
 	}
+
 	// As a deleted Child collection does not feature in the source
 	// segmentStack, its corresponding Footer would simply get dropped.
 	return footer
@@ -241,6 +237,7 @@ func (s *Store) persistSegments(ss *segmentStack, footer *Footer,
 
 		footer.SegmentLocs = append(footer.SegmentLocs, segmentLoc)
 	}
+
 	return nil
 }
 
@@ -411,7 +408,8 @@ func checkHeader(file File) error {
 
 // --------------------------------------------------------
 
-func (s *Store) persistSegment(file File, segIn Segment, options *StoreOptions) (rv SegmentLoc, err error) {
+func (s *Store) persistSegment(file File, segIn Segment,
+	options *StoreOptions) (rv SegmentLoc, err error) {
 	segPersister, ok := segIn.(SegmentPersister)
 	if !ok {
 		return rv, fmt.Errorf("store: can only persist SegmentPersister type")
@@ -655,6 +653,7 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 		if len(coll.childCollections) == 0 {
 			coll.childCollections = make(map[string]*collection)
 		}
+
 		// Keep the incarnation numbers of the newly restored child
 		// collections monotonically increasing.
 		coll.highestIncarNum++

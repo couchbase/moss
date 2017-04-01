@@ -251,6 +251,7 @@ func (s *Store) AddRef() {
 func (s *Store) Close() error {
 	s.m.Lock()
 	defer s.m.Unlock()
+
 	s.refs--
 	if s.refs > 0 || s.footer == nil {
 		return nil
@@ -258,6 +259,7 @@ func (s *Store) Close() error {
 
 	footer := s.footer
 	s.footer = nil
+
 	return footer.Close()
 }
 
@@ -281,8 +283,10 @@ func (s *Store) IsAborted() bool {
 
 // --------------------------------------------------------
 
-// Persist helps the store implement the lower-level-update func.  The
-// higher snapshot may be nil.
+// Persist helps the store implement the lower-level-update func, and
+// normally is not called directly by applications.  The higher
+// snapshot may be nil.  Advanced users who wish to call Persist()
+// directly MUST invoke it in single threaded manner only.
 func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 	Snapshot, error) {
 	return s.persist(higher, persistOptions)
@@ -294,8 +298,7 @@ func (s *Store) Persist(higher Snapshot, persistOptions StorePersistOptions) (
 // in a directory.  Updates to the collection will be persisted.  An
 // empty directory starts an empty collection.  Both the store and
 // collection should be closed by the caller when done.
-func OpenStoreCollection(dir string,
-	options StoreOptions,
+func OpenStoreCollection(dir string, options StoreOptions,
 	persistOptions StorePersistOptions) (*Store, Collection, error) {
 	store, err := OpenStore(dir, options)
 	if err != nil {
@@ -316,8 +319,7 @@ func OpenStoreCollection(dir string,
 // OpenCollection opens a collection based on a store.  Applications
 // should open at most a single collection per store for performing
 // read/write work.
-func (s *Store) OpenCollection(
-	options StoreOptions,
+func (s *Store) OpenCollection(options StoreOptions,
 	persistOptions StorePersistOptions) (Collection, error) {
 	return s.openCollection(options, persistOptions)
 }
