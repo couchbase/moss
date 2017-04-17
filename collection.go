@@ -625,6 +625,7 @@ func (m *collection) getOrInitChildStack(ss *segmentStack,
 	return dstChildStack
 }
 
+// appendChildLLSnapshot recursively appends lower level child snapshots.
 func (m *collection) appendChildLLSnapshot(dst *segmentStack,
 	src Snapshot) *segmentStack {
 	if m.incarNum != 0 {
@@ -642,6 +643,7 @@ func (m *collection) appendChildLLSnapshot(dst *segmentStack,
 	return dst
 }
 
+// appendChildStacks recursively appends child segment stacks.
 func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 	if src == nil {
 		return dst
