@@ -87,6 +87,8 @@ OUTER:
 
 		m.m.Lock()
 
+		m.invalidateLatestSnapshotLOCKED()
+
 		stackCleanPrev = m.stackClean
 		if m.options.CachePersisted {
 			m.stackClean = m.stackDirtyBase

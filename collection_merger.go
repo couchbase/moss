@@ -87,6 +87,8 @@ OUTER:
 		stackDirtyMid, _, _, _, _ :=
 			m.snapshot(snapshotSkipClean|snapshotSkipDirtyBase,
 				func(ss *segmentStack) {
+					m.invalidateLatestSnapshotLOCKED()
+
 					// m.stackDirtyMid takes 1 refs, and
 					// stackDirtyMid takes 1 refs.
 					ss.refs++
@@ -105,7 +107,8 @@ OUTER:
 					// Awake all writers that are waiting for more space
 					// in stackDirtyTop.
 					m.stackDirtyTopCond.Broadcast()
-				})
+				},
+				false) // collection level lock needs to be acquired.
 
 		stackDirtyTopPrev.Close()
 		stackDirtyMidPrev.Close()

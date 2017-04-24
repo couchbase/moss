@@ -870,7 +870,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	// Pretend to be the merger, moving stack dirty top into base,
 	// but don't notify the persister.
 	stackDirtyMid, _, _, _, _ :=
-		mc.snapshot(snapshotSkipClean|snapshotSkipDirtyBase, nil)
+		mc.snapshot(snapshotSkipClean|snapshotSkipDirtyBase, nil, false)
 
 	mc.m.Lock()
 	mc.stackDirtyBase = stackDirtyMid
@@ -906,7 +906,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	// Pretend to be the merger, moving stack dirty top into mid,
 	// but don't notify the persister.
 	stackDirtyMid, _, _, _, _ =
-		mc.snapshot(snapshotSkipClean|snapshotSkipDirtyBase, nil)
+		mc.snapshot(snapshotSkipClean|snapshotSkipDirtyBase, nil, false)
 
 	mc.m.Lock()
 	mc.stackDirtyMid = stackDirtyMid

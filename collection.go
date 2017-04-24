@@ -46,6 +46,10 @@ type collection struct {
 	// TODO: Have child collection specific stats.
 	stats *CollectionStats
 
+	// latestSnapshot caches the most recent collection snapshot to avoid
+	// new snapshot creations in the absence of new mutations.
+	latestSnapshot Snapshot
+
 	// highestIncarNum is the highest child collection incarnation number
 	// seen by this collection. It monotonically increases every time a
 	// new child collection is created and helps distinguish child collection
@@ -188,15 +192,52 @@ func (m *collection) Options() CollectionOptions {
 	return *m.options
 }
 
+// reuseSnapshot simply bumps up the ref count on the underlying segmentStack.
+func reuseSnapshot(snap Snapshot) (ret Snapshot) {
+	if snap != nil {
+		ss, ok := snap.(*segmentStack)
+		if ok {
+			ss.addRef()
+			ret = snap
+		}
+	}
+	return
+}
+
 // Snapshot returns a stable snapshot of the key-value entries.
-func (m *collection) Snapshot() (Snapshot, error) {
+func (m *collection) Snapshot() (rv Snapshot, err error) {
+	m.m.Lock()
+	rv = reuseSnapshot(m.latestSnapshot)
+	if rv == nil { // No cached snapshot or cached snapshot was invalidated.
+		rv, err = m.newSnapshot()
+		if err == nil {
+			// Collection holds on to 1 ref count for its cached snapshot copy.
+			m.latestSnapshot = reuseSnapshot(rv)
+		}
+	}
+	m.m.Unlock()
+
+	return
+}
+
+// invalidateLatestSnapshotLOCKED is invoked whenever new mutations occur or
+// on internal modifications (merges/persistence) to the collection.
+func (m *collection) invalidateLatestSnapshotLOCKED() {
+	if m.latestSnapshot != nil {
+		m.latestSnapshot.Close()
+		m.latestSnapshot = nil
+	}
+}
+
+// newSnapshot takes a new stable snapshot of the key-value entries.
+func (m *collection) newSnapshot() (Snapshot, error) {
 	if m.isClosed() {
 		return nil, ErrClosed
 	}
 
 	atomic.AddUint64(&m.stats.TotSnapshotBeg, 1)
 
-	rv, _, _, _, _ := m.snapshot(0, nil)
+	rv, _, _, _, _ := m.snapshot(0, nil, true) // collection lock already held.
 
 	atomic.AddUint64(&m.stats.TotSnapshotEnd, 1)
 
@@ -302,6 +343,8 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		m.m.Unlock()
 		return ErrClosed
 	}
+
+	m.invalidateLatestSnapshotLOCKED()
 
 	stackDirtyTop := m.buildStackDirtyTop(b, m.stackDirtyTop)
 
@@ -492,8 +535,8 @@ const snapshotSkipClean = uint32(0x00000008)
 // snapshot() atomically clones the various stacks into a new, single
 // segmentStack, controllable by skip flags, and also invokes the
 // optional callback while holding the collection lock.
-func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
-	*segmentStack, int, int, int, int) {
+func (m *collection) snapshot(skip uint32, cb func(*segmentStack),
+	gotLock bool) (*segmentStack, int, int, int, int) {
 	atomic.AddUint64(&m.stats.TotSnapshotInternalBeg, 1)
 
 	rv := &segmentStack{options: m.options, refs: 1}
@@ -503,7 +546,9 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 	heightDirtyBase := 0
 	heightClean := 0
 
-	m.m.Lock()
+	if !gotLock {
+		m.m.Lock()
+	}
 
 	rv.lowerLevelSnapshot = m.lowerLevelSnapshot.addRef()
 	if rv.lowerLevelSnapshot != nil {
@@ -549,7 +594,9 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack)) (
 		cb(rv)
 	}
 
-	m.m.Unlock()
+	if !gotLock {
+		m.m.Unlock()
+	}
 
 	atomic.AddUint64(&m.stats.TotSnapshotInternalEnd, 1)
 
