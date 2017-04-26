@@ -103,9 +103,9 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 		return base.Get(key, readOptions)
 	}
 
-	if ss.lowerLevelSnapshot != nil {
+	if !readOptions.SkipLowerLevel && ss.lowerLevelSnapshot != nil {
 		return ss.lowerLevelSnapshot.Get(key, readOptions)
-	}
+	} // TODO: else add a special return error indicating cache-miss!
 
 	return nil, nil
 }

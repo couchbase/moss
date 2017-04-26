@@ -624,25 +624,31 @@ func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	var val []byte
 	var err error
 
+	// Avoid going to the lower-level snapshot for the
+	// stackDirtyTop/Mid/Base/Clean Get()s since their lower level snapshots
+	// may be modified concurrently by collection_merger/persister.
+	readOptionsSLL := readOptions
+	readOptionsSLL.SkipLowerLevel = true
+
 	// Look for the key-value in the collection's segment stacks starting
 	// with the latest (stackDirtyTop), followed by stackDirtyMid,
 	// stackDirtyBase, stackClean and if still not found look for it in
 	// the lowerLevelSnapshot.
 
 	if stackDirtyTop != nil {
-		val, err = stackDirtyTop.Get(key, readOptions)
+		val, err = stackDirtyTop.Get(key, readOptionsSLL)
 	}
 
 	if val == nil && err == nil && stackDirtyMid != nil {
-		val, err = stackDirtyMid.Get(key, readOptions)
+		val, err = stackDirtyMid.Get(key, readOptionsSLL)
 	}
 
 	if val == nil && err == nil && stackDirtyBase != nil {
-		val, err = stackDirtyBase.Get(key, readOptions)
+		val, err = stackDirtyBase.Get(key, readOptionsSLL)
 	}
 
 	if val == nil && err == nil && stackClean != nil {
-		val, err = stackClean.Get(key, readOptions)
+		val, err = stackClean.Get(key, readOptionsSLL)
 	}
 
 	if lowerLevelSnapshot != nil {

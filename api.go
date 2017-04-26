@@ -441,6 +441,13 @@ type ReadOptions struct {
 	// snapshot.  When true, the caller must treat the value returned
 	// by a lookup/Get() as immutable.
 	NoCopyValue bool
+
+	// SkipLowerLevel is an advanced flag that specifies that a
+	// point lookup should fail on a cache-miss and not attempt to access
+	// key-val entries from the optional, chained,
+	// lower-level snapshot (disk based). See
+	// CollectionOptions.LowerLevelInit/LowerLevelUpdate.
+	SkipLowerLevel bool
 }
 
 // IteratorOptions are provided to StartIterator().

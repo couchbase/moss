@@ -14,6 +14,8 @@ package moss
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -1156,4 +1158,57 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 
 	// Before the fix, we used to incorrectly get :X:Z.
 	checkVal("after", ":X:Y:Z")
+}
+
+func Test_JustLoad1Mitems(b *testing.T) {
+	numItems := 100000
+	batchSize := 100
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	so := DefaultStoreOptions
+	so.CollectionOptions.MinMergePercentage = 0.0
+	so.CompactionPercentage = 0.0
+	so.CompactionSync = true
+	spo := StorePersistOptions{CompactionConcern: CompactionAllow}
+
+	store, coll, err := OpenStoreCollection(tmpDir, so, spo)
+	if err != nil || store == nil || coll == nil {
+		b.Fatalf("error opening store collection:%v", tmpDir)
+	}
+
+	for i := numItems; i >= 0; i = i - batchSize {
+		// create new batch to set some keys
+		ba, err := coll.NewBatch(0, 0)
+		if err != nil {
+			b.Fatalf("error creating new batch: %v", err)
+			return
+		}
+
+		loadItems(ba, i, i-batchSize)
+		err = coll.ExecuteBatch(ba, WriteOptions{})
+		if err != nil {
+			b.Fatalf("error executing batch: %v", err)
+			return
+		}
+
+		// cleanup that batch
+		err = ba.Close()
+		if err != nil {
+			b.Fatalf("error closing batch: %v", err)
+			return
+		}
+		val, erro := coll.Get([]byte(fmt.Sprintf("%04d", numItems)), ReadOptions{})
+		if erro != nil || val == nil {
+			b.Fatalf("Unable to fetch the key written: %v", err)
+		}
+	}
+
+	if store.Close() != nil {
+		b.Fatalf("expected store close to work")
+	}
+
+	if coll.Close() != nil {
+		b.Fatalf("Error closing child collection")
+	}
 }
