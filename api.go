@@ -357,6 +357,8 @@ type Batch interface {
 	// The child Batch will be executed atomically along with any
 	// other child batches and with the top-level Batch
 	// when the top-level Batch is executed.
+	// The child collection name should not start with a '.' (period)
+	// as those are reserved for future moss usage.
 	NewChildCollectionBatch(collectionName string, options BatchOptions) (Batch, error)
 
 	// DelChildCollection records a child collection deletion given the name.
