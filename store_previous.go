@@ -43,7 +43,7 @@ func (s *Store) snapshotPrevious(ss Snapshot) (Snapshot, error) {
 		return nil, err
 	}
 
-	ssPrev, err := ScanFooter(s.options, fref, finfo.Name(), footer.filePos-1)
+	ssPrev, err := ScanFooter(s.options, fref, finfo.Name(), footer.PrevFooterOffset)
 	if err == ErrNoValidFooter {
 		return nil, nil
 	}

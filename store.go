@@ -75,7 +75,8 @@ type Footer struct {
 	m    sync.Mutex // Protects the fields that follow.
 	refs int
 
-	SegmentLocs SegmentLocs // Persisted; older SegmentLoc's come first.
+	SegmentLocs      SegmentLocs // Persisted; older SegmentLoc's come first.
+	PrevFooterOffset int64       // Persisted; link for snapshot restoration.
 
 	ss *segmentStack // Ephemeral.
 
@@ -178,6 +179,7 @@ func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
 		numSegmentLocs += len(storeFooter.SegmentLocs)
 		segmentLocs = make([]SegmentLoc, 0, numSegmentLocs)
 		segmentLocs = append(segmentLocs, storeFooter.SegmentLocs...)
+		footer.PrevFooterOffset = storeFooter.filePos
 	} else {
 		segmentLocs = make([]SegmentLoc, 0, numSegmentLocs)
 	}
