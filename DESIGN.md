@@ -160,8 +160,8 @@ into the base section....
     |                     |
     | * top               |
     |     segment-5       |
-    | * base              |
     | * mid               |
+    | * base              |
     |     segment-0...4   |
     | * clean             |
     |                     |
@@ -179,8 +179,8 @@ clean section, and repeats.  See: persister.go.
     |                     |
     | * top               |
     |     segment-5       |
-    | * base              |
     | * mid               |
+    | * base              |
     | * clean             |
     |                     |
     +---------------------+
@@ -229,11 +229,11 @@ mossStore
 =========
 
 One option for lower-level storage is the built-in storage
-implementation called mossStore.  It follows an append-only design,
-where mossStore appends new segments and a "footer" to the end of a
-file, with page-aligned start offsets.  The footer contains metadata
-such as the offsets and lengths of the segments written to the file.
-See: store.go / SegmentLoc struct and pageAlignCeil().
+implementation called mossStore.  It uses an append-only file-format
+design, where mossStore appends new segments and a "footer" to the end
+of a file, with page-aligned start offsets.  The footer contains
+metadata such as the offsets and lengths of the segments written to
+the file.  See: store.go / SegmentLoc struct and pageAlignCeil().
 
 Once the file footer is appended, mossStore performs an mmap() to read
 the just-appended segments.  See: store_footer.go /
