@@ -6,10 +6,7 @@ todo / future ideas
 * or, postings lists and columnar re-layouts of data
 * reductions for LSM storage
   (https://docs.google.com/document/d/1X9JtIud9an23d4VTxWLpIe4HxgD4NwAFprKQOQX6aDU/edit#heading=h.jj90qi7qbon1)
-* more than 1 collection per store (no more wasting a
-  1-byte key prefix; e.g., API for OpenStoreCollections())
 * more stats
-* histograms (see the https://github.com/couchbase/ghistogram library)
 * performance optimizations for handling time-series data,
   where top-level should be able to binary-search through
   non-overlapping, ordered segments, if each segments knows their start/end keys.
@@ -22,9 +19,14 @@ todo / future ideas
 * benchmarks against other KV stores
 * incremental compaction, as opposed to the existing full compaction
   * hole punching / punch-line algorithm?
+  * plasma inspired multiple-files approach for logical "hole punching"
   * block reuse algorithm?
 * more concurrent writer goroutines to utilize more I/O bandwidth
 * faster Get()'s by explicitly caching top-level binary-search positions
+* optimization where each segment tracks min/max key (skip binary search if outside of range)
+* optimization where segmentStack knows if min/max keys of segments are non-overlapping and linear
+  * support binary searching of segmentStack
+  * as an optimization for time-series patterns
 * compression (key-prefix?)
 * callback API so apps can hook into compaction (e.g., for TTL expirations)
 * C-based version of moss?
