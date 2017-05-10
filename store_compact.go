@@ -134,6 +134,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 func (s *Store) compact(footer *Footer, higher Snapshot,
 	persistOptions StorePersistOptions) error {
 	startTime := time.Now()
+
 	var newSS *segmentStack
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)
@@ -143,7 +144,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 		ssHigher.ensureFullySorted()
 		newSS = s.mergeSegStacks(footer, ssHigher)
 	} else {
-		newSS = footer.ss // safe as footer ref count is held positive.
+		newSS = footer.ss // Safe as footer ref count is held positive.
 	}
 
 	s.m.Lock()

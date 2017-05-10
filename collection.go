@@ -102,8 +102,9 @@ type collection struct {
 	incarNum uint64
 
 	// Map of child collection by name.
-	// TODO: Most of the fields of the child collections are nil, so it
-	// might be lighter to use a dedicated map instead of reusing collection.
+	// TODO: Most of the fields of the child collections are nil, so
+	// it might be lighter to use a dedicated struct instead of
+	// reusing the collection struct.
 	childCollections map[string]*collection
 }
 
@@ -710,7 +711,7 @@ func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 	for cName, srcChildStack := range src.childSegStacks {
 		childCollection, exists := m.childCollections[cName]
 		if !exists || // This child collection was dropped recently, OR
-			// This child collection was recreated quickly.
+			// this child collection was recreated quickly.
 			childCollection.incarNum != srcChildStack.incarNum {
 			continue
 		}

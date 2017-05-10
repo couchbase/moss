@@ -24,6 +24,7 @@ import (
 func (s *Store) persistFooter(file File, footer *Footer,
 	options StorePersistOptions) error {
 	startTime := time.Now()
+
 	if !options.NoSync {
 		err := file.Sync()
 		if err != nil {
@@ -120,10 +121,11 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 	pos = pageAlignFloor(pos)
 
 	for {
-		for { // Scan the page for StoreMagicBeg, which might be a potential footer.
+		for { // Scan for StoreMagicBeg, which may be a potential footer.
 			if pos <= 0 {
 				return nil, ErrNoValidFooter
 			}
+
 			n, err := fref.file.ReadAt(footerBeg, pos)
 			if err != nil {
 				return nil, err
@@ -133,7 +135,7 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 				bytes.Equal(StoreMagicBeg, footerBeg[:lenMagicBeg]) &&
 				bytes.Equal(StoreMagicBeg, footerBeg[lenMagicBeg:2*lenMagicBeg]) {
 				break
-			} // Else, file pos out of bounds likely.
+			}
 
 			// Move pos back by page size.
 			pos -= int64(StorePageSize)
@@ -196,8 +198,8 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 			}
 
 			// json.Unmarshal would have just loaded the map.
-			// We now need to load the segments into the map.
-			// Recursively load the Child Footer segment stacks.
+			// We now need to load each segment into the map.
+			// Also recursively load child footer segment stacks.
 			err = f.loadSegments(options, fref)
 			if err != nil {
 				return nil, err
@@ -215,9 +217,9 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 
 // --------------------------------------------------------
 
-// loadSegments() loads the segments of a footer, which must not be
-// already loaded.  The footer adds new ref-counts to the fref on
-// success.  The footer will be in an already closed state on error.
+// loadSegments() loads the segments of a footer.  Adds new ref-counts
+// to the fref on success.  The footer will be in an already closed
+// state on error.
 func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) {
 	// Track mrefs that we need to DecRef() if there's an error.
 	mrefs := make([]*mmapRef, 0, len(f.SegmentLocs))
@@ -229,7 +231,7 @@ func (f *Footer) loadSegments(options *StoreOptions, fref *FileRef) (err error) 
 		return err
 	}
 
-	return err
+	return nil
 }
 
 func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
@@ -248,7 +250,7 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 
 	osFile := ToOsFile(fref.file)
 	if osFile == nil {
-		return mrefs, fmt.Errorf("store: loadSegments convert to os.File error")
+		return mrefs, fmt.Errorf("store: doLoadSegments convert to os.File error")
 	}
 
 	a := make([]Segment, len(f.SegmentLocs))
@@ -259,7 +261,7 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 		mref := sloc.mref
 		if mref != nil {
 			if mref.fref != fref {
-				return mrefs, fmt.Errorf("store: loadSegments fref mismatch")
+				return mrefs, fmt.Errorf("store: doLoadSegments fref mismatch")
 			}
 
 			mref.AddRef()
@@ -279,7 +281,7 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
-				return mrefs, fmt.Errorf("store: loadSegments mmap.Map(), err: %v", err)
+				return mrefs, fmt.Errorf("store: doLoadSegments mmap.Map(), err: %v", err)
 			}
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
@@ -301,7 +303,8 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 		seg, err := segmentLoader(sloc)
 		if err != nil {
 			return mrefs, fmt.Errorf("store: segmentLoader failed, footer: %+v,"+
-				" f.SegmentLocs: %+v, i: %d, options: %v err: %+v", f, f.SegmentLocs, i, options, err)
+				" f.SegmentLocs: %+v, i: %d, options: %v err: %+v",
+				f, f.SegmentLocs, i, options, err)
 		}
 
 		a[i] = seg
