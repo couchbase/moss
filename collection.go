@@ -50,10 +50,11 @@ type collection struct {
 	// new snapshot creations in the absence of new mutations.
 	latestSnapshot Snapshot
 
-	// highestIncarNum is the highest child collection incarnation number
-	// seen by this collection. It monotonically increases every time a
-	// new child collection is created and helps distinguish child collection
-	// recreations with the same name.
+	// highestIncarNum is the highest descendant collection
+	// incarnation number seen by this collection hierarchy.  It
+	// monotonically increases every time a new child collection is
+	// created and helps distinguish child collection recreations with
+	// the same name.
 	highestIncarNum uint64
 
 	// ----------------------------------------
@@ -95,8 +96,8 @@ type collection struct {
 	// histograms from collection operations
 	histograms ghistogram.Histograms
 
-	// incarNum is a unique incarnation number assigned to a child
-	// collection at the time of its creation. It helps process child
+	// incarNum is a unique incarnation number assigned to this child
+	// collection at the time of its creation.  It helps process child
 	// collection recreations and is zero in the top-level collection.
 	incarNum uint64
 
@@ -192,26 +193,27 @@ func (m *collection) Options() CollectionOptions {
 	return *m.options
 }
 
-// reuseSnapshot simply bumps up the ref count on the underlying segmentStack.
-func reuseSnapshot(snap Snapshot) (ret Snapshot) {
+// reuseSnapshot addRef()'s the underlying segmentStack.
+func reuseSnapshot(snap Snapshot) Snapshot {
 	if snap != nil {
 		ss, ok := snap.(*segmentStack)
 		if ok {
 			ss.addRef()
-			ret = snap
+			return snap
 		}
 	}
-	return
+
+	return nil
 }
 
 // Snapshot returns a stable snapshot of the key-value entries.
 func (m *collection) Snapshot() (rv Snapshot, err error) {
 	m.m.Lock()
 	rv = reuseSnapshot(m.latestSnapshot)
-	if rv == nil { // No cached snapshot or cached snapshot was invalidated.
-		rv, err = m.newSnapshot()
+	if rv == nil { // No cached snapshot.
+		rv, err = m.newSnapshotLOCKED()
 		if err == nil {
-			// Collection holds on to 1 ref count for its cached snapshot copy.
+			// collection holds 1 ref count for its cached snapshot copy.
 			m.latestSnapshot = reuseSnapshot(rv)
 		}
 	}
@@ -220,8 +222,8 @@ func (m *collection) Snapshot() (rv Snapshot, err error) {
 	return
 }
 
-// invalidateLatestSnapshotLOCKED is invoked whenever new mutations occur or
-// on internal modifications (merges/persistence) to the collection.
+// invalidateLatestSnapshotLOCKED is invoked whenever new mutations or
+// internal modifications (merges/persistence) occur.
 func (m *collection) invalidateLatestSnapshotLOCKED() {
 	if m.latestSnapshot != nil {
 		m.latestSnapshot.Close()
@@ -229,8 +231,9 @@ func (m *collection) invalidateLatestSnapshotLOCKED() {
 	}
 }
 
-// newSnapshot takes a new stable snapshot of the key-value entries.
-func (m *collection) newSnapshot() (Snapshot, error) {
+// newSnapshotLOCKED creates a new stable snapshot of the key-value
+// entries.
+func (m *collection) newSnapshotLOCKED() (Snapshot, error) {
 	if m.isClosed() {
 		return nil, ErrClosed
 	}
@@ -376,15 +379,15 @@ func (m *collection) ExecuteBatch(bIn Batch,
 // recursive batch with potential child batches.
 // This function does a 3 way merge.
 // Consider the example below:
-//    Incoming batch (b)   existing (curStackTop)      childCollections map
-//   /       |      \           /    |    \            /    |     \
-// child1  child2'  child4   child1 child2 child3  child1  child2 child3
+//    Incoming batch (b)    existing (curStackTop)   childCollections map
+//   /       |      \           /     |     \           /     |     \
+// child1  child2'  child4   child1 child2 child3    child1 child2 child3
 // (del)  (update)  (new)
 //
 // The result is to build a new stackTop & update childCollection map as:
-//    returned segmentStack (rv)         childCollection map
-//       /         |     \             /       |     \
-// child2+child2' child3 child4     child2  child3  child4
+//    returned segmentStack (rv)     childCollections map
+//       /         |      \             /     |     \
+// child2+child2' child3  child4     child2 child3 child4
 func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 	rv *segmentStack) {
 	numDirtyTop := 0
@@ -401,8 +404,8 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 	rv.incarNum = m.incarNum
 
 	if b != nil {
-		if b.Len() > 0 { // Current segment can be empty if it has just 1 child
-			rv.a = append(rv.a, b.segment) // collection batch.
+		if b.Len() > 0 {
+			rv.a = append(rv.a, b.segment)
 		}
 
 		for cName, cBatch := range b.childBatches {
@@ -414,7 +417,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				m.childCollections = make(map[string]*collection)
 			}
 			childCollection, exists := m.childCollections[cName]
-			if !exists { // Child Collection being created for first time.
+			if !exists { // Child collection being created for first time.
 				m.highestIncarNum++
 				childCollection = &collection{ // child4 in diagram above.
 					options:         m.options,
@@ -442,26 +445,27 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 		return rv
 	}
 
-	// Now there could be some child collection in existing curStackTop
-	// that were not in the batch. Need to copy over these recursively too.
+	// There could be child collections in existing curStackTop that
+	// were not in the batch, so copy over those recursively too.
 	for cName, childStack := range curStackTop.childSegStacks {
 		if len(rv.childSegStacks) == 0 {
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if rv.childSegStacks[cName] != nil {
-			// this child collection was already processed as part of batch.
-			continue // Do not copy over to new stackDirtyTop
+			// This child collection was already processed as part of batch.
+			continue // Do not copy over to new stackDirtyTop.
 		} // else we have a child collection in existing stackDirtyTop
 		// that was NOT in the incoming batch.
 		childCollection, exists := m.childCollections[cName]
-		if !exists || // this child collection was deleted OR
+		if !exists || // This child collection was deleted OR
 			// it was quickly recreated in the incoming batch.
 			childCollection.incarNum != childStack.incarNum {
-			continue // Do not copy over to new stackDirtyTop
+			continue // Do not copy over to new stackDirtyTop.
 		} // child3 from existing curStackTop in diagram above.
 		rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(nil,
 			childStack)
 	}
+
 	return rv
 }
 
