@@ -456,6 +456,9 @@ func (s *Store) persistSegment(file File, segIn Segment,
 
 // ParseFNameSeq parses a file name like "data-000123.moss" into 123.
 func ParseFNameSeq(fname string) (int64, error) {
+	if len(StorePrefix) > len(fname)-len(StoreSuffix) {
+		return 0, fmt.Errorf("invalid filename: %s, filename too short", fname)
+	}
 	seqStr := fname[len(StorePrefix) : len(fname)-len(StoreSuffix)]
 	return strconv.ParseInt(seqStr, 16, 64)
 }
