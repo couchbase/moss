@@ -14,7 +14,6 @@ package moss
 import (
 	"fmt"
 	"os"
-	"path"
 	"time"
 )
 
@@ -85,13 +84,10 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	if len(slocs) > 0 {
 		mref := slocs[0].mref
 		if mref != nil && mref.fref != nil {
-			finfo, err := mref.fref.file.Stat()
+			finfo, err := s.removeFileOnClose(mref.fref)
 			if err == nil && len(finfo.Name()) > 0 {
 				// Fetch size of old file
 				sizeBefore = finfo.Size()
-				mref.fref.OnAfterClose(func() {
-					os.Remove(path.Join(s.dir, finfo.Name()))
-				})
 			}
 		}
 	}
@@ -156,6 +152,7 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 
 	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact)
 	if err != nil {
+		s.removeFileOnClose(frefCompact)
 		frefCompact.DecRef()
 		return err
 	}
@@ -166,12 +163,14 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 
 	err = s.persistFooter(fileCompact, compactFooter, persistOptions)
 	if err != nil {
+		s.removeFileOnClose(frefCompact)
 		frefCompact.DecRef()
 		return err
 	}
 
 	footerReady, err := ReadFooter(s.options, fileCompact)
 	if err != nil {
+		s.removeFileOnClose(frefCompact)
 		frefCompact.DecRef()
 		return err
 	}

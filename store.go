@@ -302,6 +302,31 @@ func (s *Store) createNextFileLOCKED() (string, File, error) {
 	return fname, file, nil
 }
 
+// removeFileOnClose will setup the callback to wipe out the file safely
+// when all references to it are closed.
+func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
+	finfo, err := fref.file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if len(finfo.Name()) > 0 {
+		fref.OnAfterClose(func() {
+			fileName := finfo.Name()
+			s.m.Lock()
+			delete(s.fileRefMap, fileName)
+			s.m.Unlock()
+			err := os.Remove(path.Join(s.dir, fileName))
+			if err != nil {
+				if s.options.CollectionOptions.Log != nil {
+					s.options.CollectionOptions.Log("Error deleting file %s:%v",
+						fileName, err)
+				}
+			}
+		})
+	}
+	return finfo, nil
+}
+
 // --------------------------------------------------------
 
 // Fetch all the files within the store, and the number of those
