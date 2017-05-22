@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"runtime/pprof"
 	"sync"
 	"testing"
 	"time"
@@ -144,7 +143,6 @@ func (mh *mossHerder) overMemQuotaLOCKED() bool {
 	return totDirtyBytes > mh.memQuota
 }
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var numitems = flag.Int("numItems", 100000, "number of items to load")
 var batchsize = flag.Int("batchSize", 100, "number of items per batch")
 var memquota = flag.Uint64("memQuota", 128*1024*1024, "Memory quota")
@@ -154,15 +152,6 @@ func Test_DGMLoad(t *testing.T) {
 	batchSize := 100
 	var memQuota uint64 = 128 * 1024 * 1024
 	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			t.Fatalf("Can't open file %v: %v", *cpuprofile, err)
-		}
-		pprof.StartCPUProfile(f)
-		defer f.Close()
-		defer pprof.StopCPUProfile()
-	}
 	if numitems != nil {
 		numItems = *numitems
 	}
@@ -227,8 +216,6 @@ func Test_DGMLoad(t *testing.T) {
 	val, erro := coll.Get([]byte(fmt.Sprintf("%08d", numItems-1)), ReadOptions{})
 	if erro != nil || val == nil {
 		t.Fatalf("Unable to fetch the key written! %v", err)
-	} else {
-		fmt.Println("Get after load success before store close")
 	}
 	// Bug - if we remove this Sleep, we hit data loss
 	time.Sleep(2 * time.Second)

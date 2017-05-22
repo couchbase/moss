@@ -351,12 +351,17 @@ func (s *Store) allFiles() (map[string]interface{}, int) {
 		fd.Close()
 		if err == nil {
 			for _, finfo := range filelist {
-				// Add an entry for the file into the files map
-				// if one doesn't exist already.
-				if _, found := files[finfo.Name()]; !found {
-					files[finfo.Name()] =
-						map[string]interface{}{"ref_count": nil}
+				fileEntry := map[string]interface{}{"ref_count": nil,
+					"file_size":     finfo.Size(),
+					"file_mode":     finfo.Mode(),
+					"file_modified": finfo.ModTime(),
+					"is_dir":        finfo.IsDir()}
+				referencedEntry, exists := files[finfo.Name()]
+				if exists {
+					refMap, _ := referencedEntry.(map[string]interface{})
+					fileEntry["ref_count"] = refMap["ref_count"]
 				}
+				files[finfo.Name()] = fileEntry
 			}
 		}
 	}
