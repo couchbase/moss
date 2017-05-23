@@ -64,7 +64,9 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 				pct = float64(totUpperLen) / float64(ss.a[0].Len())
 			}
 
-			if pct >= s.options.CompactionPercentage {
+			if pct >= s.options.CompactionPercentage ||
+				(s.options.CompactionMaxSegments > 0 &&
+					len(slocs) >= s.options.CompactionMaxSegments) {
 				compactionConcern = CompactionForce
 			}
 		}

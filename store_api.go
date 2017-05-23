@@ -63,10 +63,14 @@ type StoreOptions struct {
 	CollectionOptions CollectionOptions
 
 	// CompactionPercentage determines when a compaction will run when
-	// CompactionConcern is CompactionAllowed.  When the percentage of
+	// CompactionConcern is CompactionAllow.  When the percentage of
 	// ops between the non-base level and the base level is greater
 	// than CompactionPercentage, then compaction will be run.
 	CompactionPercentage float64
+
+	// CompactionMaxSegments is another condition to determine when a
+	// compaction will run when CompactionConcern is CompactionAllow.
+	CompactionMaxSegments int
 
 	// CompactionBufferPages is the number of pages to use for
 	// compaction, where writes are buffered before flushing to disk.

@@ -1971,3 +1971,88 @@ func TestStoreCollHistograms(t *testing.T) {
 		t.Errorf("Unexpected number of ExecuteBatchOpsCount samples!")
 	}
 }
+
+func TestStoreCompactMaxSegments(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var store *Store
+	var coll Collection
+
+	var m sync.Mutex
+	var waitingForCleanCh chan struct{}
+
+	co := CollectionOptions{
+		OnEvent: func(event Event) {
+			if event.Kind == EventKindPersisterProgress {
+				stats, err := coll.Stats()
+				if err == nil && stats.CurDirtyOps <= 0 &&
+					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+					m.Lock()
+					if waitingForCleanCh != nil {
+						waitingForCleanCh <- struct{}{}
+						waitingForCleanCh = nil
+					}
+					m.Unlock()
+				}
+			}
+		},
+	}
+
+	ch := make(chan struct{}, 1)
+
+	var err error
+
+	store, coll, err = OpenStoreCollection(tmpDir,
+		StoreOptions{CollectionOptions: co,
+			CompactionPercentage: 100, CompactionMaxSegments: 5},
+		StorePersistOptions{CompactionConcern: CompactionAllow})
+
+	if err != nil || store == nil {
+		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
+	}
+
+	numBatches := 200
+	itemsPerBatch := 100
+	itemCount := 0
+
+	for bi := 0; bi < numBatches; bi++ {
+		batch, err1 := coll.NewBatch(itemsPerBatch, itemsPerBatch*15)
+		if err1 != nil {
+			t.Errorf("Expected NewBatch() to succeed!")
+		}
+
+		for i := 0; i < itemsPerBatch; i++ {
+			k := []byte(fmt.Sprintf("key%d", i))
+			v := []byte(fmt.Sprintf("val%d", i))
+			itemCount++
+
+			batch.Set(k, v)
+		}
+
+		m.Lock()
+		waitingForCleanCh = ch
+		m.Unlock()
+
+		err1 = coll.ExecuteBatch(batch, WriteOptions{})
+		if err1 != nil {
+			t.Errorf("Expected ExecuteBatch() to work!")
+		}
+	}
+
+	<-ch
+
+	sstats, err := store.Stats()
+	if err != nil {
+		t.Errorf("expected no stats err")
+	}
+	if sstats == nil {
+		t.Errorf("expected non-nil stats")
+	}
+	if sstats["total_persists"].(uint64) <= 0 {
+		t.Errorf("expected >0 total_persists")
+	}
+	if sstats["total_compactions"].(uint64) <= 0 {
+		t.Errorf("expected >0 total_compactions")
+	}
+}
