@@ -19,6 +19,7 @@ Features
 * merge operations allow for read-compute-write optimizations
   for write-heavy use cases (e.g., updating counters)
 * concurrent readers and writers don't block each other
+* child collections allow multiple related collections to be atomically grouped
 * optional, advanced API's to avoid extra memory copying
 * optional lower-level storage implementation, called "mossStore",
   that uses an append-only design for writes and mmap() for reads,

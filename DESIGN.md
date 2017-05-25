@@ -267,3 +267,66 @@ machine endian'ness cannot be opened on a machine with different
 endian'ness, especially since mossStore has an optimization where
 large arrays of uint64's are read/written from/to storage as large,
 contiguous byte arrays.  See: slice_util.go.
+
+Child Collections
+=================
+
+Moss allows multiple related key-value collections to be logically
+& atomically grouped into child collections within a collection.
+The following properties hold true for these child collections:
+* Logically separate key-space.
+* Independent iteration & point queries.
+* Fast deletions and recreations.
+* Atomic grouping via the batch API. This means that all child collection
+batches are processed together in an all-or-none manner during moss's
+background merges and compactions.
+For example, say A, B are child collections :
+Batch1: | A-10-docs + B-3-docs |
+Batch2: | B-4-docs |
+Batch3: | A-2-docs |
+After background merging only the following can happen:
+Batch(1+2) | A-10-docs + B-7-docs |
+Batch3: | A-2-docs |
+OR
+Batch(1+2+3)  | A-12-docs + B-7-docs |
+
+Background merges and compactions will never split up child
+collections that were executed in the same batch.
+So there will never be a state like the following:
+Batch(1+2): | A-10-docs|
+Batch3: | B-7-docs|
+
+This feature is similar to multiple tables in a relational database.
+
+Here is a usecase: say a collection represents people in an software company.
+The keys are user ids of the employees. Now if the company wishes to store
+metadata about its employees, such as number of people in development, sales,
+marketing in the same collection, it can do so by prefixing the user ids with a
+"role" id. This wastes key space and makes deletion of employees an expensive
+operation. Instead the "roles" can simply be a child collection and the keys
+in this child collection can be the actual roles having the count of the number
+of employees in each role as the values.
+
+Internally child collections are recursively stored within the respective
+Snapshot implementations.
+For example segmentStack implements child collection as follows:
+
+ top-level or default collection
+    +---------------------+
+    | segmentStack        |
+    |                     |
+    |     segment-2       |
+    |     segment-1       |
+    |     segment-0       |
+    |                     |             child-collection
+    |     "roles" => -------------> +---------------------+
+    |                     |         | segmentStack        |
+    +---------------------+         |                     |
+                                    |     segment-2       |
+                                    |     segment-1       |
+                                    |     segment-0       |
+                                    |                     |
+                                    +---------------------+
+Note: Since child collections are recursively linked with higher collections,
+any child collection snapshots opened must be explicity closed in order to prevent
+resource leaks.
