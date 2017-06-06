@@ -315,13 +315,15 @@ func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
 			s.m.Lock()
 			delete(s.fileRefMap, fileName)
 			s.m.Unlock()
-			err := os.Remove(path.Join(s.dir, fileName))
-			if err != nil {
-				if s.options.CollectionOptions.Log != nil {
-					s.options.CollectionOptions.Log("Error deleting file %s:%v",
-						fileName, err)
+			go func() {
+				err := os.Remove(path.Join(s.dir, fileName))
+				if err != nil {
+					if s.options.CollectionOptions.Log != nil {
+						s.options.CollectionOptions.Log("Error deleting file %s:%v",
+							fileName, err)
+					}
 				}
-			}
+			}()
 		})
 	}
 	return finfo, nil
