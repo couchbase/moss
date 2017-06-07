@@ -101,6 +101,8 @@ OUTER:
 
 					stackDirtyBase = m.stackDirtyBase
 					if stackDirtyBase != nil {
+						// While waiting for persistence, might as well do a
+						mergeAll = true // full merge to optimize reads.
 						stackDirtyBase.addRef()
 					}
 
