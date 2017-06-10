@@ -34,6 +34,7 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	s.m.Lock()
 	totPersists := s.totPersists
 	totCompactions := s.totCompactions
+	totCompactionsPartial := s.totCompactionsPartial
 	numLastCompactionBeforeBytes := s.numLastCompactionBeforeBytes
 	numLastCompactionAfterBytes := s.numLastCompactionAfterBytes
 	totCompactionDecreaseBytes := s.totCompactionDecreaseBytes
@@ -64,6 +65,7 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 		"num_bytes_used_disk":              numBytesUsedDisk,
 		"total_persists":                   totPersists,
 		"total_compactions":                totCompactions,
+		"total_compactions_partial":        totCompactionsPartial,
 		"num_segments":                     numSegments,
 		"num_last_compaction_before_bytes": numLastCompactionBeforeBytes,
 		"num_last_compaction_after_bytes":  numLastCompactionAfterBytes,

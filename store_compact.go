@@ -39,44 +39,21 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	slocs, ss := footer.segmentLocs()
 
 	defer footer.DecRef()
+	var partialCompactStart int
 
 	if compactionConcern == CompactionAllow {
-		totUpperLen := 0
-		if ss != nil && len(ss.a) >= 2 {
-			for i := 1; i < len(ss.a); i++ {
-				totUpperLen += ss.a[i].Len()
-			}
-		}
-
-		if higher != nil {
-			higherSS, ok := higher.(*segmentStack)
-			if ok {
-				higherStats := higherSS.Stats()
-				if higherStats != nil {
-					totUpperLen += int(higherStats.CurOps)
-				}
-			}
-		}
-
-		if totUpperLen > 0 {
-			var pct float64
-			if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
-				pct = float64(totUpperLen) / float64(ss.a[0].Len())
-			}
-
-			if pct >= s.options.CompactionPercentage ||
-				(s.options.CompactionMaxSegments > 0 &&
-					len(slocs) >= s.options.CompactionMaxSegments) {
-				compactionConcern = CompactionForce
-			}
-		}
+		partialCompactStart = s.calcPartialCompactionStart(slocs, ss, higher,
+			persistOptions)
+		if partialCompactStart >= 0 {
+			compactionConcern = CompactionForce
+		} // else append data to the end of the same file.
 	}
 
 	if compactionConcern != CompactionForce {
 		return false, nil
 	}
 
-	err = s.compact(footer, higher, persistOptions)
+	err = s.compact(footer, partialCompactStart, higher, persistOptions)
 	if err != nil {
 		return false, err
 	}
@@ -86,7 +63,12 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	if len(slocs) > 0 {
 		mref := slocs[0].mref
 		if mref != nil && mref.fref != nil {
-			finfo, err := s.removeFileOnClose(mref.fref)
+			var finfo os.FileInfo
+			if partialCompactStart == 0 {
+				finfo, err = s.removeFileOnClose(mref.fref)
+			} else {
+				finfo, err = mref.fref.file.Stat()
+			}
 			if err == nil && len(finfo.Name()) > 0 {
 				// Fetch size of old file
 				sizeBefore = finfo.Size()
@@ -129,7 +111,44 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	return true, nil
 }
 
-func (s *Store) compact(footer *Footer, higher Snapshot,
+// Figure out reverse scan recursive merge size
+func (s *Store) calcPartialCompactionStart(slocs SegmentLocs, ss *segmentStack,
+	higher Snapshot,
+	persistOptions StorePersistOptions) int {
+	totUpperLen := 0
+	if ss != nil && len(ss.a) >= 2 {
+		for i := 1; i < len(ss.a); i++ {
+			totUpperLen += ss.a[i].Len()
+		}
+	}
+
+	if higher != nil {
+		higherSS, ok := higher.(*segmentStack)
+		if ok {
+			higherStats := higherSS.Stats()
+			if higherStats != nil {
+				totUpperLen += int(higherStats.CurOps)
+			}
+		}
+	}
+
+	if totUpperLen > 0 {
+		var pct float64
+		if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
+			pct = float64(totUpperLen) / float64(ss.a[0].Len())
+		}
+
+		if pct >= s.options.CompactionPercentage ||
+			(s.options.CompactionMaxSegments > 0 &&
+				len(slocs) >= s.options.CompactionMaxSegments) {
+			return 0
+		}
+	}
+
+	return -1 // Don't compact, just append to end of same file.
+}
+
+func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot,
 	persistOptions StorePersistOptions) error {
 	startTime := time.Now()
 
@@ -140,23 +159,36 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 			return fmt.Errorf("store: can only compact higher that's a segmentStack")
 		}
 		ssHigher.ensureFullySorted()
-		newSS = s.mergeSegStacks(footer, ssHigher)
+		newSS = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
 		newSS = footer.ss // Safe as footer ref count is held positive.
 	}
 
-	s.m.Lock()
-	frefCompact, fileCompact, err := s.startFileLOCKED()
-	s.m.Unlock()
+	var frefCompact *FileRef
+	var fileCompact File
+	var err error
+	if partialCompactStart == 0 {
+		s.m.Lock()
+		frefCompact, fileCompact, err = s.startFileLOCKED()
+		s.m.Unlock()
+	} else {
+		frefCompact, fileCompact, err = s.startOrReuseFile()
+	}
 	if err != nil {
 		return err
 	}
+	defer frefCompact.DecRef()
 
 	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact)
 	if err != nil {
-		s.removeFileOnClose(frefCompact)
-		frefCompact.DecRef()
+		if partialCompactStart == 0 {
+			s.removeFileOnClose(frefCompact)
+		}
 		return err
+	}
+	// Prefix restore the footer's partialCompactStart
+	if partialCompactStart != 0 {
+		compactFooter.spliceFooter(footer, partialCompactStart)
 	}
 
 	if s.options != nil && s.options.CompactionSync {
@@ -165,22 +197,28 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 
 	err = s.persistFooter(fileCompact, compactFooter, persistOptions)
 	if err != nil {
-		s.removeFileOnClose(frefCompact)
-		frefCompact.DecRef()
+		if partialCompactStart == 0 {
+			s.removeFileOnClose(frefCompact)
+		}
 		return err
 	}
 
-	footerReady, err := ReadFooter(s.options, fileCompact)
+	err = compactFooter.loadSegments(s.options, frefCompact)
 	if err != nil {
-		s.removeFileOnClose(frefCompact)
-		frefCompact.DecRef()
+		if partialCompactStart == 0 {
+			s.removeFileOnClose(frefCompact)
+		}
 		return err
 	}
 
 	s.m.Lock()
 	footerPrev := s.footer
-	s.footer = footerReady // Owns the frefCompact ref-count.
-	s.totCompactions++
+	s.footer = compactFooter // Owns the frefCompact ref-count.
+	if partialCompactStart == 0 {
+		s.totCompactions++
+	} else {
+		s.totCompactionsPartial++
+	}
 	s.m.Unlock()
 
 	s.histograms["CompactUsecs"].Add(
@@ -193,7 +231,8 @@ func (s *Store) compact(footer *Footer, higher Snapshot,
 	return nil
 }
 
-func (s *Store) mergeSegStacks(footer *Footer, higher *segmentStack) *segmentStack {
+func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
+	higher *segmentStack) *segmentStack {
 	var footerSS *segmentStack
 	var lenFooterSS int
 	if footer != nil && footer.ss != nil {
@@ -206,7 +245,7 @@ func (s *Store) mergeSegStacks(footer *Footer, higher *segmentStack) *segmentSta
 		incarNum: higher.incarNum,
 	}
 	if footerSS != nil {
-		rv.a = append(rv.a, footerSS.a...)
+		rv.a = append(rv.a, footerSS.a[splicePoint:]...)
 	}
 	rv.a = append(rv.a, higher.a...)
 	for cName, newStack := range higher.childSegStacks {
@@ -214,7 +253,8 @@ func (s *Store) mergeSegStacks(footer *Footer, higher *segmentStack) *segmentSta
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if footer == nil {
-			rv.childSegStacks[cName] = s.mergeSegStacks(nil, newStack)
+			rv.childSegStacks[cName] = s.mergeSegStacks(nil,
+				splicePoint, newStack)
 			continue
 		}
 
@@ -226,25 +266,38 @@ func (s *Store) mergeSegStacks(footer *Footer, higher *segmentStack) *segmentSta
 				childFooter = nil
 			}
 		}
-		rv.childSegStacks[cName] = s.mergeSegStacks(childFooter, newStack)
+		rv.childSegStacks[cName] = s.mergeSegStacks(childFooter,
+			splicePoint, newStack)
 	}
 	return rv
 }
 
+func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
+	slocs := make([]SegmentLoc, splicePoint, splicePoint+len(right.SegmentLocs))
+	copy(slocs, left.SegmentLocs[0:splicePoint])
+	slocs = append(slocs, right.SegmentLocs...)
+	right.SegmentLocs = slocs
+
+	for cName, childFooter := range right.ChildFooters {
+		storeChildFooter, exists := left.ChildFooters[cName]
+		if exists {
+			if storeChildFooter.incarNum != childFooter.incarNum {
+				// Fast child collection recreation, ok to drop store footer's
+				// segments from prior incarnation.
+				continue
+			}
+			childFooter.spliceFooter(storeChildFooter, splicePoint)
+		}
+	}
+}
+
 func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	fileCompact File) (compactFooter *Footer, err error) {
-	var pos int64
-	if newSS.incarNum == 0 {
-		pos = int64(StorePageSize)
-	} else {
-		var finfo os.FileInfo
-		finfo, err = fileCompact.Stat()
-		if err != nil {
-			return nil, err
-		}
-		pos = finfo.Size()
+	finfo, err := fileCompact.Stat()
+	if err != nil {
+		return nil, err
 	}
-
+	pos := finfo.Size()
 	stats := newSS.Stats()
 
 	kvsBegPos := pageAlignCeil(pos)

@@ -34,8 +34,9 @@ type Store struct {
 	footer       *Footer
 	nextFNameSeq int64
 
-	totPersists    uint64 // Total number of persists
-	totCompactions uint64 // Total number of compactions
+	totPersists           uint64 // Total number of persists
+	totCompactions        uint64 // Total number of compactions
+	totCompactionsPartial uint64 // Total number of partial compactions into same file
 
 	numLastCompactionBeforeBytes uint64 // File size before last compaction
 	numLastCompactionAfterBytes  uint64 // File size after last compaction
