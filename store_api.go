@@ -69,9 +69,13 @@ type StoreOptions struct {
 	// than CompactionPercentage, then compaction will be run.
 	CompactionPercentage float64
 
-	// CompactionMaxSegments is another condition to determine when a
-	// compaction will run when CompactionConcern is CompactionAllow.
-	CompactionMaxSegments int
+	// CompactionLevelMaxSegments determines the number of segments per level
+	// exceeding which partial or full compaction will run.
+	CompactionLevelMaxSegments int
+
+	// CompactionLevelMultiplier is the factor which determines the
+	// next level in terms of segment sizes.
+	CompactionLevelMultiplier int
 
 	// CompactionBufferPages is the number of pages to use for
 	// compaction, where writes are buffered before flushing to disk.
@@ -105,8 +109,12 @@ var DefaultPersistKind = SegmentKindBasic
 
 // DefaultStoreOptions are the default store options when the
 // application hasn't provided a meaningful configuration value.
+// Advanced applications can use these to fine tune performance.
 var DefaultStoreOptions = StoreOptions{
-	CompactionBufferPages: 512,
+	CompactionPercentage:       100.0,
+	CompactionLevelMaxSegments: 1,
+	CompactionLevelMultiplier:  1024 * 1024 * 1024,
+	CompactionBufferPages:      512,
 }
 
 // StorePersistOptions are provided to Store.Persist().

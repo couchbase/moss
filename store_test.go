@@ -2005,7 +2005,8 @@ func TestStoreCompactMaxSegments(t *testing.T) {
 
 	store, coll, err = OpenStoreCollection(tmpDir,
 		StoreOptions{CollectionOptions: co,
-			CompactionPercentage: 100, CompactionMaxSegments: 5},
+			CompactionPercentage: 100, CompactionLevelMaxSegments: 5,
+			CompactionLevelMultiplier: 100000},
 		StorePersistOptions{CompactionConcern: CompactionAllow})
 
 	if err != nil || store == nil {

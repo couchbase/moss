@@ -36,15 +36,29 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 	defer footer.DecRef()
 
-	slocs, ss := footer.segmentLocs()
+	slocs, _ := footer.segmentLocs()
 
 	defer footer.DecRef()
 	var partialCompactStart int
 
 	if compactionConcern == CompactionAllow {
-		partialCompactStart = s.calcPartialCompactionStart(slocs, ss, higher,
-			persistOptions)
-		if partialCompactStart >= 0 {
+		// First compute size of the incoming batch of data.
+		var incomingDataSize uint64
+		if higher != nil {
+			higherSS, ok := higher.(*segmentStack)
+			if ok {
+				higherStats := higherSS.Stats()
+				if higherStats != nil {
+					incomingDataSize = higherStats.CurBytes
+				}
+			}
+		}
+
+		// Try leveled compaction to same file.
+		var doCompact bool
+		partialCompactStart, doCompact = calcPartialCompactionStart(slocs,
+			incomingDataSize, s.options)
+		if doCompact {
 			compactionConcern = CompactionForce
 		} // else append data to the end of the same file.
 	}
@@ -111,41 +125,103 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	return true, nil
 }
 
-// Figure out reverse scan recursive merge size
-func (s *Store) calcPartialCompactionStart(slocs SegmentLocs, ss *segmentStack,
-	higher Snapshot,
-	persistOptions StorePersistOptions) int {
-	totUpperLen := 0
-	if ss != nil && len(ss.a) >= 2 {
-		for i := 1; i < len(ss.a); i++ {
-			totUpperLen += ss.a[i].Len()
+// calcPartialCompactionStart - returns an index into the segment locations
+// from which point it would be better to merge segments into a larger one.
+// Return Values:
+//  0 => Full compaction into a new file.
+// >0 => Partially Compact all the segments starting at this return index,
+//       and append  this one segment at the end of the file while retaining all
+//       segments before this starting segment.
+//  false => append data to the end of the file.
+//  true  => perform compaction.
+//                                         ||
+//                                         ||
+//  Say CompactionLevelMaxSegments = 2     ||
+//                                         ||
+//     ||                  ||              ||
+//  || ||               || || ??           ||
+//  || ||          ==>  || || ??     ==>   ||
+//  || ||               || || ??           ||
+//  || ||               || || ??           ||
+//  || ||  || ||  ##    || || ??           ||
+//  || ||  || ||  ##    || || ??           ||
+// ----------------->  ----------->      -----> (new file)
+//  level1 level0 new  level1 hits max!  final file
+//
+func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
+	options *StoreOptions) (compStartIdx int, doCompact bool) {
+	maxSegmentsPerLevel := options.CompactionLevelMaxSegments
+	if maxSegmentsPerLevel == 0 {
+		maxSegmentsPerLevel = DefaultStoreOptions.CompactionLevelMaxSegments
+	}
+	fragmentationThreshold := options.CompactionPercentage
+	if fragmentationThreshold == 0.0 {
+		fragmentationThreshold = DefaultStoreOptions.CompactionPercentage
+	}
+	levelMultiplier := options.CompactionLevelMultiplier
+	if levelMultiplier == 0 {
+		levelMultiplier = DefaultStoreOptions.CompactionLevelMultiplier
+	}
+	if len(slocs) < maxSegmentsPerLevel {
+		return -1, false // No segments => append to end of same file.
+	}
+
+	determineExponent := func(segSize, curLevelSize uint64, curLevel int) int {
+		newLevel := curLevel
+		growBy := uint64(levelMultiplier)
+		for sz := curLevelSize * growBy; sz <= segSize; sz *= growBy {
+			newLevel++
+		}
+		return newLevel
+	}
+
+	compStartIdx = -1 // Assume we need to append to end of file.
+	// sizeSoFar represents the estimated size of the partially compacted
+	// future segment if we were to start compacting from current segment.
+	sizeSoFar := newDataSize
+	curLevelSize := newDataSize
+	curLevel := 0
+	numInLevel := 1 // Incoming batch is assumed to be appended in L0.
+
+	for idx := len(slocs) - 1; idx >= 0; idx-- {
+		segSize := slocs[idx].TotKeyByte + slocs[idx].TotValByte
+		newLevel := determineExponent(segSize, curLevelSize, curLevel)
+		if newLevel > curLevel {
+			break
+		}
+		numInLevel++
+		sizeSoFar += segSize
+		if numInLevel > maxSegmentsPerLevel {
+			compStartIdx = idx
+			curLevel = determineExponent(sizeSoFar, curLevelSize, curLevel)
+			numInLevel = 1
+			curLevelSize = sizeSoFar
 		}
 	}
 
-	if higher != nil {
-		higherSS, ok := higher.(*segmentStack)
-		if ok {
-			higherStats := higherSS.Stats()
-			if higherStats != nil {
-				totUpperLen += int(higherStats.CurOps)
-			}
+	if compStartIdx > 0 && fragmentationThreshold > 0 {
+		totDataSize := uint64(0)
+		for idx := 0; idx < len(slocs); idx++ {
+			totDataSize += slocs[idx].TotKeyByte + slocs[idx].TotValByte
+		}
+		finfo, err := slocs[0].mref.fref.file.Stat()
+		if err != nil {
+			return 0, true
+		}
+		predictedDataSize := int64(totDataSize) + int64(newDataSize)
+		predictedFileSize := finfo.Size() + int64(curLevelSize)
+
+		staleDataSize := predictedFileSize - predictedDataSize
+		fragPercentage := float64(staleDataSize) / float64(predictedFileSize)
+		if fragPercentage > fragmentationThreshold {
+			return 0, true // File is too fragmented for partial compaction.
 		}
 	}
-
-	if totUpperLen > 0 {
-		var pct float64
-		if ss != nil && len(ss.a) > 0 && ss.a[0].Len() > 0 {
-			pct = float64(totUpperLen) / float64(ss.a[0].Len())
-		}
-
-		if pct >= s.options.CompactionPercentage ||
-			(s.options.CompactionMaxSegments > 0 &&
-				len(slocs) >= s.options.CompactionMaxSegments) {
-			return 0
-		}
+	if compStartIdx >= 0 {
+		doCompact = true
 	}
 
-	return -1 // Don't compact, just append to end of same file.
+	return compStartIdx, doCompact
 }
 
 func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot,
