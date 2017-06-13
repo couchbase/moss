@@ -662,6 +662,17 @@ func (s *Store) openCollection(
 	return coll, nil
 }
 
+// statsReporter interface represents the stats report methods
+type statsReporter interface {
+	reportBytesWritten(numBytesWritten uint64)
+}
+
+func (s *Store) reportBytesWritten(numBytesWritten uint64) {
+	s.m.Lock()
+	s.totCompactionWrittenBytes += numBytesWritten
+	s.m.Unlock()
+}
+
 func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 	rv *collection, err error) {
 	var coll *collection

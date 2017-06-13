@@ -41,6 +41,8 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	totCompactionIncreaseBytes := s.totCompactionIncreaseBytes
 	maxCompactionDecreaseBytes := s.maxCompactionDecreaseBytes
 	maxCompactionIncreaseBytes := s.maxCompactionIncreaseBytes
+	totCompactionBeforeBytes := s.totCompactionBeforeBytes
+	totCompactionWrittenBytes := s.totCompactionWrittenBytes
 	s.m.Unlock()
 
 	footer, err := s.snapshot()
@@ -66,6 +68,8 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 		"total_persists":                   totPersists,
 		"total_compactions":                totCompactions,
 		"total_compactions_partial":        totCompactionsPartial,
+		"totCompactionBeforeBytes":         totCompactionBeforeBytes,
+		"totCompactionWrittenBytes":        totCompactionWrittenBytes,
 		"num_segments":                     numSegments,
 		"num_last_compaction_before_bytes": numLastCompactionBeforeBytes,
 		"num_last_compaction_after_bytes":  numLastCompactionAfterBytes,

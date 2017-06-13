@@ -182,7 +182,7 @@ type ioBuf struct {
 // newBufferedSectionWriter converts incoming Write() requests into
 // buffered, asynchronous WriteAt()'s in a section of a file.
 func newBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
-	bufSize int) *bufferedSectionWriter {
+	bufSize int, s statsReporter) *bufferedSectionWriter {
 	stopCh := make(chan struct{})
 	doneCh := make(chan struct{})
 	reqCh := make(chan ioBuf)
@@ -208,6 +208,9 @@ func newBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
 				buf, pos = req.buf, req.pos
 				if len(buf) > 0 {
 					_, err = w.WriteAt(buf, pos)
+					if err == nil && s != nil {
+						s.reportBytesWritten(uint64(len(buf)))
+					}
 				}
 			}
 		}

@@ -44,6 +44,8 @@ type Store struct {
 	totCompactionIncreaseBytes   uint64 // File size increase after all compactions
 	maxCompactionDecreaseBytes   uint64 // Max file size decrease from any compaction
 	maxCompactionIncreaseBytes   uint64 // Max file size increase from any compaction
+	totCompactionBeforeBytes     uint64 // total bytes to be compacted
+	totCompactionWrittenBytes    uint64 // total bytes written out by compaction
 
 	histograms ghistogram.Histograms // Histograms from store operations
 	fileRefMap map[string]*FileRef   // Map to contain the FileRefs

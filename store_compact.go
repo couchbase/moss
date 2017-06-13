@@ -389,14 +389,17 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	compactionBufferSize := StorePageSize * compactionBufferPages
 
 	compactWriter := &compactWriter{
-		kvsWriter: newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize),
-		bufWriter: newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize),
+		kvsWriter: newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize, s),
+		bufWriter: newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize, s),
 	}
 	onError := func(err error) error {
 		compactWriter.kvsWriter.Stop()
 		compactWriter.bufWriter.Stop()
 		return err
 	}
+	s.m.Lock()
+	s.totCompactionBeforeBytes += stats.CurBytes
+	s.m.Unlock()
 
 	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, false, false, s.abortCh)
 	if err != nil {
@@ -462,7 +465,6 @@ type compactWriter struct {
 
 func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
 	keyStart := cw.bufWriter.Written()
-
 	_, err := cw.bufWriter.Write(key)
 	if err != nil {
 		return err
