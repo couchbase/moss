@@ -2056,3 +2056,102 @@ func TestStoreCompactMaxSegments(t *testing.T) {
 		t.Errorf("expected >0 total_compactions")
 	}
 }
+
+func TestStoreCrashRecovery(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var store *Store
+	var coll Collection
+
+	var m sync.Mutex
+	var waitingForCleanCh chan struct{}
+
+	co := CollectionOptions{
+		OnEvent: func(event Event) {
+			if event.Kind == EventKindPersisterProgress {
+				stats, err := coll.Stats()
+				if err == nil && stats.CurDirtyOps <= 0 &&
+					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
+					m.Lock()
+					if waitingForCleanCh != nil {
+						waitingForCleanCh <- struct{}{}
+						waitingForCleanCh = nil
+					}
+					m.Unlock()
+				}
+			}
+		},
+	}
+
+	ch := make(chan struct{}, 1)
+
+	var err error
+
+	store, coll, err = OpenStoreCollection(tmpDir,
+		StoreOptions{CollectionOptions: co},
+		StorePersistOptions{CompactionConcern: CompactionDisable})
+
+	if err != nil || store == nil {
+		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
+	}
+
+	numBatches := 200
+	itemsPerBatch := 100
+	itemCount := 0
+
+	for bi := 0; bi < numBatches; bi++ {
+		batch, err1 := coll.NewBatch(itemsPerBatch, itemsPerBatch*15)
+		if err1 != nil {
+			t.Errorf("Expected NewBatch() to succeed!")
+		}
+
+		for i := 0; i < itemsPerBatch; i++ {
+			k := []byte(fmt.Sprintf("key%d", i))
+			v := []byte(fmt.Sprintf("val%d", i))
+			itemCount++
+
+			batch.Set(k, v)
+		}
+
+		m.Lock()
+		waitingForCleanCh = ch
+		m.Unlock()
+
+		err1 = coll.ExecuteBatch(batch, WriteOptions{})
+		if err1 != nil {
+			t.Errorf("Expected ExecuteBatch() to work!")
+		}
+	}
+
+	<-ch
+
+	file := store.footer.SegmentLocs[0].mref.fref.file
+	finfo, err := file.Stat()
+	if err != nil {
+		t.Errorf("Expected file stat to work %v", err)
+	}
+	sizeRem := finfo.Size() % int64(StorePageSize)
+	if sizeRem != 0 { // Round up the file to 4K size with garbage
+		fillUpBuf := make([]byte, int64(StorePageSize)-sizeRem)
+		n, _ := file.WriteAt(fillUpBuf, finfo.Size())
+		if n != len(fillUpBuf) {
+			t.Errorf("Unable to pad up file: error %v", err)
+		}
+		err = file.Sync()
+		if err != nil {
+			t.Errorf("Expected file sync to work %v", err)
+		}
+	}
+	coll.Close() // Properly wait for background tasks.
+	store.Close()
+
+	store, coll, err = OpenStoreCollection(tmpDir,
+		StoreOptions{CollectionOptions: co},
+		StorePersistOptions{CompactionConcern: CompactionDisable})
+
+	if err != nil || store == nil {
+		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
+	}
+
+}

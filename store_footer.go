@@ -99,7 +99,10 @@ func ReadFooter(options *StoreOptions, file File) (*Footer, error) {
 
 	fref := &FileRef{file: file, refs: 1}
 
-	f, err := ScanFooter(options, fref, finfo.Name(), finfo.Size())
+	// To avoid an EOF while reading, start scanning the footer from
+	// the last byte. This is under the assumption that the footer is
+	// at least 2 bytes long.
+	f, err := ScanFooter(options, fref, finfo.Name(), finfo.Size()-1)
 	if err != nil {
 		return nil, err
 	}
