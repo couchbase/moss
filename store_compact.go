@@ -169,7 +169,7 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	determineExponent := func(segSize, curLevelSize uint64, curLevel int) int {
 		newLevel := curLevel
 		growBy := uint64(levelMultiplier)
-		for sz := curLevelSize * growBy; sz <= segSize; sz *= growBy {
+		for sz := curLevelSize * growBy; sz <= segSize && sz > 0; sz *= growBy {
 			newLevel++
 		}
 		return newLevel
