@@ -312,10 +312,10 @@ func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
 	if len(finfo.Name()) > 0 {
 		fref.OnAfterClose(func() {
 			fileName := finfo.Name()
-			s.m.Lock()
-			delete(s.fileRefMap, fileName)
-			s.m.Unlock()
 			go func() {
+				s.m.Lock()
+				delete(s.fileRefMap, fileName)
+				s.m.Unlock()
 				err := os.Remove(path.Join(s.dir, fileName))
 				if err != nil {
 					if s.options.CollectionOptions.Log != nil {
