@@ -737,6 +737,24 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 	if err != nil {
 		t.Errorf("expected read dir to work")
 	}
+	// Since file deletions happen asynchronously, sometimes it is possible
+	// that the deleted file still lingers around.
+	// To ensure this does not cause test failures, retry a few times
+	// before erroring out.
+	for retry := 10; retry > 0 && len(fileInfos) != 1; retry-- {
+		file, erro := os.Open(tmpDir)
+		if erro != nil {
+			t.Fatalf("Expected directory open to succeed: %v", erro)
+		}
+		file.Sync()
+		file.Close()
+
+		time.Sleep(1 * time.Second)
+		fileInfos, err = ioutil.ReadDir(tmpDir)
+		if err != nil {
+			t.Errorf("expected read dir to work")
+		}
+	}
 	if len(fileInfos) != 1 {
 		fileNames := []string{}
 		for _, fileInfo := range fileInfos {
