@@ -111,9 +111,9 @@ var DefaultPersistKind = SegmentKindBasic
 // application hasn't provided a meaningful configuration value.
 // Advanced applications can use these to fine tune performance.
 var DefaultStoreOptions = StoreOptions{
-	CompactionPercentage:       0.6,
-	CompactionLevelMaxSegments: 4,
-	CompactionLevelMultiplier:  9,
+	CompactionPercentage:       100.0,
+	CompactionLevelMaxSegments: 1,
+	CompactionLevelMultiplier:  1024 * 1024 * 1024,
 	CompactionBufferPages:      512,
 }
 
