@@ -115,6 +115,11 @@ func (s *Store) persist(higher Snapshot, persistOptions StorePersistOptions) (
 		return nil, fmt.Errorf("store: can only persist segmentStack")
 	}
 
+	// If higher segment has no data, we're still clean, so just snapshot.
+	if ss.isEmpty() {
+		return s.Snapshot()
+	}
+
 	fref, file, err := s.startOrReuseFile()
 	if err != nil {
 		return nil, err

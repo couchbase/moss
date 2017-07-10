@@ -1,6 +1,7 @@
 package moss
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -146,6 +147,7 @@ func (mh *mossHerder) overMemQuotaLOCKED() bool {
 var numitems = flag.Int("numItems", 100000, "number of items to load")
 var batchsize = flag.Int("batchSize", 100, "number of items per batch")
 var memquota = flag.Uint64("memQuota", 128*1024*1024, "Memory quota")
+var dbpath = flag.String("dbPath", "", "path to moss store directory")
 
 func Test_DGMLoad(t *testing.T) {
 	numItems := 400000
@@ -161,16 +163,22 @@ func Test_DGMLoad(t *testing.T) {
 	if memquota != nil {
 		memQuota = *memquota
 	}
-
-	tmpDir, _ := ioutil.TempDir("", "mossStoreDGM")
-	defer os.RemoveAll(tmpDir)
+	var tmpDir string
+	if *dbpath != "" {
+		tmpDir = *dbpath
+		os.RemoveAll(tmpDir)
+		if err := os.Mkdir(tmpDir, 0777); err != nil {
+			t.Fatalf("Can't create directory %s: %v", tmpDir, err)
+		}
+	} else {
+		tmpDir, _ = ioutil.TempDir("", "mossStoreDGM")
+		defer os.RemoveAll(tmpDir)
+	}
 
 	so := DefaultStoreOptions
-	so.CollectionOptions.MinMergePercentage = 0.0
 	so.CollectionOptions.OnEvent = NewMossHerderOnEvent(memQuota)
-	so.CompactionPercentage = 1.0
 	so.CompactionSync = true
-	spo := StorePersistOptions{CompactionConcern: CompactionAllow} //, AsyncCompaction: true}
+	spo := StorePersistOptions{CompactionConcern: CompactionAllow}
 
 	store, coll, err := OpenStoreCollection(tmpDir, so, spo)
 	if err != nil || store == nil || coll == nil {
@@ -180,7 +188,7 @@ func Test_DGMLoad(t *testing.T) {
 	startI := 0
 	bigVal := fmt.Sprintf("%0504d", numItems)
 
-	for i := 0; i <= numItems; i = i + batchSize {
+	for i := 0; i < numItems; i = i + batchSize {
 		// create new batch to set some keys
 		ba, errr := coll.NewBatch(batchSize, batchSize*512)
 		if errr != nil {
@@ -188,7 +196,7 @@ func Test_DGMLoad(t *testing.T) {
 			return
 		}
 
-		for j := i + batchSize - 1; j > i; j-- {
+		for j := i + batchSize - 1; j >= i; j-- {
 			k := fmt.Sprintf("%08d", j)
 			ba.Set([]byte(k), []byte(bigVal))
 		}
@@ -217,8 +225,13 @@ func Test_DGMLoad(t *testing.T) {
 	if erro != nil || val == nil {
 		t.Fatalf("Unable to fetch the key written! %v", err)
 	}
-	// Bug - if we remove this Sleep, we hit data loss
-	time.Sleep(2 * time.Second)
+	for {
+		stats, er := coll.Stats()
+		if er == nil && stats.CurDirtyOps <= 0 {
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
 
 	if store.Close() != nil {
 		t.Fatalf("expected store close to work")
@@ -232,14 +245,34 @@ func Test_DGMLoad(t *testing.T) {
 	if err != nil || store == nil || coll == nil {
 		t.Fatalf("error opening store collection:%v", tmpDir)
 	}
-	for i := numItems - 1; i > 0; i-- {
+
+	startT = time.Now()
+	ss, _ := coll.Snapshot()
+	iter, erro := ss.StartIterator(nil, nil, IteratorOptions{})
+	if erro != nil {
+		t.Fatalf("error opening collection iterator:%v", erro)
+	}
+	i := 0
+	for ; err == nil; err, i = iter.Next(), i+1 {
 		key := fmt.Sprintf("%08d", i)
-		val, erro = coll.Get([]byte(key), ReadOptions{})
-		if erro != nil || val == nil {
-			fmt.Println("Data loss for item ", key)
-		} else {
+		k, _, erro := iter.Current()
+		if erro != nil {
 			break
 		}
+		if !bytes.Equal(k, []byte(key)) {
+			fmt.Println("Data loss for item ", key, " vs ", string(k))
+			t.Fatalf("stop")
+		}
+	}
+	if i != numItems {
+		t.Errorf("Data loss: Expected %d items, but iterated only %d", numItems, i)
+	}
+	iter.Close()
+	ss.Close()
+
+	elapsed := time.Since(startT)
+	if numItems > 200000 {
+		fmt.Printf("Iterating %d items took %dms\n", numItems, elapsed/100000)
 	}
 
 	if store.Close() != nil {
