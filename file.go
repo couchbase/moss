@@ -207,9 +207,9 @@ func newBufferedSectionWriter(w io.WriterAt, begPos, maxBytes int64,
 			if ok {
 				buf, pos = req.buf, req.pos
 				if len(buf) > 0 {
-					_, err = w.WriteAt(buf, pos)
+					nBytes, err := w.WriteAt(buf, pos)
 					if err == nil && s != nil {
-						s.reportBytesWritten(uint64(len(buf)))
+						s.reportBytesWritten(uint64(nBytes))
 					}
 				}
 			}
