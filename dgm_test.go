@@ -149,6 +149,16 @@ var batchsize = flag.Int("batchSize", 100, "number of items per batch")
 var memquota = flag.Uint64("memQuota", 128*1024*1024, "Memory quota")
 var dbpath = flag.String("dbPath", "", "path to moss store directory")
 
+func waitForPersistence(coll Collection) {
+	for {
+		stats, er := coll.Stats()
+		if er == nil && stats.CurDirtyOps <= 0 {
+			break
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+}
+
 func Test_DGMLoad(t *testing.T) {
 	numItems := 400000
 	batchSize := 100
@@ -225,20 +235,16 @@ func Test_DGMLoad(t *testing.T) {
 	if erro != nil || val == nil {
 		t.Fatalf("Unable to fetch the key written! %v", err)
 	}
-	for {
-		stats, er := coll.Stats()
-		if er == nil && stats.CurDirtyOps <= 0 {
-			break
-		}
-		time.Sleep(1 * time.Millisecond)
+
+	waitForPersistence(coll)
+	time.Sleep(1 * time.Second) // wait for idle run compaction to kick in.
+
+	if coll.Close() != nil {
+		t.Fatalf("Error closing child collection")
 	}
 
 	if store.Close() != nil {
 		t.Fatalf("expected store close to work")
-	}
-
-	if coll.Close() != nil {
-		t.Fatalf("Error closing child collection")
 	}
 
 	store, coll, err = OpenStoreCollection(tmpDir, so, spo)
@@ -261,7 +267,11 @@ func Test_DGMLoad(t *testing.T) {
 		}
 		if !bytes.Equal(k, []byte(key)) {
 			fmt.Println("Data loss for item ", key, " vs ", string(k))
-			t.Fatalf("stop")
+			t.Fatalf("Data loss for item detected!")
+		}
+		_, erro = coll.Get([]byte(key), ReadOptions{})
+		if erro != nil {
+			t.Fatalf("Data loss for item in Get detected!")
 		}
 	}
 	if i != numItems {
@@ -272,7 +282,7 @@ func Test_DGMLoad(t *testing.T) {
 
 	elapsed := time.Since(startT)
 	if numItems > 200000 {
-		fmt.Printf("Iterating %d items took %dms\n", numItems, elapsed/100000)
+		fmt.Printf("Iterating %d items took %dms\n", numItems, elapsed/1000000)
 	}
 
 	if store.Close() != nil {

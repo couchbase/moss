@@ -268,7 +268,8 @@ func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot
 	}
 	defer frefCompact.DecRef()
 
-	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact)
+	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact,
+		partialCompactStart != 0) // include deletions for partialCompactions.
 	if err != nil {
 		if partialCompactStart == 0 {
 			s.removeFileOnClose(frefCompact)
@@ -381,7 +382,7 @@ func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
 }
 
 func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
-	fileCompact File) (compactFooter *Footer, err error) {
+	fileCompact File, includeDeletes bool) (compactFooter *Footer, err error) {
 	finfo, err := fileCompact.Stat()
 	if err != nil {
 		return nil, err
@@ -414,7 +415,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	s.totCompactionBeforeBytes += stats.CurBytes
 	s.m.Unlock()
 
-	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, false, false, s.abortCh)
+	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, includeDeletes, false, s.abortCh)
 	if err != nil {
 		return nil, onError(err)
 	}
@@ -455,7 +456,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 			compactFooter.ChildFooters = make(map[string]*Footer)
 		}
 		childFooter, err := s.writeSegments(childSegStack,
-			frefCompact, fileCompact)
+			frefCompact, fileCompact, includeDeletes)
 		if err != nil {
 			return nil, err
 		}

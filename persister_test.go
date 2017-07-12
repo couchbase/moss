@@ -1212,3 +1212,108 @@ func Test_JustLoad1Mitems(b *testing.T) {
 		b.Fatalf("Error closing child collection")
 	}
 }
+
+func Test_LevelCompactDeletes(t *testing.T) {
+	numItems := 100000
+	batchSize := 100
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	so := DefaultStoreOptions
+	so.CollectionOptions.MinMergePercentage = 0.0
+	so.CompactionPercentage = 0.0
+	so.CompactionSync = true
+	spo := StorePersistOptions{CompactionConcern: CompactionAllow}
+
+	store, coll, err := OpenStoreCollection(tmpDir, so, spo)
+	if err != nil || store == nil || coll == nil {
+		t.Fatalf("error opening store collection:%v", tmpDir)
+	}
+
+	for i := numItems; i > 0; i = i - batchSize {
+		// create new batch to set some keys
+		ba, erro := coll.NewBatch(0, 0)
+		if erro != nil {
+			t.Fatalf("error creating new batch: %v", err)
+			return
+		}
+		for j := i - 1; j >= i-batchSize; j-- {
+			k := fmt.Sprintf("%08d", j)
+			ba.Set([]byte(k), []byte(k))
+		}
+		err = coll.ExecuteBatch(ba, WriteOptions{})
+		if err != nil {
+			t.Fatalf("error executing batch: %v", err)
+			return
+		}
+
+		// cleanup that batch
+		err = ba.Close()
+		if err != nil {
+			t.Fatalf("error closing batch: %v", err)
+			return
+		}
+		val, er := coll.Get([]byte(fmt.Sprintf("%08d", i-1)), ReadOptions{})
+		if er != nil || val == nil {
+			t.Fatalf("Unable to fetch the key written: %v", er)
+		}
+	}
+
+	waitForPersistence(coll)
+
+	if store.Close() != nil {
+		t.Fatalf("expected store close to work")
+	}
+
+	if coll.Close() != nil {
+		t.Fatalf("Error closing child collection")
+	}
+	// Now reopen the store in level compaction mode and Only do deletes.
+	so.CompactionPercentage = 100.0
+	so.CompactionLevelMaxSegments = 2
+	so.CompactionLevelMultiplier = 3
+	store, coll, err = OpenStoreCollection(tmpDir, so, spo)
+	if err != nil || store == nil || coll == nil {
+		t.Fatalf("error opening store collection:%v", tmpDir)
+	}
+
+	// Now load data such that a new batch comprising of only deleted items
+	// is appended to the end of the file.
+	// On the last attempt to append, level compaction should kick in
+	// and only partially compact those last segments comprising of deletes.
+	level0segments := 3 // level compact on the third level0 segment.
+	for i := 0; i < numItems && level0segments > 0; i = i + batchSize {
+		ba, erro := coll.NewBatch(0, 0)
+		if erro != nil {
+			t.Fatalf("error creating new batch: %v", erro)
+			return
+		}
+		key := fmt.Sprintf("%08d", i)
+		erro = ba.Del([]byte(key))
+		if erro != nil {
+			t.Fatalf("unable to delete key")
+		}
+		erro = coll.ExecuteBatch(ba, WriteOptions{})
+		if erro != nil {
+			t.Fatalf("error executing batch: %v", erro)
+			return
+		}
+
+		// cleanup that batch
+		erro = ba.Close()
+		if erro != nil {
+			t.Fatalf("error closing batch: %v", erro)
+			return
+		}
+
+		waitForPersistence(coll)
+		level0segments--
+	}
+	val, erro := coll.Get([]byte(fmt.Sprintf("%08d", 0)), ReadOptions{})
+	if erro == nil && val != nil {
+		t.Fatalf("Should have deleted key 0: %v", err)
+	}
+
+	coll.Close()
+	store.Close()
+}
