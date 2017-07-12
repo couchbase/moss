@@ -390,6 +390,19 @@ func (a *segment) findKeyPos(key []byte) int {
 	buf := a.buf
 
 	i, j := 0, a.Len()
+
+	if i == j {
+		return -1
+	}
+
+	// If key smaller than smallest key, return early.
+	startKeyLen := int((maskKeyLength & kvs[0]) >> 32)
+	startKeyBeg := int(kvs[1])
+	startCmp := bytes.Compare(key, buf[startKeyBeg:startKeyBeg+startKeyLen])
+	if startCmp < 0 {
+		return -1
+	}
+
 	for i < j {
 		h := i + (j-i)/2 // Keep i <= h < j.
 		x := h * 2
@@ -417,6 +430,18 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	buf := a.buf
 
 	i, j := 0, a.Len()
+	if i == j {
+		return i
+	}
+
+	startKeyLen := int((maskKeyLength & kvs[0]) >> 32)
+	startKeyBeg := int(kvs[1])
+	startCmp := bytes.Compare(startKeyInclusive,
+		buf[startKeyBeg:startKeyBeg+startKeyLen])
+	if startCmp < 0 { // If key smaller than smallest key, return early.
+		return i
+	}
+
 	for i < j {
 		h := i + (j-i)/2 // Keep i <= h < j.
 		x := h * 2
