@@ -146,8 +146,8 @@ func (mh *mossHerder) overMemQuotaLOCKED() bool {
 
 var numitems = flag.Int("numItems", 100000, "number of items to load")
 var batchsize = flag.Int("batchSize", 100, "number of items per batch")
-var memquota = flag.Uint64("memQuota", 128*1024*1024, "Memory quota")
-var dbpath = flag.String("dbPath", "", "path to moss store directory")
+var memquota = flag.Uint64("memquota", 128*1024*1024, "Memory quota")
+var dbpath = flag.String("dbpath", "", "path to moss store directory")
 
 func waitForPersistence(coll Collection) {
 	for {
