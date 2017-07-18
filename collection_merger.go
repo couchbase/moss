@@ -177,6 +177,19 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 	if waitDirtyIncomingCh != nil {
 		atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
 
+		var idleTimerCh <-chan time.Time
+
+		idleTimeout := m.options.MergerIdleRunTimeoutMS
+		if idleTimeout == 0 {
+			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
+		}
+		if idleTimeout != 0 {
+			idleTimer := time.NewTimer(
+				time.Duration(idleTimeout) * time.Millisecond)
+			idleTimerCh = idleTimer.C
+			defer idleTimer.Stop() // Allow GC if timer does not fire.
+		}
+
 		select {
 		case <-m.stopCh:
 			atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
@@ -187,6 +200,10 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 			if pingVal.kind == "mergeAll" {
 				mergeAll = true
 			}
+
+		case <-idleTimerCh:
+			atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
+			mergeAll = true // While idle, might as well merge/compact.
 
 		case <-waitDirtyIncomingCh:
 			// NO-OP.
@@ -241,6 +258,14 @@ func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 
 		stackDirtyMidPrev.Close()
 	} else {
+		if stackDirtyMid != nil && stackDirtyMid.isEmpty() {
+			m.m.Lock() // Allow an empty stackDirtyMid to kick persistence.
+			stackDirtyMidPrev := m.stackDirtyMid
+			m.stackDirtyMid = stackDirtyMid
+			m.m.Unlock()
+
+			stackDirtyMidPrev.Close()
+		}
 		atomic.AddUint64(&m.stats.TotMergerInternalSkip, 1)
 	}
 
@@ -271,8 +296,7 @@ func (m *collection) mergerNotifyPersister() {
 
 	m.m.Lock()
 
-	if m.stackDirtyBase == nil &&
-		m.stackDirtyMid != nil && !m.stackDirtyMid.isEmpty() {
+	if m.stackDirtyBase == nil && m.stackDirtyMid != nil {
 		atomic.AddUint64(&m.stats.TotMergerLowerLevelNotify, 1)
 
 		m.stackDirtyBase = m.stackDirtyMid

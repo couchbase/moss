@@ -69,6 +69,9 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 	err = s.compact(footer, partialCompactStart, higher, persistOptions)
 	if err != nil {
+		if err == ErrNothingToCompact {
+			return false, nil // swallow the error internally.
+		}
 		return false, err
 	}
 
@@ -162,6 +165,9 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	if levelMultiplier == 0 {
 		levelMultiplier = DefaultStoreOptions.CompactionLevelMultiplier
 	}
+	if newDataSize == 0 { // Idle compaction => attempt full compaction.
+		return 0, true
+	}
 	if len(slocs) < maxSegmentsPerLevel {
 		return -1, false // No segments => append to end of same file.
 	}
@@ -234,10 +240,17 @@ func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot
 		if !ok {
 			return fmt.Errorf("store: can only compact higher that's a segmentStack")
 		}
+		if ssHigher.isEmpty() && len(footer.SegmentLocs) == 1 {
+			// No incoming data to persist and just 1 segment in footer.
+			return ErrNothingToCompact // Nothing to compact.
+		}
 		ssHigher.ensureFullySorted()
 		newSS = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
-		newSS = footer.ss // Safe as footer ref count is held positive.
+		newSS = footer.ss      // Safe as footer ref count is held positive.
+		if len(newSS.a) == 1 { // No incoming data and just 1 segment in footer.
+			return ErrNothingToCompact // no need to perform compaction.
+		}
 	}
 
 	var frefCompact *FileRef
