@@ -204,11 +204,6 @@ type CollectionOptions struct {
 	// canceled.
 	MergerCancelCheckEvery int
 
-	// MergerIdleRunTimeoutMS is the idle time in milliseconds after which the
-	// background merger will perform an "idle run" which can trigger
-	// incremental compactions to speed up queries.
-	MergerIdleRunTimeoutMS int64
-
 	// MaxDirtyOps, when greater than zero, is the max number of dirty
 	// (unpersisted) ops allowed before ExecuteBatch() blocks to allow
 	// the persister to catch up.  It only has effect with a non-nil
@@ -298,7 +293,6 @@ var DefaultCollectionOptions = CollectionOptions{
 	MinMergePercentage:     0.8,
 	MaxPreMergerBatches:    10,
 	MergerCancelCheckEvery: 10000,
-	MergerIdleRunTimeoutMS: 0,
 	Debug: 0,
 	Log:   nil,
 }
@@ -583,7 +577,6 @@ type CollectionStats struct {
 	TotMergerWaitIncomingStop uint64
 	TotMergerWaitIncomingEnd  uint64
 	TotMergerWaitIncomingSkip uint64
-	TotMergerIdleRuns         uint64
 
 	TotMergerWaitOutgoingBeg  uint64
 	TotMergerWaitOutgoingStop uint64

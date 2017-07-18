@@ -22,10 +22,6 @@ import (
 // in a file.
 var ErrNoValidFooter = errors.New("no-valid-footer")
 
-// ErrNothingToCompact is an internal error returned when compact is called
-// on a store that is already compacted.
-var ErrNothingToCompact = errors.New("nothing-to-compact")
-
 // --------------------------------------------------------
 
 // Store represents data persisted in a directory.
