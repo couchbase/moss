@@ -240,15 +240,15 @@ func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot
 		if !ok {
 			return fmt.Errorf("store: can only compact higher that's a segmentStack")
 		}
-		if ssHigher.isEmpty() && len(footer.SegmentLocs) == 1 {
-			// No incoming data to persist and just 1 segment in footer.
+		if ssHigher.isEmpty() && len(footer.SegmentLocs) <= 1 {
+			// No incoming data to persist & 1 or fewer footer segments.
 			return ErrNothingToCompact // Nothing to compact.
 		}
 		ssHigher.ensureFullySorted()
 		newSS = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
 		newSS = footer.ss      // Safe as footer ref count is held positive.
-		if len(newSS.a) == 1 { // No incoming data and just 1 segment in footer.
+		if len(newSS.a) <= 1 { // No incoming data & 1 or fewer footer segments.
 			return ErrNothingToCompact // no need to perform compaction.
 		}
 	}

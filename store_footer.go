@@ -284,7 +284,9 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
-				return mrefs, fmt.Errorf("store: doLoadSegments mmap.Map(), err: %v", err)
+				return mrefs,
+					fmt.Errorf("store: doLoadSegments mmap.Map(), nbytesActual = %v, sloc = %v, err: %v",
+						nbytesActual, sloc, err)
 			}
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
