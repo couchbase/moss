@@ -1997,32 +1997,10 @@ func TestStoreCompactMaxSegments(t *testing.T) {
 	var store *Store
 	var coll Collection
 
-	var m sync.Mutex
-	var waitingForCleanCh chan struct{}
-
-	co := CollectionOptions{
-		OnEvent: func(event Event) {
-			if event.Kind == EventKindPersisterProgress {
-				stats, err := coll.Stats()
-				if err == nil && stats.CurDirtyOps <= 0 &&
-					stats.CurDirtyBytes <= 0 && stats.CurDirtySegments <= 0 {
-					m.Lock()
-					if waitingForCleanCh != nil {
-						waitingForCleanCh <- struct{}{}
-						waitingForCleanCh = nil
-					}
-					m.Unlock()
-				}
-			}
-		},
-	}
-
-	ch := make(chan struct{}, 1)
-
 	var err error
 
 	store, coll, err = OpenStoreCollection(tmpDir,
-		StoreOptions{CollectionOptions: co,
+		StoreOptions{
 			CompactionPercentage: 100, CompactionLevelMaxSegments: 5,
 			CompactionLevelMultiplier: 100000},
 		StorePersistOptions{CompactionConcern: CompactionAllow})
@@ -2049,17 +2027,12 @@ func TestStoreCompactMaxSegments(t *testing.T) {
 			batch.Set(k, v)
 		}
 
-		m.Lock()
-		waitingForCleanCh = ch
-		m.Unlock()
-
 		err1 = coll.ExecuteBatch(batch, WriteOptions{})
 		if err1 != nil {
 			t.Errorf("Expected ExecuteBatch() to work!")
 		}
+		waitForPersistence(coll)
 	}
-
-	<-ch
 
 	sstats, err := store.Stats()
 	if err != nil {
