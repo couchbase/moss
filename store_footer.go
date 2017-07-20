@@ -82,6 +82,21 @@ func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 		return fmt.Errorf("store: persistFooter error writing all footerBuf")
 	}
 
+	if AllocationGranularity != StorePageSize {
+		// Some platforms (windows) only support mmap()'ing at an
+		// allocation granularity that's != to a page size. However if on such
+		// platforms there are empty segments, then due to the extra space
+		// imposed by the above granularity requirement, mmap() can fail
+		// complaining about insufficient file space.
+		// To avoid this error, simply pad up the file upto a page boundary.
+		// This pad of zeroes will not interfere with file recovery.
+		padding := make([]byte, int(pageAlignCeil(int64(footerWritten)))-footerWritten)
+		_, err = file.WriteAt(padding, footerPos+int64(footerWritten))
+		if err != nil {
+			return err
+		}
+	}
+
 	footer.fileName = finfo.Name()
 	footer.filePos = footerPos
 
@@ -285,8 +300,10 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
 				return mrefs,
-					fmt.Errorf("store: doLoadSegments mmap.Map(), nbytesActual = %v, sloc = %v, err: %v",
-						nbytesActual, sloc, err)
+					fmt.Errorf("store: doLoadSegments mmap.Map(), "+
+						"begOffsetActual = %v,"+
+						"nbytesActual = %v, sloc = %v, err: %v",
+						begOffsetActual, nbytesActual, sloc, err)
 			}
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
