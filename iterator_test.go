@@ -108,9 +108,11 @@ func TestIteratorMergeOps(t *testing.T) {
 	if mo.numFull+mo.numPartial <= 0 {
 		t.Errorf("expected some merges")
 	}
+	mlock.Lock()
 	if len(events) <= 0 {
 		t.Errorf("expected some events")
 	}
+	mlock.Unlock()
 	mo.m.Unlock()
 }
 
