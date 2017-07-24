@@ -81,7 +81,10 @@ func TestNewCollectionCloseEvents(t *testing.T) {
 		t.Errorf("expected 2 close events")
 	}
 
-	if durations[EventKindClose] <= 0 {
+	// On platforms where timing granularity is too coarse, the close operation
+	// cannot be timed within that granularity (1ms) reliably.
+	if !IsTimingCoarse &&
+		durations[EventKindClose] <= 0 {
 		t.Errorf("expected close to take some time")
 	}
 

@@ -16,3 +16,7 @@ package moss
 // AllocationGranularity sets the granularity of allocation.  Some operating
 // systems require this to occur on particular boundaries.
 var AllocationGranularity = StorePageSize
+
+// IsTimingCoarse is true only on those platforms where a nano second time
+// resolution is not available.
+var IsTimingCoarse = false

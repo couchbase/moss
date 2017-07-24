@@ -392,7 +392,12 @@ func testSimpleStoreEx(t *testing.T,
 	if sstats == nil {
 		t.Errorf("expected non-nil stats")
 	}
-	if sstats["num_bytes_used_disk"].(uint64) <= 0 {
+	// On some platforms (windows) there is a delay between the time data
+	// is synced into a file and the time it reflects in the directory stats.
+	// As a result this stat can temporarily be zero. To avoid false failures,
+	// disable checking for this stat on these platforms.
+	if !IsTimingCoarse &&
+		sstats["num_bytes_used_disk"].(uint64) <= 0 {
 		t.Errorf("expected >0 num_bytes_used_disk")
 	}
 	if sstats["total_persists"].(uint64) <= 0 {
