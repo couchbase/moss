@@ -738,27 +738,9 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 
 	// --------------------
 
-	fileInfos, err := ioutil.ReadDir(tmpDir)
-	if err != nil {
-		t.Errorf("expected read dir to work")
-	}
-	// Since file deletions happen asynchronously, sometimes it is possible
-	// that the deleted file still lingers around.
-	// To ensure this does not cause test failures, retry a few times
-	// before erroring out.
-	for retry := 10; retry > 0 && len(fileInfos) != 1; retry-- {
-		file, erro := os.Open(tmpDir)
-		if erro != nil {
-			t.Fatalf("Expected directory open to succeed: %v", erro)
-		}
-		file.Sync()
-		file.Close()
-
-		time.Sleep(1 * time.Second)
-		fileInfos, err = ioutil.ReadDir(tmpDir)
-		if err != nil {
-			t.Errorf("expected read dir to work")
-		}
+	fileInfos, erro := waitForCompactionCleanup(tmpDir, 10)
+	if erro != nil {
+		t.Fatalf("Error waiting for compaction cleanup :%v", erro)
 	}
 	if len(fileInfos) != 1 {
 		fileNames := []string{}
@@ -2151,4 +2133,28 @@ func TestStoreCrashRecovery(t *testing.T) {
 		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
 	}
 
+}
+
+// Since file deletions happen asynchronously, sometimes it is possible
+// that the deleted file still lingers around.
+// To ensure this does not cause test failures, retry a few times
+// before just returning the contents of the directory.
+func waitForCompactionCleanup(tmpDir string, secsToWait int) (
+	fileInfos []os.FileInfo, err error) {
+	fileInfos, err = ioutil.ReadDir(tmpDir)
+	if err != nil {
+		return
+	}
+	for retry := secsToWait; retry > 0 && len(fileInfos) != 1; retry-- {
+		file, erro := os.Open(tmpDir)
+		if erro != nil {
+			return fileInfos, erro
+		}
+		file.Sync()
+		file.Close()
+
+		time.Sleep(1 * time.Second)
+		fileInfos, err = ioutil.ReadDir(tmpDir)
+	}
+	return
 }

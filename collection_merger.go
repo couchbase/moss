@@ -178,16 +178,22 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 		atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
 
 		var idleTimerCh <-chan time.Time
+		var idleWake bool
 
 		idleTimeout := m.options.MergerIdleRunTimeoutMS
 		if idleTimeout == 0 {
 			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
 		}
 		if idleTimeout != 0 {
-			idleTimer := time.NewTimer(
-				time.Duration(idleTimeout) * time.Millisecond)
-			idleTimerCh = idleTimer.C
-			defer idleTimer.Stop() // Allow GC if timer does not fire.
+			sleepDuration := time.Duration(idleTimeout) * time.Millisecond
+			// Note this need not be protected under a lock as long as there
+			// is just 1 collection merger go routine per collection.
+			if m.idleMergerTimer == nil {
+				m.idleMergerTimer = time.NewTimer(sleepDuration)
+			} else {
+				m.idleMergerTimer.Reset(sleepDuration)
+			}
+			idleTimerCh = m.idleMergerTimer.C
 		}
 
 		select {
@@ -201,12 +207,19 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 				mergeAll = true
 			}
 
-		case <-idleTimerCh:
-			atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
-			mergeAll = true // While idle, might as well merge/compact.
-
 		case <-waitDirtyIncomingCh:
 			// NO-OP.
+
+		case <-idleTimerCh:
+			atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
+			idleWake = true
+			mergeAll = true // While idle, might as well merge/compact.
+		}
+
+		if idleTimeout != 0 && !idleWake {
+			if !m.idleMergerTimer.Stop() {
+				<-idleTimerCh // Drain the channel for a clean Reset next time.
+			}
 		}
 
 		atomic.AddUint64(&m.stats.TotMergerWaitIncomingEnd, 1)

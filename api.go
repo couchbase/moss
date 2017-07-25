@@ -298,7 +298,7 @@ var DefaultCollectionOptions = CollectionOptions{
 	MinMergePercentage:     0.8,
 	MaxPreMergerBatches:    10,
 	MergerCancelCheckEvery: 10000,
-	MergerIdleRunTimeoutMS: 0,
+	MergerIdleRunTimeoutMS: 1500,
 	Debug: 0,
 	Log:   nil,
 }

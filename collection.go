@@ -28,6 +28,7 @@ type collection struct {
 	pingMergerCh    chan ping
 	doneMergerCh    chan struct{}
 	donePersisterCh chan struct{}
+	idleMergerTimer *time.Timer
 
 	m sync.Mutex // Protects the fields that follow.
 

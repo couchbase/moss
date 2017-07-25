@@ -237,7 +237,7 @@ func Test_DGMLoad(t *testing.T) {
 	}
 
 	waitForPersistence(coll)
-	time.Sleep(1 * time.Second) // wait for idle run compaction to kick in.
+	time.Sleep(2 * time.Second) // wait for idle run compaction to kick in.
 
 	if coll.Close() != nil {
 		t.Fatalf("Error closing child collection")
@@ -247,9 +247,12 @@ func Test_DGMLoad(t *testing.T) {
 		t.Fatalf("expected store close to work")
 	}
 
+	// Wait for background removals to complete.
+	waitForCompactionCleanup(tmpDir, 10)
+
 	store, coll, err = OpenStoreCollection(tmpDir, so, spo)
 	if err != nil || store == nil || coll == nil {
-		t.Fatalf("error opening store collection:%v", tmpDir)
+		t.Fatalf("error opening store collection:%v, %v", tmpDir, err)
 	}
 
 	startT = time.Now()
