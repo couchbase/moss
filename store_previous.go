@@ -29,14 +29,28 @@ func (s *Store) snapshotPrevious(ss Snapshot) (Snapshot, error) {
 	}
 
 	mref := slocs[0].mref
-	if mref == nil || mref.refs <= 0 {
+	if mref == nil {
 		return nil, fmt.Errorf("footer mref nil")
 	}
 
+	mref.m.Lock()
+	if mref.refs <= 0 {
+		mref.m.Unlock()
+		return nil, fmt.Errorf("footer mmap has 0 refs")
+	}
 	fref := mref.fref
-	if fref == nil || fref.refs <= 0 || fref.file == nil {
+	mref.m.Unlock() // Safe since the file beneath the mmap cannot change.
+
+	if fref == nil {
 		return nil, fmt.Errorf("footer fref nil")
 	}
+
+	fref.m.Lock()
+	if fref.refs <= 0 || fref.file == nil {
+		fref.m.Unlock()
+		return nil, fmt.Errorf("footer has 0 refs")
+	}
+	fref.m.Unlock() // Safe since the file ref count is positive.
 
 	finfo, err := fref.file.Stat()
 	if err != nil {
