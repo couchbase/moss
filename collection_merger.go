@@ -158,6 +158,11 @@ OUTER:
 
 // ------------------------------------------------------
 
+// MaxIdleRunTimeoutMS is a sanity check on valid idle run timeouts
+// and can be used as a mechanism of turning off this feature.
+// It is set to 24 hours by default.
+var MaxIdleRunTimeoutMS int64 = 86400000
+
 // mergerWaitForWork() is a helper method that blocks until there's
 // either pings or incoming segments (from ExecuteBatch()) of work for
 // the merger.
@@ -184,7 +189,7 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 		if idleTimeout == 0 {
 			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
 		}
-		if idleTimeout != 0 {
+		if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS {
 			sleepDuration := time.Duration(idleTimeout) * time.Millisecond
 			// Note this need not be protected under a lock as long as there
 			// is just 1 collection merger go routine per collection.
@@ -216,7 +221,7 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 			mergeAll = true // While idle, might as well merge/compact.
 		}
 
-		if idleTimeout != 0 && !idleWake {
+		if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS && !idleWake {
 			if !m.idleMergerTimer.Stop() {
 				<-idleTimerCh // Drain the channel for a clean Reset next time.
 			}
