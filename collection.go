@@ -24,11 +24,12 @@ import (
 type collection struct {
 	options *CollectionOptions
 
-	stopCh          chan struct{}
-	pingMergerCh    chan ping
-	doneMergerCh    chan struct{}
-	donePersisterCh chan struct{}
-	idleMergerTimer *time.Timer
+	stopCh               chan struct{}
+	pingMergerCh         chan ping
+	doneMergerCh         chan struct{}
+	donePersisterCh      chan struct{}
+	idleMergerTimer      *time.Timer
+	idleMergeAlreadyDone bool
 
 	m sync.Mutex // Protects the fields that follow.
 

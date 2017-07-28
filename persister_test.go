@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Implementation of mock lower-level iterator, using map that's
@@ -1316,4 +1317,76 @@ func Test_LevelCompactDeletes(t *testing.T) {
 
 	coll.Close()
 	store.Close()
+}
+
+func Test_IdleCompactionThrottle(t *testing.T) {
+	numItems := 1000
+	batchSize := 100
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	so := DefaultStoreOptions
+	so.CollectionOptions.MinMergePercentage = 0.0
+	so.CollectionOptions.MergerIdleRunTimeoutMS = 10
+	so.CompactionPercentage = 0.0
+	so.CompactionSync = true
+	spo := StorePersistOptions{CompactionConcern: CompactionAllow}
+
+	store, coll, err := OpenStoreCollection(tmpDir, so, spo)
+	if err != nil || store == nil || coll == nil {
+		t.Fatalf("error opening store collection:%v", tmpDir)
+	}
+
+	for i := numItems; i > 0; i = i - batchSize {
+		// Get the number of idle merger runs before insertion.
+		collStats, _ := coll.Stats()
+		idleRunsBefore := collStats.TotMergerIdleRuns
+
+		// create new batch to set some keys
+		ba, erro := coll.NewBatch(0, 0)
+		if erro != nil {
+			t.Fatalf("error creating new batch: %v", err)
+			return
+		}
+		for j := i - 1; j >= i-batchSize; j-- {
+			k := fmt.Sprintf("%08d", j)
+			ba.Set([]byte(k), []byte(k))
+		}
+		err = coll.ExecuteBatch(ba, WriteOptions{})
+		if err != nil {
+			t.Fatalf("error executing batch: %v", err)
+			return
+		}
+
+		// cleanup that batch
+		err = ba.Close()
+		if err != nil {
+			t.Fatalf("error closing batch: %v", err)
+			return
+		}
+		waitForPersistence(coll)
+
+		// wait longer than 3X the idle compaction timeout to verify throttle.
+		time.Sleep(40 * time.Millisecond)
+
+		collStats, _ = coll.Stats()
+		idleRunsAfter := collStats.TotMergerIdleRuns
+		if idleRunsAfter <= idleRunsBefore {
+			t.Errorf("Idle compactions not run %v", idleRunsAfter)
+		}
+		if idleRunsAfter-idleRunsBefore != 1 {
+			t.Errorf("Idle compactions not throttled: before %v after %v",
+				idleRunsBefore, idleRunsAfter)
+		}
+	}
+
+	waitForPersistence(coll)
+
+	if store.Close() != nil {
+		t.Fatalf("expected store close to work")
+	}
+
+	if coll.Close() != nil {
+		t.Fatalf("Error closing child collection")
+	}
 }

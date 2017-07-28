@@ -189,7 +189,9 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 		if idleTimeout == 0 {
 			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
 		}
-		if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS {
+		if m.idleMergeAlreadyDone {
+			idleTimeout = 0
+		} else if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS {
 			sleepDuration := time.Duration(idleTimeout) * time.Millisecond
 			// Note this need not be protected under a lock as long as there
 			// is just 1 collection merger go routine per collection.
@@ -219,6 +221,8 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 			atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
 			idleWake = true
 			mergeAll = true // While idle, might as well merge/compact.
+			// To avoid hogging resources disable idle wakeups after 1 run.
+			m.idleMergeAlreadyDone = true
 		}
 
 		if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS && !idleWake {
@@ -275,6 +279,9 @@ func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 		m.m.Unlock()
 
 		stackDirtyMidPrev.Close()
+
+		// Since new mutations have come in, re-enable idle wakeups.
+		m.idleMergeAlreadyDone = false
 	} else {
 		if stackDirtyMid != nil && stackDirtyMid.isEmpty() {
 			m.m.Lock() // Allow an empty stackDirtyMid to kick persistence.
