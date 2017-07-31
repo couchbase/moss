@@ -283,7 +283,8 @@ func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 		// Since new mutations have come in, re-enable idle wakeups.
 		m.idleMergeAlreadyDone = false
 	} else {
-		if stackDirtyMid != nil && stackDirtyMid.isEmpty() {
+		if stackDirtyMid != nil && stackDirtyMid.isEmpty() &&
+			m.idleMergeAlreadyDone { // Do this only for idle-compactions.
 			m.m.Lock() // Allow an empty stackDirtyMid to kick persistence.
 			stackDirtyMidPrev := m.stackDirtyMid
 			m.stackDirtyMid = stackDirtyMid
