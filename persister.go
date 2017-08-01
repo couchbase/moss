@@ -47,7 +47,8 @@ OUTER:
 			//
 			// So, we notify/awake the merger here so that it can feed
 			// stackDirtyMid down to the persister as stackDirtyBase.
-			if (m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0) &&
+			if m.waitDirtyIncomingCh != nil && // Merger is indeed asleep.
+				(m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0) &&
 				(m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0) {
 				m.NotifyMerger("from-persister", false)
 			}
