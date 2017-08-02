@@ -201,6 +201,7 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 				m.idleMergerTimer.Reset(sleepDuration)
 			}
 			idleTimerCh = m.idleMergerTimer.C
+			atomic.AddUint64(&m.stats.TotMergerIdleSleeps, 1)
 		}
 
 		select {

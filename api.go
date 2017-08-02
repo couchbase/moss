@@ -583,6 +583,7 @@ type CollectionStats struct {
 	TotMergerWaitIncomingStop uint64
 	TotMergerWaitIncomingEnd  uint64
 	TotMergerWaitIncomingSkip uint64
+	TotMergerIdleSleeps       uint64
 	TotMergerIdleRuns         uint64
 
 	TotMergerWaitOutgoingBeg  uint64
