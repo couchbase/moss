@@ -633,9 +633,10 @@ func (s *Store) openCollection(
 	co.LowerLevelInit = storeSnapshotInit
 	co.LowerLevelUpdate = func(higher Snapshot) (Snapshot, error) {
 		var ss Snapshot
-		ss, err = s.Persist(higher, persistOptions)
-		if err != nil {
-			return nil, err
+		var erro error
+		ss, erro = s.Persist(higher, persistOptions)
+		if erro != nil {
+			return nil, erro
 		}
 
 		if storeSnapshotInit != nil {
@@ -643,7 +644,7 @@ func (s *Store) openCollection(
 			storeSnapshotInit = nil
 		}
 
-		return ss, err
+		return ss, erro
 	}
 
 	storeFooter, ok := storeSnapshotInit.(*Footer)
