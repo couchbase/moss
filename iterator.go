@@ -277,7 +277,8 @@ func (iter *iterator) Next() error {
 		if !iteratorBytesEqual(iter.cursors[0].k, lastK) {
 			if !iter.iteratorOptions.IncludeDeletions &&
 				iter.cursors[0].op == OperationDel {
-				return iter.Next()
+				lastK = iter.cursors[0].k
+				continue
 			}
 
 			return nil

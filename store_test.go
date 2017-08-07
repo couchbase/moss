@@ -12,6 +12,7 @@
 package moss
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -2133,6 +2134,99 @@ func TestStoreCrashRecovery(t *testing.T) {
 		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
 	}
 
+}
+
+func TestStoreLargeDeletions(t *testing.T) {
+	numItems := 1000000
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	so := DefaultStoreOptions
+	spo := StorePersistOptions{CompactionConcern: CompactionDisable}
+
+	store, coll, err := OpenStoreCollection(tmpDir, so, spo)
+	if err != nil || store == nil || coll == nil {
+		t.Fatalf("error opening store collection:%v", tmpDir)
+	}
+	ba, erro := coll.NewBatch(0, 0)
+	if erro != nil {
+		t.Fatalf("error creating new batch: %v", err)
+		return
+	}
+
+	for i := 0; i < 10; i++ {
+		k := fmt.Sprintf("%08d", i)
+		ba.Set([]byte(k), []byte(k))
+	}
+
+	err = coll.ExecuteBatch(ba, WriteOptions{})
+	if err != nil {
+		t.Fatalf("error executing batch: %v", err)
+		return
+	}
+
+	// cleanup that batch
+	err = ba.Close()
+	if err != nil {
+		t.Fatalf("error closing batch: %v", err)
+		return
+	}
+
+	waitForPersistence(coll)
+
+	// Now create a Huuuugggeee segment that has just 10 sets and
+	// like a million deletes.
+	ba, erro = coll.NewBatch(numItems, numItems*16)
+	if erro != nil {
+		t.Fatalf("error creating new batch: %v", err)
+		return
+	}
+	for i := 0; i < numItems; i++ {
+		k := fmt.Sprintf("%08d", i)
+		if i < 10 {
+			ba.Set([]byte(k), []byte(k))
+		} else {
+			ba.Del([]byte(k))
+		}
+	}
+	err = coll.ExecuteBatch(ba, WriteOptions{})
+	if err != nil {
+		t.Fatalf("error executing batch: %v", err)
+		return
+	}
+
+	// cleanup that batch
+	err = ba.Close()
+	if err != nil {
+		t.Fatalf("error closing batch: %v", err)
+		return
+	}
+
+	// Now attempting to iterate over these keys should have to skip over
+	// the huuggeee number of deletes. Any use of O(N) recursion will likely
+	// result in stack frame explosion (and fail bigly).
+	ss, _ := coll.Snapshot()
+	iter, erro := ss.StartIterator(nil, nil, IteratorOptions{})
+	if erro != nil {
+		t.Fatalf("error opening collection iterator:%v", erro)
+	}
+	i := 0
+	for ; err == nil; err, i = iter.Next(), i+1 {
+		key := fmt.Sprintf("%08d", i)
+		k, _, erro := iter.Current()
+		if erro != nil {
+			break
+		}
+		if !bytes.Equal(k, []byte(key)) {
+			fmt.Println("Data loss for item ", key, " vs ", string(k))
+			t.Fatalf("Data loss for item detected!")
+		}
+	}
+	if i != 10 {
+		t.Errorf("Data loss: Expected %d items, but iterated only %d", numItems, i)
+	}
+	iter.Close()
+	ss.Close()
 }
 
 // Since file deletions happen asynchronously, sometimes it is possible
