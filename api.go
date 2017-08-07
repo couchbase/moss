@@ -578,6 +578,7 @@ type CollectionStats struct {
 	TotMergerInternalSkip         uint64
 	TotMergerLowerLevelNotify     uint64
 	TotMergerLowerLevelNotifySkip uint64
+	TotMergerEmptyDirtyMid        uint64
 
 	TotMergerWaitIncomingBeg  uint64
 	TotMergerWaitIncomingStop uint64

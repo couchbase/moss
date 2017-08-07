@@ -59,6 +59,8 @@ func (m *collection) runMerger() {
 		pings = pings[0:0]
 	}()
 
+	go m.idleMergerWaker()
+
 OUTER:
 	for {
 		atomic.AddUint64(&m.stats.TotMergerLoop, 1)
@@ -159,10 +161,34 @@ OUTER:
 
 // ------------------------------------------------------
 
-// MaxIdleRunTimeoutMS is a sanity check on valid idle run timeouts
-// and can be used as a mechanism of turning off this feature.
-// It is set to 24 hours by default.
-var MaxIdleRunTimeoutMS int64 = 86400000
+func (m *collection) idleMergerWaker() {
+	idleTimeout := m.options.MergerIdleRunTimeoutMS
+	if idleTimeout == 0 {
+		idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
+	}
+	if idleTimeout <= 0 { // -1 will disable idle compactions.
+		return
+	}
+	var prevRunID uint64 // Helps run idle merger IFF new data has come in.
+	for {
+		if atomic.LoadUint64(&m.stats.TotCloseBeg) > 0 {
+			return
+		}
+		atomic.AddUint64(&m.stats.TotMergerIdleSleeps, 1)
+		napIDBefore := atomic.LoadUint64(&m.stats.TotMergerWaitIncomingEnd)
+
+		time.Sleep(time.Duration(idleTimeout) * time.Millisecond)
+
+		napIDAfter := atomic.LoadUint64(&m.stats.TotMergerWaitIncomingEnd)
+		napID := atomic.LoadUint64(&m.stats.TotMergerWaitIncomingBeg)
+		if napID == napIDAfter+1 && // Merger is indeed asleep.
+			napIDBefore == napIDAfter && // Nap only while merger naps.
+			atomic.LoadUint64(&m.stats.TotMergerInternalEnd) > prevRunID { // New data.
+			m.NotifyMerger("from-idle-merger", false)
+			prevRunID = atomic.LoadUint64(&m.stats.TotMergerInternalEnd)
+		}
+	}
+}
 
 // mergerWaitForWork() is a helper method that blocks until there's
 // either pings or incoming segments (from ExecuteBatch()) of work for
@@ -183,32 +209,6 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 	if waitDirtyIncomingCh != nil {
 		atomic.AddUint64(&m.stats.TotMergerWaitIncomingBeg, 1)
 
-		var idleTimerCh <-chan time.Time
-		var idleWake bool
-
-		idleTimeout := m.options.MergerIdleRunTimeoutMS
-		if idleTimeout == 0 {
-			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
-		}
-
-		if m.idleMergeAlreadyDone {
-			idleTimeout = 0
-		} else if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS {
-			sleepDuration := time.Duration(idleTimeout) * time.Millisecond
-
-			// No lock needed as long as there is just 1 collection
-			// merger goroutine per collection.
-			if m.idleMergerTimer == nil {
-				m.idleMergerTimer = time.NewTimer(sleepDuration)
-			} else {
-				m.idleMergerTimer.Reset(sleepDuration)
-			}
-
-			idleTimerCh = m.idleMergerTimer.C
-
-			atomic.AddUint64(&m.stats.TotMergerIdleSleeps, 1)
-		}
-
 		select {
 		case <-m.stopCh:
 			atomic.AddUint64(&m.stats.TotMergerWaitIncomingStop, 1)
@@ -218,23 +218,13 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 			pings = append(pings, pingVal)
 			if pingVal.kind == "mergeAll" {
 				mergeAll = true
+			} else if pingVal.kind == "from-idle-merger" {
+				atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
+				mergeAll = true
 			}
 
 		case <-waitDirtyIncomingCh:
 			// NO-OP.
-
-		case <-idleTimerCh:
-			atomic.AddUint64(&m.stats.TotMergerIdleRuns, 1)
-			idleWake = true
-			mergeAll = true // While idle, might as well merge/compact.
-			// To avoid hogging resources disable idle wakeups after 1 run.
-			m.idleMergeAlreadyDone = true
-		}
-
-		if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS && !idleWake {
-			if !m.idleMergerTimer.Stop() {
-				<-idleTimerCh // Drain the channel for a clean Reset next time.
-			}
 		}
 
 		atomic.AddUint64(&m.stats.TotMergerWaitIncomingEnd, 1)
@@ -286,11 +276,10 @@ func (m *collection) mergerMain(stackDirtyMid, stackDirtyBase *segmentStack,
 
 		stackDirtyMidPrev.Close()
 
-		// Since new mutations have come in, re-enable idle wakeups.
-		m.idleMergeAlreadyDone = false
 	} else {
-		if stackDirtyMid != nil && stackDirtyMid.isEmpty() &&
-			m.idleMergeAlreadyDone { // Do this only for idle-compactions.
+		if stackDirtyMid != nil && stackDirtyMid.isEmpty() {
+			// Do this only for idle-compactions.
+			atomic.AddUint64(&m.stats.TotMergerEmptyDirtyMid, 1)
 			m.m.Lock() // Allow an empty stackDirtyMid to kick persistence.
 			stackDirtyMidPrev := m.stackDirtyMid
 			m.stackDirtyMid = stackDirtyMid
