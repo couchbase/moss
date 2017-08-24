@@ -2126,12 +2126,12 @@ func TestStoreCrashRecovery(t *testing.T) {
 	coll.Close() // Properly wait for background tasks.
 	store.Close()
 
-	store, coll, err = OpenStoreCollection(tmpDir,
+	store2, _, err2 := OpenStoreCollection(tmpDir,
 		StoreOptions{CollectionOptions: co},
 		StorePersistOptions{CompactionConcern: CompactionDisable})
 
-	if err != nil || store == nil {
-		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err)
+	if err2 != nil || store2 == nil {
+		t.Errorf("Moss-OpenStoreCollection failed, err: %v", err2)
 	}
 
 }
