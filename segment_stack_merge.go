@@ -94,8 +94,10 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 	}
 
 	// ---------------------------------------------------
-	// Recursively merge all the child segmentStacks with the base stack
-	// Dropping any deleted collections present in base but not in me.
+	// Recursively merge all the child segmentStacks with the base
+	// stack, dropping any deleted collections present in base but not
+	// in me.
+
 	for cName, childSegStack := range ss.childSegStacks {
 		var baseSegStack *segmentStack
 		if base != nil {
@@ -113,13 +115,16 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 				}
 			}
 		}
-		mergedChildStack, fullMerges, err := childSegStack.merge(mergeAll,
-			baseSegStack)
+
+		mergedChildStack, fullMerges, err :=
+			childSegStack.merge(mergeAll, baseSegStack)
 		if err != nil {
 			rv.Close()
 			return nil, numFullMerges, err
 		}
+
 		numFullMerges += fullMerges
+
 		if len(rv.childSegStacks) == 0 {
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}

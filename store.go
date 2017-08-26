@@ -206,6 +206,7 @@ func (s *Store) buildNewFooter(storeFooter *Footer, ss *segmentStack) *Footer {
 				}
 			}
 		}
+
 		childFooter := s.buildNewFooter(storeChildFooter, childStack)
 		if len(footer.ChildFooters) == 0 {
 			footer.ChildFooters = make(map[string]*Footer)
@@ -237,6 +238,7 @@ func (s *Store) persistSegments(ss *segmentStack, footer *Footer,
 			// collections segments are empty. Ok to skip these empty segments.
 			continue
 		}
+
 		segmentLoc, err := s.persistSegment(file, segment, s.options)
 		if err != nil {
 			return err
@@ -314,6 +316,7 @@ func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(finfo.Name()) > 0 {
 		fref.OnAfterClose(func() {
 			fileName := finfo.Name()
@@ -324,13 +327,15 @@ func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
 				err := os.Remove(path.Join(s.dir, fileName))
 				if err != nil {
 					if s.options.CollectionOptions.Log != nil {
-						s.options.CollectionOptions.Log("Error deleting file %s:%v",
+						s.options.CollectionOptions.Log(
+							"store: error deleting file %s, err: %v",
 							fileName, err)
 					}
 				}
 			}()
 		})
 	}
+
 	return finfo, nil
 }
 
@@ -363,11 +368,13 @@ func (s *Store) allFiles() (map[string]interface{}, int) {
 					"file_mode":     finfo.Mode(),
 					"file_modified": finfo.ModTime(),
 					"is_dir":        finfo.IsDir()}
+
 				referencedEntry, exists := files[finfo.Name()]
 				if exists {
 					refMap, _ := referencedEntry.(map[string]interface{})
 					fileEntry["ref_count"] = refMap["ref_count"]
 				}
+
 				files[finfo.Name()] = fileEntry
 			}
 		}
@@ -464,7 +471,7 @@ func (s *Store) persistSegment(file File, segIn Segment,
 // ParseFNameSeq parses a file name like "data-000123.moss" into 123.
 func ParseFNameSeq(fname string) (int64, error) {
 	if len(StorePrefix) > len(fname)-len(StoreSuffix) {
-		return 0, fmt.Errorf("invalid filename: %s, filename too short", fname)
+		return 0, fmt.Errorf("store: invalid filename: %s, filename too short", fname)
 	}
 	seqStr := fname[len(StorePrefix) : len(fname)-len(StoreSuffix)]
 	return strconv.ParseInt(seqStr, 16, 64)
@@ -489,8 +496,8 @@ func pageAlignCeil(pos int64) int64 {
 }
 
 // pageAlignFloor returns the pos if it's at the start of a page.
-// Else, pageAlignFloor() returns pos bumped down to the previous multiple
-// of StorePageSize.
+// Else, pageAlignFloor() returns pos bumped down to the previous
+// multiple of StorePageSize.
 func pageAlignFloor(pos int64) int64 {
 	rem := pos % int64(StorePageSize)
 	if rem != 0 {
@@ -578,6 +585,7 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 			flag = os.O_RDWR
 			perm = 0600
 		}
+
 		file, err := options.OpenFile(path.Join(dir, fnames[i]), flag, perm)
 		if err != nil {
 			continue
@@ -616,7 +624,8 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 		}, nil
 	}
 
-	return nil, fmt.Errorf("store: could not successfully open/parse any file")
+	return nil, fmt.Errorf("store: could not open/parse"+
+		" any file, dir: %s", dir)
 }
 
 // --------------------------------------------------------
@@ -650,7 +659,7 @@ func (s *Store) openCollection(
 	storeFooter, ok := storeSnapshotInit.(*Footer)
 	if !ok {
 		storeSnapshotInit.Close()
-		return nil, fmt.Errorf("Wrong Snapshot type - need Footer")
+		return nil, fmt.Errorf("store: wrong storeSnapshotInit type")
 	}
 
 	coll, err := restoreCollection(&co, storeFooter)
@@ -668,7 +677,7 @@ func (s *Store) openCollection(
 	return coll, nil
 }
 
-// statsReporter interface represents the stats report methods
+// statsReporter interface represents stats reporting methods.
 type statsReporter interface {
 	reportBytesWritten(numBytesWritten uint64)
 }
@@ -688,10 +697,11 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 		if err != nil {
 			return nil, err
 		}
+
 		var ok bool
 		coll, ok = newColl.(*collection)
 		if !ok {
-			return nil, fmt.Errorf("Incorrect collection implementation")
+			return nil, fmt.Errorf("store: wrong collection type")
 		}
 	} else {
 		coll = &collection{
@@ -718,8 +728,10 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 		if err != nil {
 			break
 		}
+
 		coll.childCollections[collName] = childCollection
 	}
+
 	return coll, err
 }
 

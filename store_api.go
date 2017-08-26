@@ -22,8 +22,8 @@ import (
 // in a file.
 var ErrNoValidFooter = errors.New("no-valid-footer")
 
-// ErrNothingToCompact is an internal error returned when compact is called
-// on a store that is already compacted.
+// ErrNothingToCompact is an internal error returned when compact is
+// called on a store that is already compacted.
 var ErrNothingToCompact = errors.New("nothing-to-compact")
 
 // --------------------------------------------------------
@@ -59,7 +59,7 @@ type Store struct {
 // StoreCloseExOptions represents store CloseEx options.
 type StoreCloseExOptions struct {
 	// Abort means stop as soon as possible, even if data might be lost,
-	// mutations not yet persisted might be lost.
+	// such as any mutations not yet persisted.
 	Abort bool
 }
 
@@ -75,8 +75,8 @@ type StoreOptions struct {
 	// than CompactionPercentage, then compaction will be run.
 	CompactionPercentage float64
 
-	// CompactionLevelMaxSegments determines the number of segments per level
-	// exceeding which partial or full compaction will run.
+	// CompactionLevelMaxSegments determines the number of segments
+	// per level exceeding which partial or full compaction will run.
 	CompactionLevelMaxSegments int
 
 	// CompactionLevelMultiplier is the factor which determines the
@@ -196,9 +196,9 @@ func (slocs SegmentLocs) DecRef() {
 	}
 }
 
-// Close allows the SegmentLocs to implement the io.Closer interface.  It
-// actually just performs what should be the final DecRef() call which takes the
-// reference count to 0.
+// Close allows the SegmentLocs to implement the io.Closer interface.
+// It actually just performs what should be the final DecRef() call
+// which takes the reference count to 0.
 func (slocs SegmentLocs) Close() error {
 	slocs.DecRef()
 	return nil
@@ -221,8 +221,8 @@ type SegmentPersisterFunc func(
 	s Segment, f File, pos int64, options *StoreOptions) (SegmentLoc, error)
 
 // SegmentPersisters is a registry of available segment persisters,
-// which should be immutable after process init()'ialization.  It is keyed
-// by SegmentLoc.Lind.
+// which should be immutable after process init()'ialization.  It is
+// keyed by SegmentLoc.Kind.
 var SegmentPersisters = map[string]SegmentPersisterFunc{}
 
 // --------------------------------------------------------
@@ -265,8 +265,8 @@ func (s *Store) AddRef() {
 	s.m.Unlock()
 }
 
-// Close decreases the ref count on this store, and if the count is 0 proceeds
-// to close the store.
+// Close decreases the ref count on this store, and if the count is 0
+// proceeds to actually close the store.
 func (s *Store) Close() error {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -282,7 +282,7 @@ func (s *Store) Close() error {
 	return footer.Close()
 }
 
-// CloseEx attempts a forced close with options
+// CloseEx provides more advanced closing options.
 func (s *Store) CloseEx(options StoreCloseExOptions) error {
 	if options.Abort {
 		close(s.abortCh)

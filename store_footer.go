@@ -84,12 +84,16 @@ func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 
 	if AllocationGranularity != StorePageSize {
 		// Some platforms (windows) only support mmap()'ing at an
-		// allocation granularity that's != to a page size. However if on such
-		// platforms there are empty segments, then due to the extra space
-		// imposed by the above granularity requirement, mmap() can fail
-		// complaining about insufficient file space.
-		// To avoid this error, simply pad up the file upto a page boundary.
-		// This pad of zeroes will not interfere with file recovery.
+		// allocation granularity that's != to a page size.
+		//
+		// However if on such platforms there are empty segments, then
+		// due to the extra space imposed by the above granularity
+		// requirement, mmap() can fail complaining about insufficient
+		// file space.
+		//
+		// To avoid this error, simply pad up the file up to a page
+		// boundary.  This pad of zeroes will not interfere with file
+		// recovery.
 		padding := make([]byte, int(pageAlignCeil(int64(footerWritten)))-footerWritten)
 		_, err = file.WriteAt(padding, footerPos+int64(footerWritten))
 		if err != nil {

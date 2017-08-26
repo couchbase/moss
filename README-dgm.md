@@ -14,7 +14,7 @@ Here is an example shell script to exercise the test.
 
 ```
 #!/bin/bash
-findDisk() 
+findDisk()
 {
     dev=`df ${MossStore} | grep -v Filesystem | awk {'print $1'}`
     dirName=`dirname ${dev}`
@@ -22,7 +22,7 @@ findDisk()
     echo ${devName}
 }
 
-clearCaches() 
+clearCaches()
 {
     sudo sync
     sudo sh -c "echo 1 > /proc/sys/vm/drop_caches"

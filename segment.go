@@ -548,7 +548,6 @@ func (a *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, err 
 	if err != nil {
 		return rv, err
 	}
-	pos := finfo.Size()
 
 	persistKind := DefaultPersistKind
 	if options.PersistKind != "" {
@@ -560,8 +559,7 @@ func (a *segment) Persist(file File, options *StoreOptions) (rv SegmentLoc, err 
 		return rv, fmt.Errorf("store: unknown PersistKind: %+v", persistKind)
 	}
 
-	rv, err = segmentPersister(a, file, pos, nil)
-	return
+	return segmentPersister(a, file, finfo.Size(), nil)
 }
 
 // ------------------------------------------------------
@@ -594,6 +592,7 @@ func loadBasicSegment(sloc *SegmentLoc) (Segment, error) {
 
 		buf = sloc.mref.buf[bufStart : bufStart+sloc.BufBytes]
 	}
+
 	return &segment{
 		kvs:             kvs,
 		buf:             buf,
@@ -759,6 +758,7 @@ func (b *batch) readyDeferredSort() {
 	if b == deletedChildBatchMarker {
 		return
 	}
+
 	for _, childBatch := range b.childBatches {
 		childBatch.readyDeferredSort()
 	}
@@ -772,12 +772,14 @@ func (b *batch) RequestSort() bool {
 	if b == deletedChildBatchMarker {
 		return true
 	}
+
 	// false because we must never wait for sorter else it can deadlock.
 	sorted := b.segment.RequestSort(false)
 
 	for _, childBatch := range b.childBatches {
 		sorted = childBatch.RequestSort() && sorted
 	}
+
 	return sorted
 }
 
@@ -785,7 +787,9 @@ func (b *batch) doSort() {
 	if b == deletedChildBatchMarker {
 		return
 	}
+
 	b.segment.doSort()
+
 	for _, childBatch := range b.childBatches {
 		childBatch.doSort()
 	}
@@ -798,5 +802,6 @@ func (b *batch) isEmpty() bool {
 		// collection creation/deletions can still work.
 		return false
 	}
+
 	return b.Len() <= 0
 }

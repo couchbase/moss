@@ -17,8 +17,8 @@ import (
 	"time"
 )
 
-func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions) (
-	bool, error) {
+func (s *Store) compactMaybe(higher Snapshot,
+	persistOptions StorePersistOptions) (bool, error) {
 	if s.Options().CollectionOptions.ReadOnly {
 		// Do not compact in Read-Only mode
 		return false, nil
@@ -39,6 +39,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	slocs, _ := footer.segmentLocs()
 
 	defer footer.DecRef()
+
 	var partialCompactStart int
 
 	if compactionConcern == CompactionAllow {
@@ -56,8 +57,8 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 
 		// Try leveled compaction to same file.
 		var doCompact bool
-		partialCompactStart, doCompact = calcPartialCompactionStart(slocs,
-			incomingDataSize, s.options)
+		partialCompactStart, doCompact =
+			calcPartialCompactionStart(slocs, incomingDataSize, s.options)
 		if doCompact {
 			compactionConcern = CompactionForce
 		} // else append data to the end of the same file.
@@ -70,7 +71,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	err = s.compact(footer, partialCompactStart, higher, persistOptions)
 	if err != nil {
 		if err == ErrNothingToCompact {
-			return false, nil // swallow the error internally.
+			return false, nil // Swallow the error internally.
 		}
 		return false, err
 	}
@@ -94,6 +95,7 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	}
 
 	slocs, _ = footer.segmentLocs()
+
 	defer footer.DecRef()
 
 	if len(slocs) > 0 {
@@ -128,28 +130,33 @@ func (s *Store) compactMaybe(higher Snapshot, persistOptions StorePersistOptions
 	return true, nil
 }
 
-// calcPartialCompactionStart - returns an index into the segment locations
-// from which point it would be better to merge segments into a larger one.
+// calcPartialCompactionStart - returns an index into the segment
+// locations from which point it would be better to merge segments
+// into a larger one.
+//
 // Return Values:
-//  0 => Full compaction into a new file.
-// >0 => Partially Compact all the segments starting at this return index,
-//       and append  this one segment at the end of the file while retaining all
-//       segments before this starting segment.
-//  false => append data to the end of the file.
-//  true  => perform compaction.
-//                                         ||
-//                                         ||
-//  Say CompactionLevelMaxSegments = 2     ||
-//                                         ||
-//     ||                  ||              ||
-//  || ||               || || ??           ||
-//  || ||          ==>  || || ??     ==>   ||
-//  || ||               || || ??           ||
-//  || ||               || || ??           ||
-//  || ||  || ||  ##    || || ??           ||
-//  || ||  || ||  ##    || || ??           ||
-// ----------------->  ----------->      -----> (new file)
-//  level1 level0 new  level1 hits max!  final file
+//      0 => Full compaction into a new file.
+//     >0 => Partially Compact all the segments starting at this
+//           return index, and append this one segment at the end of
+//           the file while retaining all segments before this
+//           starting segment.
+//
+//     false => Append data to the end of the file.
+//     true  => Perform compaction.
+//
+// Example:                                    ||
+//                                             ||
+//      Say CompactionLevelMaxSegments = 2     ||
+//                                             ||
+//         ||                  ||              ||
+//      || ||               || || ??           ||
+//      || ||          ==>  || || ??     ==>   ||
+//      || ||               || || ??           ||
+//      || ||               || || ??           ||
+//      || ||  || ||  ##    || || ??           ||
+//      || ||  || ||  ##    || || ??           ||
+//     ----------------->  ----------->      -----> (new file)
+//      level1 level0 new  level1 hits max!  final file
 //
 func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	options *StoreOptions) (compStartIdx int, doCompact bool) {
@@ -157,17 +164,21 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	if maxSegmentsPerLevel == 0 {
 		maxSegmentsPerLevel = DefaultStoreOptions.CompactionLevelMaxSegments
 	}
+
 	fragmentationThreshold := options.CompactionPercentage
 	if fragmentationThreshold == 0.0 {
 		fragmentationThreshold = DefaultStoreOptions.CompactionPercentage
 	}
+
 	levelMultiplier := options.CompactionLevelMultiplier
 	if levelMultiplier == 0 {
 		levelMultiplier = DefaultStoreOptions.CompactionLevelMultiplier
 	}
+
 	if newDataSize == 0 { // Idle compaction => attempt full compaction.
 		return 0, true
 	}
+
 	if len(slocs) < maxSegmentsPerLevel {
 		return -1, false // No segments => append to end of same file.
 	}
@@ -184,6 +195,7 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	compStartIdx = -1 // Assume we need to append to end of file.
 	// sizeSoFar represents the estimated size of the partially compacted
 	// future segment if we were to start compacting from current segment.
+
 	sizeSoFar := newDataSize
 	curLevelSize := newDataSize
 	curLevel := 0
@@ -195,6 +207,7 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 		if newLevel > curLevel {
 			break
 		}
+
 		numInLevel++
 		sizeSoFar += segSize
 		if numInLevel > maxSegmentsPerLevel {
@@ -210,19 +223,23 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 		for idx := 0; idx < len(slocs); idx++ {
 			totDataSize += slocs[idx].TotKeyByte + slocs[idx].TotValByte
 		}
+
 		finfo, err := slocs[0].mref.fref.file.Stat()
 		if err != nil {
 			return 0, true
 		}
+
 		predictedDataSize := int64(totDataSize) + int64(newDataSize)
 		predictedFileSize := finfo.Size() + int64(curLevelSize)
 
 		staleDataSize := predictedFileSize - predictedDataSize
+
 		fragPercentage := float64(staleDataSize) / float64(predictedFileSize)
 		if fragPercentage > fragmentationThreshold {
 			return 0, true // File is too fragmented for partial compaction.
 		}
 	}
+
 	if compStartIdx >= 0 {
 		doCompact = true
 	}
@@ -230,21 +247,24 @@ func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	return compStartIdx, doCompact
 }
 
-func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot,
-	persistOptions StorePersistOptions) error {
+func (s *Store) compact(footer *Footer, partialCompactStart int,
+	higher Snapshot, persistOptions StorePersistOptions) error {
 	startTime := time.Now()
 
 	var newSS *segmentStack
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)
 		if !ok {
-			return fmt.Errorf("store: can only compact higher that's a segmentStack")
+			return fmt.Errorf("store_compact: higher not a segmentStack")
 		}
+
 		if ssHigher.isEmpty() && len(footer.SegmentLocs) <= 1 {
-			// No incoming data to persist & 1 or fewer footer segments.
-			return ErrNothingToCompact // Nothing to compact.
+			// No incoming data to persist and 1 or fewer footer segments.
+			return ErrNothingToCompact
 		}
+
 		ssHigher.ensureFullySorted()
+
 		newSS = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
 		newSS = footer.ss      // Safe as footer ref count is held positive.
@@ -269,13 +289,14 @@ func (s *Store) compact(footer *Footer, partialCompactStart int, higher Snapshot
 	defer frefCompact.DecRef()
 
 	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact,
-		partialCompactStart != 0) // include deletions for partialCompactions.
+		partialCompactStart != 0) // Include deletions for partialCompactions.
 	if err != nil {
 		if partialCompactStart == 0 {
 			s.removeFileOnClose(frefCompact)
 		}
 		return err
 	}
+
 	// Prefix restore the footer's partialCompactStart
 	if partialCompactStart != 0 {
 		compactFooter.spliceFooter(footer, partialCompactStart)
@@ -329,6 +350,7 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 		footerSS = footer.ss
 		lenFooterSS = len(footerSS.a)
 	}
+
 	rv := &segmentStack{
 		options:  higher.options,
 		a:        make([]Segment, 0, len(higher.a)+lenFooterSS),
@@ -338,13 +360,14 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 		rv.a = append(rv.a, footerSS.a[splicePoint:]...)
 	}
 	rv.a = append(rv.a, higher.a...)
+
 	for cName, newStack := range higher.childSegStacks {
 		if len(rv.childSegStacks) == 0 {
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if footer == nil {
-			rv.childSegStacks[cName] = s.mergeSegStacks(nil,
-				splicePoint, newStack)
+			rv.childSegStacks[cName] =
+				s.mergeSegStacks(nil, splicePoint, newStack)
 			continue
 		}
 
@@ -356,9 +379,11 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 				childFooter = nil
 			}
 		}
-		rv.childSegStacks[cName] = s.mergeSegStacks(childFooter,
-			splicePoint, newStack)
+
+		rv.childSegStacks[cName] =
+			s.mergeSegStacks(childFooter, splicePoint, newStack)
 	}
+
 	return rv
 }
 
@@ -376,6 +401,7 @@ func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
 				// segments from prior incarnation.
 				continue
 			}
+
 			childFooter.spliceFooter(storeChildFooter, splicePoint)
 		}
 	}
@@ -387,7 +413,9 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	if err != nil {
 		return nil, err
 	}
+
 	pos := finfo.Size()
+
 	stats := newSS.Stats()
 
 	kvsBegPos := pageAlignCeil(pos)
@@ -406,11 +434,13 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 		kvsWriter: newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize, s),
 		bufWriter: newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize, s),
 	}
+
 	onError := func(err error) error {
 		compactWriter.kvsWriter.Stop()
 		compactWriter.bufWriter.Stop()
 		return err
 	}
+
 	s.m.Lock()
 	s.totCompactionBeforeBytes += stats.CurBytes
 	s.m.Unlock()
@@ -455,13 +485,16 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 		if compactFooter.ChildFooters == nil {
 			compactFooter.ChildFooters = make(map[string]*Footer)
 		}
+
 		childFooter, err := s.writeSegments(childSegStack,
 			frefCompact, fileCompact, includeDeletes)
 		if err != nil {
 			return nil, err
 		}
+
 		compactFooter.ChildFooters[cName] = childFooter
 	}
+
 	return compactFooter, nil
 }
 

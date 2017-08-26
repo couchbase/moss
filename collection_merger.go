@@ -38,6 +38,7 @@ func (m *collection) NotifyMerger(kind string, synchronous bool) error {
 	}
 
 	atomic.AddUint64(&m.stats.TotNotifyMergerEnd, 1)
+
 	return nil
 }
 
@@ -101,16 +102,16 @@ OUTER:
 
 					stackDirtyBase = m.stackDirtyBase
 					if stackDirtyBase != nil {
-						// While waiting for persistence, might as well do a
-						mergeAll = true // full merge to optimize reads.
+						// While waiting for persistence, might as well do
+						mergeAll = true // a full merge to optimize reads.
+
 						stackDirtyBase.addRef()
 					}
 
-					// Awake all writers that are waiting for more space
-					// in stackDirtyTop.
+					// Awake writers waiting for space in stackDirtyTop.
 					m.stackDirtyTopCond.Broadcast()
 				},
-				false) // collection level lock needs to be acquired.
+				false) // The collection level lock needs to be acquired.
 
 		stackDirtyTopPrev.Close()
 		stackDirtyMidPrev.Close()
@@ -189,18 +190,22 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 		if idleTimeout == 0 {
 			idleTimeout = DefaultCollectionOptions.MergerIdleRunTimeoutMS
 		}
+
 		if m.idleMergeAlreadyDone {
 			idleTimeout = 0
 		} else if 0 < idleTimeout && idleTimeout < MaxIdleRunTimeoutMS {
 			sleepDuration := time.Duration(idleTimeout) * time.Millisecond
-			// Note this need not be protected under a lock as long as there
-			// is just 1 collection merger go routine per collection.
+
+			// No lock needed as long as there is just 1 collection
+			// merger goroutine per collection.
 			if m.idleMergerTimer == nil {
 				m.idleMergerTimer = time.NewTimer(sleepDuration)
 			} else {
 				m.idleMergerTimer.Reset(sleepDuration)
 			}
+
 			idleTimerCh = m.idleMergerTimer.C
+
 			atomic.AddUint64(&m.stats.TotMergerIdleSleeps, 1)
 		}
 

@@ -289,6 +289,7 @@ func (m *collection) NewBatch(totalOps, totalKeyValBytes int) (
 func (m *collection) ExecuteBatch(bIn Batch,
 	writeOptions WriteOptions) error {
 	startTime := time.Now()
+
 	defer func() {
 		m.fireEvent(EventKindBatchExecute, time.Now().Sub(startTime))
 	}()
@@ -318,12 +319,12 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	}
 
 	if m.options.DeferredSort {
-		b.readyDeferredSort() // will recursively ready child batches.
+		b.readyDeferredSort() // Recursively ready child batches.
 	} else {
-		b.doSort() // will recursively sort the child batches.
+		b.doSort() // Recursively sort the child batches.
 	}
 
-	// notify interested handlers that we are about to execute this batch
+	// Notify handlers that we are about to execute a batch.
 	m.fireEvent(EventKindBatchExecuteStart, 0)
 
 	m.m.Lock()
@@ -344,8 +345,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 		atomic.AddUint64(&m.stats.TotExecuteBatchWaitEnd, 1)
 	}
 
-	// check again, could have been closed while waiting
-	if m.isClosed() {
+	if m.isClosed() { // Could have been closed while waiting.
 		m.m.Unlock()
 		return ErrClosed
 	}
@@ -416,6 +416,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				delete(m.childCollections, cName)
 				continue
 			}
+
 			if len(m.childCollections) == 0 {
 				m.childCollections = make(map[string]*collection)
 			}
@@ -430,6 +431,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				}
 				m.childCollections[cName] = childCollection
 			}
+
 			if len(rv.childSegStacks) == 0 {
 				rv.childSegStacks = make(map[string]*segmentStack)
 			}
@@ -438,6 +440,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				// child2 from existing stackDirtyTop in diagram above.
 				prevChildSegStack = curStackTop.childSegStacks[cName]
 			}
+
 			// Recursively merge & build the child collection batches.
 			rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(
 				cBatch, prevChildSegStack)
@@ -455,18 +458,22 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if rv.childSegStacks[cName] != nil {
-			// This child collection was already processed as part of batch.
-			continue // Do not copy over to new stackDirtyTop.
-		} // else we have a child collection in existing stackDirtyTop
+			// This child collection was already processed as part of
+			continue // batch.  Do not copy over to new stackDirtyTop.
+		}
+
+		// Else we have a child collection in existing stackDirtyTop
 		// that was NOT in the incoming batch.
 		childCollection, exists := m.childCollections[cName]
 		if !exists || // This child collection was deleted OR
 			// it was quickly recreated in the incoming batch.
 			childCollection.incarNum != childStack.incarNum {
 			continue // Do not copy over to new stackDirtyTop.
-		} // child3 from existing curStackTop in diagram above.
-		rv.childSegStacks[cName] = childCollection.buildStackDirtyTop(nil,
-			childStack)
+		}
+
+		// Case of child3 from existing curStackTop in diagram above.
+		rv.childSegStacks[cName] =
+			childCollection.buildStackDirtyTop(nil, childStack)
 	}
 
 	return rv
@@ -617,7 +624,6 @@ func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	// Create a pointer to the lower level snapshot by incrementing it's ref
 	// count and then pointers to stackClean, stackDirtyBase, stackDirtyMid
 	// and stackDirtyTop for the collection within lock.
-
 	m.m.Lock()
 
 	lowerLevelSnapshot := m.lowerLevelSnapshot.addRef()
@@ -632,16 +638,16 @@ func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	var err error
 
 	// Avoid going to the lower-level snapshot for the
-	// stackDirtyTop/Mid/Base/Clean Get()s since their lower level snapshots
-	// may be modified concurrently by collection_merger/persister.
+	// stackDirtyTop/Mid/Base/Clean Get()s since their lower level
+	// snapshots may be modified concurrently by
+	// collection_merger/persister.
 	readOptionsSLL := readOptions
 	readOptionsSLL.SkipLowerLevel = true
 
-	// Look for the key-value in the collection's segment stacks starting
-	// with the latest (stackDirtyTop), followed by stackDirtyMid,
-	// stackDirtyBase, stackClean and if still not found look for it in
-	// the lowerLevelSnapshot.
-
+	// Look for the key-value in the collection's segment stacks
+	// starting with the latest (stackDirtyTop), followed by
+	// stackDirtyMid, stackDirtyBase, stackClean, and if still not
+	// found look for it in the lowerLevelSnapshot.
 	if stackDirtyTop != nil {
 		val, err = stackDirtyTop.Get(key, readOptionsSLL)
 	}
@@ -674,6 +680,7 @@ func (m *collection) getOrInitChildStack(ss *segmentStack,
 	if len(ss.childSegStacks) == 0 {
 		ss.childSegStacks = make(map[string]*segmentStack)
 	}
+
 	dstChildStack, exists := ss.childSegStacks[childCollName]
 	if !exists {
 		dstChildStack = &segmentStack{
@@ -682,6 +689,7 @@ func (m *collection) getOrInitChildStack(ss *segmentStack,
 			incarNum: m.incarNum,
 		}
 	}
+
 	return dstChildStack
 }
 
@@ -691,15 +699,19 @@ func (m *collection) appendChildLLSnapshot(dst *segmentStack,
 	if m.incarNum != 0 {
 		dst.lowerLevelSnapshot = NewSnapshotWrapper(src, nil)
 	}
+
 	for cName, childCollection := range m.childCollections {
 		dstChildStack := childCollection.getOrInitChildStack(dst, cName)
+
 		var childSnap Snapshot
 		if src != nil {
 			childSnap, _ = src.ChildCollectionSnapshot(cName)
 		}
-		dst.childSegStacks[cName] = childCollection.appendChildLLSnapshot(dstChildStack,
-			childSnap)
+
+		dst.childSegStacks[cName] =
+			childCollection.appendChildLLSnapshot(dstChildStack, childSnap)
 	}
+
 	return dst
 }
 
@@ -708,6 +720,7 @@ func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 	if src == nil {
 		return dst
 	}
+
 	dst.a = append(dst.a, src.a...)
 
 	for cName, srcChildStack := range src.childSegStacks {
@@ -717,9 +730,12 @@ func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 			childCollection.incarNum != srcChildStack.incarNum {
 			continue
 		}
+
 		dstChildStack := childCollection.getOrInitChildStack(dst, cName)
-		dst.childSegStacks[cName] = childCollection.appendChildStacks(
-			dstChildStack, srcChildStack)
+
+		dst.childSegStacks[cName] =
+			childCollection.appendChildStacks(dstChildStack, srcChildStack)
 	}
+
 	return dst
 }

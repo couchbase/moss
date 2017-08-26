@@ -73,7 +73,8 @@ type cursor struct {
 func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
-	iter, err := ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
+	iter, err :=
+		ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 	if err != nil {
 		return nil, err
 	}
