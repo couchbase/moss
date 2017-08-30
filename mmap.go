@@ -24,6 +24,7 @@ type mmapRef struct {
 	buf  []byte
 	m    sync.Mutex // Protects the fields that follow.
 	refs int
+	ext  interface{} // Extra user/associated data.
 }
 
 func (r *mmapRef) AddRef() *mmapRef {
@@ -63,4 +64,17 @@ func (r *mmapRef) DecRef() error {
 
 func (r *mmapRef) Close() error {
 	return r.DecRef()
+}
+
+func (r *mmapRef) SetExt(v interface{}) {
+	r.m.Lock()
+	r.ext = v
+	r.m.Unlock()
+}
+
+func (r *mmapRef) GetExt() (v interface{}) {
+	r.m.Lock()
+	v = r.ext
+	r.m.Unlock()
+	return
 }

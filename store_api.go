@@ -107,6 +107,15 @@ type StoreOptions struct {
 	// Choose which Kind of segment to persist, if unspecified defaults
 	// to the value of DefaultPersistKind.
 	PersistKind string
+
+	// SegmentKeysIndexMaxBytes is the maximum size in bytes allowed for
+	// the segmentKeysIndex. Also, an index will not be built if the
+	// segment's total key bytes is less than this parameter.
+	SegmentKeysIndexMaxBytes int
+
+	// SegmentKeysIndexMinKeyBytes is the minimum size in bytes that the
+	// keys of a segment must reach before a segment key index is built.
+	SegmentKeysIndexMinKeyBytes int
 }
 
 // DefaultPersistKind determines which persistence Kind to choose when

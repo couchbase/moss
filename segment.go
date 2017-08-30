@@ -131,6 +131,9 @@ type segment struct {
 	totValByte        uint64
 
 	rootCollection *collection // Non-nil when segment is from a batch.
+
+	// In-memory index, immutable after segment initialization.
+	index *segmentKeysIndex
 }
 
 // See the OperationXxx consts.
@@ -363,8 +366,26 @@ func (c *segmentCursor) Next() error {
 	return nil
 }
 
-func (a *segment) Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (SegmentCursor,
-	error) {
+// nextDelta advances the cursor position by 'delta' steps.
+func (c *segmentCursor) nextDelta(delta int) error {
+	c.curr += delta
+	if c.curr >= c.end {
+		return ErrIteratorDone
+	}
+	return nil
+}
+
+// currentKey returns the array position and the key pointed to by the cursor.
+func (c *segmentCursor) currentKey() (idx int, key []byte) {
+	if c.curr >= c.start && c.curr < c.end {
+		idx = c.curr
+		_, key, _ = c.s.getOperationKeyVal(c.curr)
+	}
+	return
+}
+
+func (a *segment) Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (
+	SegmentCursor, error) {
 	rv := &segmentCursor{
 		s:   a,
 		end: a.Len(),
@@ -385,11 +406,23 @@ func (a *segment) Get(key []byte) (operation uint64, val []byte, err error) {
 	return
 }
 
+// Searches for the key within the in-memory index of the segment
+// if available. Returns left and right positions between which
+// the key likely exists.
+func (a *segment) searchIndex(key []byte) (int, int) {
+	if a.index != nil {
+		// Check the in-memory index for a more accurate window.
+		return a.index.lookup(key)
+	}
+
+	return 0, a.Len()
+}
+
 func (a *segment) findKeyPos(key []byte) int {
 	kvs := a.kvs
 	buf := a.buf
 
-	i, j := 0, a.Len()
+	i, j := a.searchIndex(key)
 
 	if i == j {
 		return -1
@@ -429,7 +462,8 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	kvs := a.kvs
 	buf := a.buf
 
-	i, j := 0, a.Len()
+	i, j := a.searchIndex(startKeyInclusive)
+
 	if i == j {
 		return i
 	}
@@ -698,6 +732,58 @@ func (a *segment) Valid() error {
 }
 
 // ------------------------------------------------------
+
+// Builds and initializes the in-memory index for the segment.
+func (a *segment) buildIndex(quota int, minKeyBytes int) {
+	if int(a.totKeyByte) < minKeyBytes {
+		// Build the index only if the total key bytes is greater
+		// than or equal to the SegmentKeysIndexMinKeyBytes.
+		return
+	}
+
+	keyCount := a.Len()
+	if keyCount == 0 {
+		// No keys to index.
+		return
+	}
+
+	keyAvgSize := int(a.totKeyByte) / keyCount
+
+	// Initialize the index.
+	sindex := newSegmentKeysIndex(quota, keyCount, keyAvgSize)
+	if sindex == nil {
+		return
+	}
+
+	scursor := &segmentCursor{
+		s:   a,
+		end: a.Len(),
+	}
+
+	// Build the index for the segment's data.
+	for {
+		keyIdx, key := scursor.currentKey()
+		if key == nil {
+			break
+		}
+
+		if !sindex.add(keyIdx, key) {
+			// Out of space.
+			break
+		}
+
+		err := scursor.nextDelta(sindex.hop)
+		if err != nil {
+			break
+		}
+	}
+
+	// Update segment's index.
+	a.index = sindex
+}
+
+// ------------------------------------------------------
+
 type batch struct {
 	// Compose batch as a type of segment extending it with childCollections
 	*segment

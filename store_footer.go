@@ -287,6 +287,7 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			}
 
 			mref.AddRef()
+			mrefs = append(mrefs, mref)
 		} else {
 			// We persist kvs before buf, so KvsOffset < BufOffset.
 			begOffset := int64(sloc.KvsOffset)
@@ -317,23 +318,31 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			sloc.mref = &mmapRef{fref: fref, mm: mm, buf: buf, refs: 1}
 
 			mref = sloc.mref
+			mrefs = append(mrefs, mref)
+
+			segmentLoader, exists := SegmentLoaders[sloc.Kind]
+			if !exists || segmentLoader == nil {
+				return mrefs, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
+			}
+
+			seg, err := segmentLoader(sloc)
+			if err != nil {
+				return mrefs, fmt.Errorf("store: segmentLoader failed, footer: %+v,"+
+					" f.SegmentLocs: %+v, i: %d, options: %v err: %+v",
+					f, f.SegmentLocs, i, options, err)
+			}
+
+			if options.SegmentKeysIndexMaxBytes > 0 {
+				if a, ok := seg.(*segment); ok {
+					a.buildIndex(options.SegmentKeysIndexMaxBytes,
+						options.SegmentKeysIndexMinKeyBytes)
+				}
+			}
+
+			mref.SetExt(seg)
 		}
 
-		mrefs = append(mrefs, mref)
-
-		segmentLoader, exists := SegmentLoaders[sloc.Kind]
-		if !exists || segmentLoader == nil {
-			return mrefs, fmt.Errorf("store: unknown SegmentLoc kind, sloc: %+v", sloc)
-		}
-
-		seg, err := segmentLoader(sloc)
-		if err != nil {
-			return mrefs, fmt.Errorf("store: segmentLoader failed, footer: %+v,"+
-				" f.SegmentLocs: %+v, i: %d, options: %v err: %+v",
-				f, f.SegmentLocs, i, options, err)
-		}
-
-		a[i] = seg
+		a[i] = mref.GetExt().(Segment)
 	}
 
 	f.ss = &segmentStack{
