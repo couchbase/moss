@@ -288,8 +288,16 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 	}
 	defer frefCompact.DecRef()
 
-	compactFooter, err := s.writeSegments(newSS, frefCompact, fileCompact,
-		partialCompactStart != 0) // Include deletions for partialCompactions.
+	syncAfterBytes := 0
+	if s.options != nil && s.options.CompactionSync {
+		syncAfterBytes = s.options.CompactionSyncAfterBytes
+	}
+
+	compactFooter, err := s.writeSegments(newSS,
+		frefCompact,
+		fileCompact,
+		partialCompactStart != 0, // Include deletions for partialCompactions.
+		syncAfterBytes)
 	if err != nil {
 		if partialCompactStart == 0 {
 			s.removeFileOnClose(frefCompact)
@@ -407,8 +415,9 @@ func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
 	}
 }
 
-func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
-	fileCompact File, includeDeletes bool) (compactFooter *Footer, err error) {
+func (s *Store) writeSegments(newSS *segmentStack,
+	frefCompact *FileRef, fileCompact File,
+	includeDeletes bool, syncAfterBytes int) (compactFooter *Footer, err error) {
 	finfo, err := fileCompact.Stat()
 	if err != nil {
 		return nil, err
@@ -431,8 +440,10 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 	compactionBufferSize := StorePageSize * compactionBufferPages
 
 	compactWriter := &compactWriter{
-		kvsWriter: newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize, s),
-		bufWriter: newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize, s),
+		file:           fileCompact,
+		kvsWriter:      newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize, s),
+		bufWriter:      newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize, s),
+		syncAfterBytes: syncAfterBytes,
 	}
 
 	onError := func(err error) error {
@@ -487,7 +498,7 @@ func (s *Store) writeSegments(newSS *segmentStack, frefCompact *FileRef,
 		}
 
 		childFooter, err := s.writeSegments(childSegStack,
-			frefCompact, fileCompact, includeDeletes)
+			frefCompact, fileCompact, includeDeletes, syncAfterBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -503,6 +514,13 @@ type compactWriter struct {
 	kvsWriter *bufferedSectionWriter
 	bufWriter *bufferedSectionWriter
 
+	// Bytes after which file's Sync() is to be invoked provided
+	// sync is enabled. If 0, Sync() is not invoked.
+	syncAfterBytes int
+
+	// Bytes written since the last Sync()
+	bytesSinceSync int
+
 	totOperationSet   uint64
 	totOperationDel   uint64
 	totOperationMerge uint64
@@ -511,6 +529,14 @@ type compactWriter struct {
 }
 
 func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
+	if cw.syncAfterBytes > 0 && cw.bytesSinceSync > cw.syncAfterBytes {
+		err := cw.file.Sync()
+		if err != nil {
+			return err
+		}
+		cw.bytesSinceSync = 0
+	}
+
 	keyStart := cw.bufWriter.Written()
 	_, err := cw.bufWriter.Write(key)
 	if err != nil {
@@ -554,6 +580,8 @@ func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
 
 	cw.totKeyByte += uint64(keyLen)
 	cw.totValByte += uint64(valLen)
+
+	cw.bytesSinceSync += keyLen + valLen + 16 /* len(kvsBuf) */
 
 	return nil
 }

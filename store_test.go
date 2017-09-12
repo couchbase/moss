@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2251,4 +2252,132 @@ func waitForCompactionCleanup(tmpDir string, secsToWait int) (
 		fileInfos, err = ioutil.ReadDir(tmpDir)
 	}
 	return
+}
+
+func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
+	numItems := 1000000
+
+	ch := make(chan *testResults)
+
+	runTest := func(name string, batchSize, syncAfterBytes int) {
+		tmpDir, _ := ioutil.TempDir("", "mossStore")
+		defer os.RemoveAll(tmpDir)
+
+		so := DefaultStoreOptions
+		so.CompactionSync = true
+		so.CompactionSyncAfterBytes = syncAfterBytes
+		spo := StorePersistOptions{CompactionConcern: CompactionAllow}
+
+		store, coll, er := OpenStoreCollection(tmpDir, so, spo)
+		if er != nil || store == nil || coll == nil {
+			t.Fatalf("error opening store collection: %v", tmpDir)
+		}
+
+		loadComplete := make(chan bool)
+		fetchComplete := make(chan bool)
+
+		load := func() {
+			x := numItems
+			for x > 0 {
+				ba, err := coll.NewBatch(batchSize, batchSize*512)
+				if err != nil {
+					t.Fatalf("error creating new batch: %v", err)
+				}
+
+				for i := 0; i < batchSize; i++ {
+					k := fmt.Sprintf("%08d", x)
+					v := fmt.Sprintf("%128d", x)
+					ba.Set([]byte(k), []byte(v))
+					x--
+				}
+
+				err = coll.ExecuteBatch(ba, WriteOptions{})
+				if err != nil {
+					t.Fatalf("error executing batch: %v", err)
+				}
+
+				err = ba.Close()
+				if err != nil {
+					t.Fatalf("error closing batch: %v", err)
+				}
+			}
+
+			loadComplete <- true
+		}
+
+		var readtime time.Duration
+		fetchtimes := make([]time.Duration, numItems)
+		var aggregate int64
+
+		fetch := func() {
+			start := time.Now()
+			for i := 0; i < numItems; i++ {
+				key := fmt.Sprintf("%08d", i+1)
+				gstart := time.Now()
+				val, err := coll.Get([]byte(key), ReadOptions{})
+				fetchtimes[i] = time.Since(gstart)
+				expect := fmt.Sprintf("%128d", i+1)
+				if err != nil || string(val) != expect {
+					t.Fatalf("Unexpected error for key '%v':"+
+						" %v / Vals mismatch: '%v' != '%v'",
+						key, err, string(val), expect)
+				}
+				aggregate += fetchtimes[i].Nanoseconds()
+			}
+			readtime = time.Since(start)
+
+			fetchComplete <- true
+		}
+
+		// Initial load
+		go load()
+		<-loadComplete
+
+		// Concurrent load & fetch
+		go load()
+		go fetch()
+
+		<-loadComplete
+		<-fetchComplete
+
+		sort.Sort(byNS(fetchtimes))
+
+		mean := time.Duration(aggregate/int64(len(fetchtimes))) * time.Nanosecond
+
+		ch <- &testResults{
+			name:       name,
+			batchsize:  batchSize,
+			readtime:   readtime,
+			fetchtimes: fetchtimes,
+			mean:       mean,
+		}
+	}
+
+	go runTest("WITHOUT REGULAR SYNC", 100, 0)
+	go runTest("WITH REGULAR SYNC", 100, 1000000)
+	go runTest("WITHOUT REGULAR SYNC", 10000, 0)
+	go runTest("WITH REGULAR SYNC", 10000, 1000000)
+
+	var results []*testResults
+	for i := 0; i < 4; i++ {
+		results = append(results, <-ch)
+	}
+
+	fmt.Printf("%8v (numItems: %10v) %19v %v\n",
+		" ", numItems,
+		" ", "<-------------------- Fetch times -------------------->")
+	fmt.Printf("%20v  %9v  %14v  %10v  %10v  %10v  %10v  %10v\n",
+		" ", "BatchSize", "Readtime(s)",
+		"Mean", "Median", "90th", "95th", "99th")
+	for _, result := range results {
+		fmt.Printf("%20v  %9v  %14.3v  %10v  %10v  %10v  %10v  %10v\n",
+			result.name,
+			result.batchsize,
+			result.readtime.Seconds(),
+			result.mean,
+			result.fetchtimes[len(result.fetchtimes)/2],
+			result.fetchtimes[90*len(result.fetchtimes)/100],
+			result.fetchtimes[95*len(result.fetchtimes)/100],
+			result.fetchtimes[99*len(result.fetchtimes)/100])
+	}
 }

@@ -91,6 +91,12 @@ type StoreOptions struct {
 	// compaction for additional safety.
 	CompactionSync bool
 
+	// CompactionSyncAfterBytes controls the number of bytes after
+	// which compaction is allowed to invoke an fsync. This works only
+	// if CompactionSync is set to true. A 0 value here annulls this
+	// behavior.
+	CompactionSyncAfterBytes int
+
 	// OpenFile allows apps to optionally provide their own file
 	// opening implementation.  When nil, os.OpenFile() is used.
 	OpenFile OpenFile `json:"-"`
