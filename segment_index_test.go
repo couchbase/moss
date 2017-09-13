@@ -222,18 +222,18 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 		results = append(results, <-ch)
 	}
 
-	fmt.Printf("%17v (numItems: %10v) %25v %v\n",
+	fmt.Printf("%17v (numItems: %10v) %24v %v\n",
 		" ", numItems,
 		" ", "<-------------------- Fetch times -------------------->")
-	fmt.Printf("%17v  %9v  %15v  %15v  %10v  %10v  %10v  %10v  %10v\n",
-		" ", "BatchSize", "Writetime", "Readtime",
+	fmt.Printf("%17v  %9v  %15v  %14v  %10v  %10v  %10v  %10v  %10v\n",
+		" ", "BatchSize", "Writetime(s)", "Readtime(s)",
 		"Mean", "Median", "90th", "95th", "99th")
 	for _, result := range results {
-		fmt.Printf("%17v  %9v  %15v  %15v  %10v  %10v  %10v  %10v  %10v\n",
+		fmt.Printf("%17v  %9v  %15.3v  %14.3v  %10v  %10v  %10v  %10v  %10v\n",
 			result.name,
 			result.batchsize,
-			result.writetime,
-			result.readtime,
+			result.writetime.Seconds(),
+			result.readtime.Seconds(),
 			result.mean,
 			result.fetchtimes[len(result.fetchtimes)/2],
 			result.fetchtimes[90*len(result.fetchtimes)/100],
