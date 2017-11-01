@@ -289,8 +289,11 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 	defer frefCompact.DecRef()
 
 	syncAfterBytes := 0
-	if s.options != nil && s.options.CompactionSync {
+	if s.options != nil {
 		syncAfterBytes = s.options.CompactionSyncAfterBytes
+		if syncAfterBytes == 0 {
+			syncAfterBytes = DefaultStoreOptions.CompactionSyncAfterBytes
+		}
 	}
 
 	compactFooter, err := s.writeSegments(newSS,
@@ -310,7 +313,8 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 		compactFooter.spliceFooter(footer, partialCompactStart)
 	}
 
-	if s.options != nil && s.options.CompactionSync {
+	if s.options != nil &&
+		(s.options.CompactionSync || s.options.CompactionSyncAfterBytes > 0) {
 		persistOptions.NoSync = false
 	}
 
@@ -515,7 +519,7 @@ type compactWriter struct {
 	bufWriter *bufferedSectionWriter
 
 	// Bytes after which file's Sync() is to be invoked provided
-	// sync is enabled. If 0, Sync() is not invoked.
+	// sync is enabled. If <= 0, Sync() is not invoked.
 	syncAfterBytes int
 
 	// Bytes written since the last Sync()

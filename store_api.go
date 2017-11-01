@@ -92,9 +92,9 @@ type StoreOptions struct {
 	CompactionSync bool
 
 	// CompactionSyncAfterBytes controls the number of bytes after
-	// which compaction is allowed to invoke an fsync. This works only
-	// if CompactionSync is set to true. A 0 value here annulls this
-	// behavior.
+	// which compaction is allowed to invoke an file sync, followed
+	// by an additional file sync at the end of compaction. A value
+	// that is < 0 annulls this behavior.
 	CompactionSyncAfterBytes int
 
 	// OpenFile allows apps to optionally provide their own file
@@ -136,6 +136,7 @@ var DefaultStoreOptions = StoreOptions{
 	CompactionLevelMaxSegments: 4,
 	CompactionLevelMultiplier:  9,
 	CompactionBufferPages:      512,
+	CompactionSyncAfterBytes:   16000000,
 }
 
 // StorePersistOptions are provided to Store.Persist().
