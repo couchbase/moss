@@ -332,10 +332,19 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 					f, f.SegmentLocs, i, options, err)
 			}
 
-			if options.SegmentKeysIndexMaxBytes > 0 {
+			segmentKeysIndexMaxBytes := options.SegmentKeysIndexMaxBytes
+			if segmentKeysIndexMaxBytes == 0 {
+				segmentKeysIndexMaxBytes = DefaultStoreOptions.SegmentKeysIndexMaxBytes
+			}
+
+			segmentKeysIndexMinKeyBytes := options.SegmentKeysIndexMinKeyBytes
+			if segmentKeysIndexMinKeyBytes == 0 {
+				segmentKeysIndexMinKeyBytes = DefaultStoreOptions.SegmentKeysIndexMinKeyBytes
+			}
+
+			if segmentKeysIndexMaxBytes > 0 {
 				if a, ok := seg.(*segment); ok {
-					a.buildIndex(options.SegmentKeysIndexMaxBytes,
-						options.SegmentKeysIndexMinKeyBytes)
+					a.buildIndex(segmentKeysIndexMaxBytes, segmentKeysIndexMinKeyBytes)
 				}
 			}
 

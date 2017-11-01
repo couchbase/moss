@@ -132,11 +132,13 @@ var DefaultPersistKind = SegmentKindBasic
 // application hasn't provided a meaningful configuration value.
 // Advanced applications can use these to fine tune performance.
 var DefaultStoreOptions = StoreOptions{
-	CompactionPercentage:       0.65,
-	CompactionLevelMaxSegments: 4,
-	CompactionLevelMultiplier:  9,
-	CompactionBufferPages:      512,
-	CompactionSyncAfterBytes:   16000000,
+	CompactionPercentage:        0.65,
+	CompactionLevelMaxSegments:  4,
+	CompactionLevelMultiplier:   9,
+	CompactionBufferPages:       512,
+	CompactionSyncAfterBytes:    16000000,
+	SegmentKeysIndexMaxBytes:    100000,
+	SegmentKeysIndexMinKeyBytes: 10000000,
 }
 
 // StorePersistOptions are provided to Store.Persist().
