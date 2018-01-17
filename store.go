@@ -574,6 +574,10 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 	}
 
 	sort.Strings(fnames)
+	if options.CollectionOptions.Log != nil {
+		options.CollectionOptions.Log("store: openStore,"+
+			" files found: %q", fnames)
+	}
 
 	for i := len(fnames) - 1; i >= 0; i-- {
 		var flag int
@@ -605,7 +609,13 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 		}
 
 		if !options.KeepFiles {
-			err := removeFiles(dir, append(fnames[0:i], fnames[i+1:]...))
+			rmFiles := append(fnames[0:i], fnames[i+1:]...)
+			if options.CollectionOptions.Log != nil {
+				options.CollectionOptions.Log("store: openStore,"+
+					" files to remove: %q", rmFiles)
+			}
+
+			err := removeFiles(dir, rmFiles)
 			if err != nil {
 				footer.Close()
 				return nil, err
