@@ -113,7 +113,6 @@ func (s *segmentKeysIndex) lookup(key []byte) (leftPos int, rightPos int) {
 	keyEnd := s.offsets[1]
 	cmp := bytes.Compare(key, s.data[keyStart:keyEnd])
 	if cmp < 0 {
-		// ENOENT.
 		return
 	}
 
@@ -141,10 +140,9 @@ func (s *segmentKeysIndex) lookup(key []byte) (leftPos int, rightPos int) {
 
 		cmp = bytes.Compare(s.data[keyStart:keyEnd], key)
 		if cmp == 0 {
-			// Direct hit.
 			leftPos = h * s.hop
 			rightPos = leftPos + 1
-			return
+			return // Direct hit.
 		} else if cmp < 0 {
 			if i == h {
 				break

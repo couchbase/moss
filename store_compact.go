@@ -20,7 +20,6 @@ import (
 func (s *Store) compactMaybe(higher Snapshot,
 	persistOptions StorePersistOptions) (bool, error) {
 	if s.Options().CollectionOptions.ReadOnly {
-		// Do not compact in Read-Only mode
 		return false, nil
 	}
 
@@ -61,7 +60,7 @@ func (s *Store) compactMaybe(higher Snapshot,
 			calcPartialCompactionStart(slocs, incomingDataSize, s.options)
 		if doCompact {
 			compactionConcern = CompactionForce
-		} // else append data to the end of the same file.
+		} // Else append data to the end of the same file.
 	}
 
 	if compactionConcern != CompactionForce {
@@ -88,8 +87,7 @@ func (s *Store) compactMaybe(higher Snapshot,
 				finfo, err = mref.fref.file.Stat()
 			}
 			if err == nil && len(finfo.Name()) > 0 {
-				// Fetch size of old file
-				sizeBefore = finfo.Size()
+				sizeBefore = finfo.Size() // Fetch old file size.
 			}
 		}
 	}
@@ -103,8 +101,7 @@ func (s *Store) compactMaybe(higher Snapshot,
 		if mref != nil && mref.fref != nil {
 			finfo, err := mref.fref.file.Stat()
 			if err == nil && len(finfo.Name()) > 0 {
-				// Fetch size of new file
-				sizeAfter = finfo.Size()
+				sizeAfter = finfo.Size() // Fetch new file size.
 			}
 		}
 	}
@@ -308,7 +305,7 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 		return err
 	}
 
-	// Prefix restore the footer's partialCompactStart
+	// Prefix restore the footer's partialCompactStart.
 	if partialCompactStart != 0 {
 		compactFooter.spliceFooter(footer, partialCompactStart)
 	}
@@ -522,7 +519,7 @@ type compactWriter struct {
 	// sync is enabled. If <= 0, Sync() is not invoked.
 	syncAfterBytes int
 
-	// Bytes written since the last Sync()
+	// Bytes written since the last Sync().
 	bytesSinceSync int
 
 	totOperationSet   uint64

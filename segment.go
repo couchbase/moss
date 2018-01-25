@@ -423,7 +423,6 @@ func (a *segment) findKeyPos(key []byte) int {
 	buf := a.buf
 
 	i, j := a.searchIndex(key)
-
 	if i == j {
 		return -1
 	}
@@ -463,7 +462,6 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	buf := a.buf
 
 	i, j := a.searchIndex(startKeyInclusive)
-
 	if i == j {
 		return i
 	}
@@ -492,12 +490,9 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 	}
 
 	return i
-
-	// TODO: Do better than binary search?
-	// TODO: Consider a perfectly balanced btree?
 }
 
-// GetOperationKeyVal() returns the operation, key, val for a given
+// getOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
 func (a *segment) getOperationKeyVal(pos int) (uint64, []byte, []byte) {
 	x := pos * 2
@@ -743,13 +738,11 @@ func (a *segment) buildIndex(quota int, minKeyBytes int) {
 
 	keyCount := a.Len()
 	if keyCount == 0 {
-		// No keys to index.
-		return
+		return // No keys to index.
 	}
 
 	keyAvgSize := int(a.totKeyByte) / keyCount
 
-	// Initialize the index.
 	sindex := newSegmentKeysIndex(quota, keyCount, keyAvgSize)
 	if sindex == nil {
 		return
@@ -760,7 +753,6 @@ func (a *segment) buildIndex(quota int, minKeyBytes int) {
 		end: a.Len(),
 	}
 
-	// Build the index for the segment's data.
 	for {
 		keyIdx, key := scursor.currentKey()
 		if key == nil {
@@ -768,8 +760,7 @@ func (a *segment) buildIndex(quota int, minKeyBytes int) {
 		}
 
 		if !sindex.add(keyIdx, key) {
-			// Out of space.
-			break
+			break // Out of space.
 		}
 
 		err := scursor.nextDelta(sindex.hop)
@@ -778,14 +769,13 @@ func (a *segment) buildIndex(quota int, minKeyBytes int) {
 		}
 	}
 
-	// Update segment's index.
 	a.index = sindex
 }
 
 // ------------------------------------------------------
 
 type batch struct {
-	// Compose batch as a type of segment extending it with childCollections
+	// A batch is a type of segment with childCollections.
 	*segment
 
 	// childBatches track the segments of child collections indexed by their
@@ -793,8 +783,8 @@ type batch struct {
 	childBatches map[string]*batch
 }
 
-// deletedChildBatchMarker is used as a conduit to convey the delete
-// request from DelChildCollection() to ExecuteBatch()
+// deletedChildBatchMarker conveys a delete request from
+// DelChildCollection() to ExecuteBatch().
 var deletedChildBatchMarker = &batch{}
 
 // newBatch() allocates a segment with hinted amount of resources.
@@ -834,7 +824,8 @@ func (b *batch) DelChildCollection(collectionName string) error {
 	if b.childBatches == nil { // No previous child batches seen.
 		b.childBatches = make(map[string]*batch)
 	}
-	// Load the parent batch with this batch having special signature.
+
+	// The parent batch remembers this batch with deletion sentinel.
 	b.childBatches[collectionName] = deletedChildBatchMarker
 
 	return nil
@@ -883,9 +874,9 @@ func (b *batch) doSort() {
 
 func (b *batch) isEmpty() bool {
 	if len(b.childBatches) != 0 {
-		// Very presence of child batches indicates a non-empty batch
-		// even if the child batches themselves are empty. This is so that
-		// collection creation/deletions can still work.
+		// Presence of child batches indicates a non-empty batch even
+		// if the child batches themselves are empty. This is so that
+		// collection creation/deletions will work.
 		return false
 	}
 
