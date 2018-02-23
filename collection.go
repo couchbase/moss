@@ -133,6 +133,8 @@ func (m *collection) Close() error {
 
 	m.m.Lock()
 
+	m.invalidateLatestSnapshotLOCKED()
+
 	close(m.stopCh)
 
 	m.stackDirtyTopCond.Broadcast()  // Awake all ExecuteBatch()'ers.
