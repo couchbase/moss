@@ -87,6 +87,7 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 
 	rv := &segmentStack{
 		options:            ss.options,
+		stats:              ss.stats,
 		a:                  a,
 		refs:               1,
 		lowerLevelSnapshot: ss.lowerLevelSnapshot.addRef(),

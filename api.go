@@ -547,10 +547,11 @@ type CollectionStats struct {
 	TotCloseLowerLevelEnd uint64
 	TotCloseEnd           uint64
 
-	TotSnapshotBeg         uint64
-	TotSnapshotInternalBeg uint64
-	TotSnapshotInternalEnd uint64
-	TotSnapshotEnd         uint64
+	TotSnapshotBeg           uint64
+	TotSnapshotEnd           uint64
+	TotSnapshotInternalBeg   uint64
+	TotSnapshotInternalEnd   uint64
+	TotSnapshotInternalClose uint64
 
 	TotGet    uint64
 	TotGetErr uint64

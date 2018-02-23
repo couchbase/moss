@@ -554,7 +554,7 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack),
 	gotLock bool) (*segmentStack, int, int, int, int) {
 	atomic.AddUint64(&m.stats.TotSnapshotInternalBeg, 1)
 
-	rv := &segmentStack{options: m.options, refs: 1}
+	rv := &segmentStack{options: m.options, refs: 1, stats: m.stats}
 
 	heightDirtyTop := 0
 	heightDirtyMid := 0

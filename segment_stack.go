@@ -11,7 +11,10 @@
 
 package moss
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // A segmentStack is a stack of segments, where higher (later) entries
 // in the stack have higher precedence, and should "shadow" any
@@ -19,6 +22,7 @@ import "sync"
 // implements the Snapshot interface.
 type segmentStack struct {
 	options *CollectionOptions
+	stats   *CollectionStats
 
 	a []Segment
 
@@ -46,6 +50,9 @@ func (ss *segmentStack) decRef() {
 	ss.m.Lock()
 	ss.refs--
 	if ss.refs <= 0 {
+		if ss.stats != nil { // Only update stats if snapshot is on collection.
+			atomic.AddUint64(&ss.stats.TotSnapshotInternalClose, 1)
+		}
 		if ss.lowerLevelSnapshot != nil {
 			ss.lowerLevelSnapshot.Close()
 			ss.lowerLevelSnapshot = nil

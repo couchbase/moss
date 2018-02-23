@@ -1033,12 +1033,12 @@ func TestOpenStoreCollection(t *testing.T) {
 		CollectionOptions: co,
 	}, StorePersistOptions{})
 	if err != nil || m2 == nil || store2 == nil {
-		t.Errorf("expected reopen store to work")
+		t.Errorf("expected reopen store to work. Error = %v", err)
 	}
 
 	ss2, err := m2.Snapshot()
 	if err != nil {
-		t.Errorf("expected ss2 to work")
+		t.Errorf("expected ss2 to work. Error = %v", err)
 	}
 
 	iter2, err := ss2.StartIterator(nil, nil, IteratorOptions{})
