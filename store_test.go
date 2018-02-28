@@ -2107,7 +2107,10 @@ func TestStoreCrashRecovery(t *testing.T) {
 
 	<-ch
 
+	store.m.Lock()
 	file := store.footer.SegmentLocs[0].mref.fref.file
+	store.m.Unlock()
+
 	finfo, err := file.Stat()
 	if err != nil {
 		t.Errorf("Expected file stat to work %v", err)
