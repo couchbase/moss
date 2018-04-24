@@ -134,6 +134,9 @@ var ErrValueTooLarge = errors.New("value-too-large")
 // ErrAborted is returned when any operations are aborted.
 var ErrAborted = errors.New("operation-aborted")
 
+// ErrSegmentCorrupted is returned upon any segment corruptions.
+var ErrSegmentCorrupted = errors.New("segment-corrupted")
+
 // A Collection represents an ordered mapping of key-val entries,
 // where a Collection is snapshot'able and atomically updatable.
 type Collection interface {

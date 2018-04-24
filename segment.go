@@ -399,7 +399,12 @@ func (a *segment) Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (
 }
 
 func (a *segment) Get(key []byte) (operation uint64, val []byte, err error) {
-	pos := a.findKeyPos(key)
+	var pos int
+	pos, err = a.findKeyPos(key)
+	if err != nil {
+		return
+	}
+
 	if pos >= 0 {
 		operation, _, val = a.getOperationKeyVal(pos)
 	}
@@ -418,21 +423,39 @@ func (a *segment) searchIndex(key []byte) (int, int) {
 	return 0, a.Len()
 }
 
-func (a *segment) findKeyPos(key []byte) int {
+func (a *segment) findKeyPos(key []byte) (int, error) {
 	kvs := a.kvs
 	buf := a.buf
 
-	i, j := a.searchIndex(key)
-	if i == j {
-		return -1
+	if len(kvs) < 2 {
+		return -1, nil
 	}
 
-	// If key smaller than smallest key, return early.
 	startKeyLen := int((maskKeyLength & kvs[0]) >> 32)
 	startKeyBeg := int(kvs[1])
+	if startKeyBeg+startKeyLen > len(buf) {
+		return -1, ErrSegmentCorrupted
+	}
+	// If key smaller than smallest key, return early.
 	startCmp := bytes.Compare(key, buf[startKeyBeg:startKeyBeg+startKeyLen])
 	if startCmp < 0 {
-		return -1
+		return -1, nil
+	}
+
+	i, j := a.searchIndex(key)
+	if i == j {
+		return -1, nil
+	}
+
+	// additional best effort guard against mmap buf beyond eof
+	x := 2 * (j - 1)
+	if x+1 > len(kvs) {
+		return -1, ErrSegmentCorrupted
+	}
+	endKeyLen := int((maskKeyLength & kvs[x]) >> 32)
+	endKeyBeg := int(kvs[x+1])
+	if endKeyBeg+endKeyLen > len(buf) {
+		return -1, ErrSegmentCorrupted
 	}
 
 	for i < j {
@@ -442,7 +465,7 @@ func (a *segment) findKeyPos(key []byte) int {
 		kbeg := int(kvs[x+1])
 		cmp := bytes.Compare(buf[kbeg:kbeg+klen], key)
 		if cmp == 0 {
-			return h
+			return h, nil
 		} else if cmp < 0 {
 			i = h + 1
 		} else {
@@ -450,7 +473,7 @@ func (a *segment) findKeyPos(key []byte) int {
 		}
 	}
 
-	return -1
+	return -1, nil
 }
 
 // FindStartKeyInclusivePos() returns the logical entry position for

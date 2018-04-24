@@ -302,6 +302,13 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			begOffsetDelta := int(begOffset - begOffsetActual)
 			nbytesActual := nbytes + begOffsetDelta
 
+			// check whether the actual file fits within the footer offsets
+			fstats, err := osFile.Stat()
+			if err != nil || nbytesActual > int(fstats.Size()) {
+				return mrefs, fmt.Errorf("store: doLoadSegments corrupted "+
+					"file: %s, err: %+v", fstats.Name(), err)
+			}
+
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
 				return mrefs,
