@@ -248,7 +248,9 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 	higher Snapshot, persistOptions StorePersistOptions) error {
 	startTime := time.Now()
 
-	var newSS *segmentStack
+	var newSS *segmentStack   // Segments to compact (all segs when full compaction).
+	var newBase *segmentStack // Segments not compacted (nil when full compaction).
+
 	if higher != nil {
 		ssHigher, ok := higher.(*segmentStack)
 		if !ok {
@@ -262,7 +264,7 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 
 		ssHigher.ensureFullySorted()
 
-		newSS = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
+		newSS, newBase = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
 		newSS = footer.ss      // Safe as footer ref count is held positive.
 		if len(newSS.a) <= 1 { // No incoming data & 1 or fewer footer segments.
@@ -293,7 +295,7 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 		}
 	}
 
-	compactFooter, err := s.writeSegments(newSS,
+	compactFooter, err := s.writeSegments(newSS, newBase,
 		frefCompact,
 		fileCompact,
 		partialCompactStart != 0, // Include deletions for partialCompactions.
@@ -352,7 +354,7 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 }
 
 func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
-	higher *segmentStack) *segmentStack {
+	higher *segmentStack) (rv, rvBase *segmentStack) {
 	var footerSS *segmentStack
 	var lenFooterSS int
 	if footer != nil && footer.ss != nil {
@@ -360,14 +362,23 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 		lenFooterSS = len(footerSS.a)
 	}
 
-	rv := &segmentStack{
+	rv = &segmentStack{
 		options:  higher.options,
 		a:        make([]Segment, 0, len(higher.a)+lenFooterSS),
 		incarNum: higher.incarNum,
 	}
+
 	if footerSS != nil {
 		rv.a = append(rv.a, footerSS.a[splicePoint:]...)
+
+		if splicePoint > 0 {
+			rvBase = &segmentStack{
+				options: footerSS.options,
+				a:       footerSS.a[0:splicePoint],
+			}
+		}
 	}
+
 	rv.a = append(rv.a, higher.a...)
 
 	for cName, newStack := range higher.childSegStacks {
@@ -375,7 +386,7 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
 		if footer == nil {
-			rv.childSegStacks[cName] =
+			rv.childSegStacks[cName], _ =
 				s.mergeSegStacks(nil, splicePoint, newStack)
 			continue
 		}
@@ -389,11 +400,11 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 			}
 		}
 
-		rv.childSegStacks[cName] =
+		rv.childSegStacks[cName], _ =
 			s.mergeSegStacks(childFooter, splicePoint, newStack)
 	}
 
-	return rv
+	return rv, rvBase
 }
 
 func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
@@ -416,7 +427,7 @@ func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
 	}
 }
 
-func (s *Store) writeSegments(newSS *segmentStack,
+func (s *Store) writeSegments(newSS, base *segmentStack,
 	frefCompact *FileRef, fileCompact File,
 	includeDeletes bool, syncAfterBytes int) (compactFooter *Footer, err error) {
 	finfo, err := fileCompact.Stat()
@@ -457,7 +468,8 @@ func (s *Store) writeSegments(newSS *segmentStack,
 	s.totCompactionBeforeBytes += stats.CurBytes
 	s.m.Unlock()
 
-	err = newSS.mergeInto(0, len(newSS.a), compactWriter, nil, includeDeletes, false, s.abortCh)
+	err = newSS.mergeInto(0, len(newSS.a), compactWriter, base,
+		includeDeletes, false, s.abortCh)
 	if err != nil {
 		return nil, onError(err)
 	}
@@ -498,7 +510,16 @@ func (s *Store) writeSegments(newSS *segmentStack,
 			compactFooter.ChildFooters = make(map[string]*Footer)
 		}
 
-		childFooter, err := s.writeSegments(childSegStack,
+		// TODO: IMPORTANT: See MB-29664 - merge-operators, child
+		// collections, and partial/leveled compaction does not work
+		// correctly.  You need to use full compaction if you're using
+		// merge-operators with child collections.  The fix will be to
+		// compute and provide the right childSegStackBase to the
+		// recursive writeSegments() calls.
+		//
+		var childSegStackBase *segmentStack
+
+		childFooter, err := s.writeSegments(childSegStack, childSegStackBase,
 			frefCompact, fileCompact, includeDeletes, syncAfterBytes)
 		if err != nil {
 			return nil, err

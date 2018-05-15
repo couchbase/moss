@@ -2384,3 +2384,132 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 			result.fetchtimes[99*len(result.fetchtimes)/100])
 	}
 }
+
+func TestStorePartialCompactionWithMergeOperator(t *testing.T) {
+	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	defer os.RemoveAll(tmpDir)
+
+	var err error
+	var store *Store
+	var coll Collection
+
+	spo := StorePersistOptions{CompactionConcern: CompactionDisable}
+
+	store, coll, err = OpenStoreCollection(tmpDir,
+		StoreOptions{
+			CollectionOptions: CollectionOptions{
+				MergeOperator: &MergeOperatorStringAppend{Sep: ":"},
+			},
+		},
+		spo)
+	if err != nil || store == nil {
+		t.Errorf("OpenStoreCollection failed, err: %v", err)
+	}
+	defer coll.Close()
+	defer store.Close()
+
+	var b Batch
+
+	// Execute first batch, so "k0" ==> "a".
+
+	b, err = coll.NewBatch(0, 0)
+	if err != nil {
+		t.Errorf("expected NewBatch() to succeed")
+	}
+	b.Set([]byte("k0"), []byte("a"))
+
+	err = coll.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected ExecuteBatch() to work")
+	}
+	waitForPersistence(coll)
+
+	store.m.Lock()
+	store.footer.m.Lock()
+	if len(store.footer.ss.a) != 1 {
+		t.Errorf("expected ss height of 1")
+	}
+	store.footer.m.Unlock()
+	store.m.Unlock()
+
+	// Execute second batch, so "k0" ==> "a:b".
+
+	b, err = coll.NewBatch(0, 0)
+	if err != nil {
+		t.Errorf("expected NewBatch() to succeed")
+	}
+	b.Merge([]byte("k0"), []byte("b"))
+
+	err = coll.ExecuteBatch(b, WriteOptions{})
+	if err != nil {
+		t.Errorf("expected ExecuteBatch() to work")
+	}
+	waitForPersistence(coll)
+
+	store.m.Lock()
+	store.footer.m.Lock()
+	if len(store.footer.ss.a) != 2 {
+		t.Errorf("expected ss height of 2")
+	}
+	store.footer.m.Unlock()
+	store.m.Unlock()
+
+	var ss Snapshot
+
+	ss, err = coll.Snapshot()
+	if err != nil {
+		t.Errorf("expected ss to work")
+	}
+
+	var v []byte
+	v, err = ss.Get([]byte("k0"), ReadOptions{})
+	if err != nil || string(v) != "a:b" {
+		t.Errorf("expected k0 to be a:b")
+	}
+
+	// For the last batch, manually invoke subsets of the
+	// ExecuteBatch() steps to force issue MB-29664.
+
+	b, err = coll.NewBatch(0, 0)
+	if err != nil {
+		t.Errorf("expected NewBatch() to succeed")
+	}
+	b.Merge([]byte("k0"), []byte("c"))
+
+	bx := b.(*batch)
+	m := coll.(*collection)
+
+	m.m.Lock()
+	ssNew := m.buildStackDirtyTop(bx, m.stackDirtyTop)
+	m.m.Unlock()
+
+	if len(ssNew.a) != 1 {
+		t.Errorf("expected ssNew height to be 1, got: %d", len(ssNew.a))
+	}
+
+	footer, err := store.snapshot()
+	if err != nil {
+		t.Errorf("expected store.snapshot() to work")
+	}
+	defer footer.DecRef()
+
+	err = store.compact(footer, 1, ssNew, spo)
+	if err != nil {
+		t.Errorf("expected store.compact() to work")
+	}
+
+	ss, err = store.Snapshot()
+	if err != nil {
+		t.Errorf("expected ss to work")
+	}
+
+	v, err = ss.Get([]byte("k0"), ReadOptions{})
+	if err != nil {
+		t.Errorf("expected last get to work")
+	}
+	if string(v) != "a:b:c" {
+		// Before the fix for MB-29664, the retrieved Get() value
+		// would incorrectly be ":b:c".
+		t.Errorf("expected k0 to be a:b:c, got: %q", v)
+	}
+}
