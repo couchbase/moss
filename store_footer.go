@@ -312,10 +312,13 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)
 			if err != nil {
 				return mrefs,
-					fmt.Errorf("store: doLoadSegments mmap.Map(), "+
-						"begOffsetActual = %v,"+
-						"nbytesActual = %v, sloc = %v, err: %v",
-						begOffsetActual, nbytesActual, sloc, err)
+					fmt.Errorf("store: doLoadSegments mmap.Map(),"+
+						" begOffsetActual = %v, nbytesActual = %v, sloc = %+v,"+
+						" file: %s, file mode: %v, file modification time: %v,"+
+						" footer: %+v, f.SegmentLocs: %+v, err: %v",
+						begOffsetActual, nbytesActual, sloc,
+						fstats.Name(), fstats.Mode(), fstats.ModTime(),
+						f, f.SegmentLocs, err)
 			}
 
 			fref.AddRef() // New mref owns 1 fref ref-count.
