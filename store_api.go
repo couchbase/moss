@@ -158,15 +158,17 @@ type StorePersistOptions struct {
 // behaviors associated with persistence.
 type CompactionConcern int
 
-// CompactionDisable means no compaction.
-var CompactionDisable = CompactionConcern(0)
+const (
+	// CompactionDisable means no compaction.
+	CompactionDisable CompactionConcern = iota
 
-// CompactionAllow means compaction decision is automated and based on
-// the configed policy and parameters, such as CompactionPercentage.
-var CompactionAllow = CompactionConcern(1)
+	// CompactionAllow means compaction decision is automated and based on
+	// the configed policy and parameters, such as CompactionPercentage.
+	CompactionAllow
 
-// CompactionForce means compaction should be performed immediately.
-var CompactionForce = CompactionConcern(2)
+	// CompactionForce means compaction should be performed immediately.
+	CompactionForce
+)
 
 // --------------------------------------------------------
 
