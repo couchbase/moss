@@ -43,35 +43,38 @@ Apache 2.0
 Example
 =======
 
-    import github.com/couchbase/moss
+```golang
+import github.com/couchbase/moss
 
-    c, err := moss.NewCollection(moss.CollectionOptions{})
-    c.Start()
-    defer c.Close()
+c, err := moss.NewCollection(moss.CollectionOptions{})
+c.Start()
+defer c.Close()
 
-    batch, err := c.NewBatch(0, 0)
-    defer batch.Close()
+batch, err := c.NewBatch(0, 0)
+defer batch.Close()
 
-    batch.Set([]byte("car-0"), []byte("tesla"))
-    batch.Set([]byte("car-1"), []byte("honda"))
+batch.Set([]byte("car-0"), []byte("tesla"))
+batch.Set([]byte("car-1"), []byte("honda"))
 
-    err = c.ExecuteBatch(batch, moss.WriteOptions{})
+err = c.ExecuteBatch(batch, moss.WriteOptions{})
 
-    ss, err := c.Snapshot()
-    defer ss.Close()
+ss, err := c.Snapshot()
+defer ss.Close()
 
-    ropts := moss.ReadOptions{}
+ropts := moss.ReadOptions{}
 
-    val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
-    valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
+val0, err := ss.Get([]byte("car-0"), ropts) // val0 == []byte("tesla").
+valX, err := ss.Get([]byte("car-not-there"), ropts) // valX == nil.
 
-    // A Get can also be issued directly against the collection
-    val1, err := c.Get([]byte("car-1"), ropts) // val1 == []byte("honda").
+// A Get can also be issued directly against the collection
+val1, err := c.Get([]byte("car-1"), ropts) // val1 == []byte("honda").
+```
 
 For persistence, you can use...
-
-    store, collection, err := moss.OpenStoreCollection(directoryPath,
-        moss.StoreOptions{}, moss.StorePersistOptions{})
+```golang
+store, collection, err := moss.OpenStoreCollection(directoryPath,
+    moss.StoreOptions{}, moss.StorePersistOptions{})
+```
 
 Design
 ======
