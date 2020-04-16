@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/edsrzf/mmap-go"
+	"github.com/blevesearch/mmap-go"
 )
 
 func (s *Store) persistFooter(file File, footer *Footer,

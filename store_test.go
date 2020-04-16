@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/edsrzf/mmap-go"
+	"github.com/blevesearch/mmap-go"
 )
 
 func TestPageAlign(t *testing.T) {

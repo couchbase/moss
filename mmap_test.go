@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/edsrzf/mmap-go"
+	"github.com/blevesearch/mmap-go"
 )
 
 func TestMultipleMMapsOnSameFile(t *testing.T) {

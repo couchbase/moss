@@ -14,7 +14,7 @@ package moss
 import (
 	"sync"
 
-	"github.com/edsrzf/mmap-go"
+	"github.com/blevesearch/mmap-go"
 )
 
 // mmapRef provides a ref-counting wrapper around a mmap handle.
