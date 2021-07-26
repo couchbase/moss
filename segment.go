@@ -463,6 +463,10 @@ func (a *segment) findKeyPos(key []byte) (int, error) {
 		x := h * 2
 		klen := int((maskKeyLength & kvs[x]) >> 32)
 		kbeg := int(kvs[x+1])
+		if kbeg+klen > len(buf) {
+			return -1, ErrSegmentCorrupted
+		}
+
 		cmp := bytes.Compare(buf[kbeg:kbeg+klen], key)
 		if cmp == 0 {
 			return h, nil
