@@ -2,7 +2,7 @@ COUCHBASE BUSINESS SOURCE LICENSE AGREEMENT
 
 Business Source License 1.1
 Licensor:  Couchbase, Inc.
-Licensed Work:  Couchbase Server Version Neo
+Licensed Work:  Couchbase Server Version 7.1
 The Licensed Work is © 2021-Present Couchbase, Inc.
 
 Additional Use Grant: You may make production use of the Licensed Work, provided
@@ -25,7 +25,7 @@ or otherwise on a commercial or other for-profit basis. Condition (ii) shall not
 limit the generality of condition (i) above.
 
 
-Change Date:  March 31st, 2026
+Change Date:  April 1, 2026
 
 Change License:  Apache License, Version 2.0
 
