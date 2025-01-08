@@ -268,29 +268,31 @@ type Event struct {
 // EventKind represents an event code for OnEvent() callbacks.
 type EventKind int
 
-// EventKindCloseStart is fired when a collection.Close() has begun.
-// The closing might take awhile to complete and an EventKindClose
-// will follow later.
-var EventKindCloseStart = EventKind(1)
+const (
+	// EventKindCloseStart is fired when a collection.Close() has begun.
+	// The closing might take awhile to complete and an EventKindClose
+	// will follow later.
+	EventKindCloseStart EventKind = 1 + iota
 
-// EventKindClose is fired when a collection has been fully closed.
-var EventKindClose = EventKind(2)
+	// EventKindClose is fired when a collection has been fully closed.
+	EventKindClose
 
-// EventKindMergerProgress is fired when the merger has completed a
-// round of merge processing.
-var EventKindMergerProgress = EventKind(3)
+	// EventKindMergerProgress is fired when the merger has completed a
+	// round of merge processing.
+	EventKindMergerProgress
 
-// EventKindPersisterProgress is fired when the persister has
-// completed a round of persistence processing.
-var EventKindPersisterProgress = EventKind(4)
+	// EventKindPersisterProgress is fired when the persister has
+	// completed a round of persistence processing.
+	EventKindPersisterProgress
 
-// EventKindBatchExecuteStart is fired when a collection is starting
-// to execute a batch.
-var EventKindBatchExecuteStart = EventKind(5)
+	// EventKindBatchExecuteStart is fired when a collection is starting
+	// to execute a batch.
+	EventKindBatchExecuteStart
 
-// EventKindBatchExecute is fired when a collection has finished
-// executing a batch.
-var EventKindBatchExecute = EventKind(6)
+	// EventKindBatchExecute is fired when a collection has finished
+	// executing a batch.
+	EventKindBatchExecute
+)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{
