@@ -105,28 +105,82 @@ func (ss *segmentStack) GetExWithContext(ctx context.Context, key []byte,
 // lowerLevelSnapshot, as a form of controllable chaining.
 func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 	readOptions ReadOptions) ([]byte, error) {
+	return ss.resolveMerge(key, segStart, base, readOptions, nil)
+}
+
+// getMerged() continues resolving a key for which newer merge
+// operand(s) have already been collected (newest-first): it descends
+// from segStart to find the base value and applies the operands.  It's
+// retained for the iterator Current() fast path (see iterator.go).
+func (ss *segmentStack) getMerged(key, val []byte, segStart int,
+	base *segmentStack, readOptions ReadOptions) ([]byte, error) {
+	return ss.resolveMerge(key, segStart, base, readOptions, [][]byte{val})
+}
+
+// ------------------------------------------------------
+
+// resolveMerge descends the segmentStack from segStart (newest to
+// oldest), collecting OperationMerge operands (newest-first, on top of
+// any already-collected mergeOperands) until it reaches a base value:
+// an OperationSet, an OperationDel (a nil base), or the lower level.
+// It then applies all collected operands to that base with a single
+// MergeOperator.FullMerge() call.
+//
+// This is the "lazy" merge resolution: one top-to-bottom walk and one
+// FullMerge() with all operands, rather than a recursive FullMerge()
+// per operand that re-walked the stack each time.  It is semantically
+// equivalent to that recursion for any spec-compliant FullMerge, whose
+// contract is to apply a sequence of operands, in order, onto an
+// existing value.
+func (ss *segmentStack) resolveMerge(key []byte, segStart int,
+	base *segmentStack, readOptions ReadOptions,
+	mergeOperands [][]byte) ([]byte, error) {
 	if segStart >= 0 {
 		ss.ensureSorted(0, segStart)
 
 		for seg := segStart; seg >= 0; seg-- {
-			b := ss.a[seg]
-
-			op, val, err := b.Get(key)
+			op, val, err := ss.a[seg].Get(key)
 			if err != nil {
 				return nil, err
 			}
-			if val != nil {
-				if op == OperationDel {
-					return nil, nil
-				}
-				if op == OperationMerge {
-					return ss.getMerged(key, val, seg-1, base, readOptions)
-				}
-				return val, nil
+			if val == nil {
+				continue
 			}
+			if op == OperationMerge {
+				mergeOperands = append(mergeOperands, val) // Newest-first.
+				continue
+			}
+
+			// op is OperationSet or OperationDel: the base value for
+			// any collected merge operands (Del is a nil base).
+			var baseVal []byte
+			if op != OperationDel {
+				baseVal = val
+			}
+			if len(mergeOperands) == 0 {
+				return baseVal, nil
+			}
+			return ss.applyMergeOperands(key, baseVal, mergeOperands)
 		}
 	}
 
+	// Reached the bottom of this stack; the base value (if any) comes
+	// from the level below (base stack or lowerLevelSnapshot).
+	lowerVal, err := ss.getLowerLevel(key, base, readOptions)
+	if err != nil {
+		return nil, err
+	}
+	if len(mergeOperands) == 0 {
+		return lowerVal, nil
+	}
+	return ss.applyMergeOperands(key, lowerVal, mergeOperands)
+}
+
+// getLowerLevel retrieves a val from the level below this segmentStack:
+// the given base stack when non-nil, otherwise the lowerLevelSnapshot
+// (unless the read opts out via SkipLowerLevel).
+func (ss *segmentStack) getLowerLevel(key []byte, base *segmentStack,
+	readOptions ReadOptions) ([]byte, error) {
 	if base != nil {
 		return base.Get(key, readOptions)
 	}
@@ -138,12 +192,12 @@ func (ss *segmentStack) get(key []byte, segStart int, base *segmentStack,
 	return nil, nil
 }
 
-// ------------------------------------------------------
-
-// getMerged() retrieves a lower level val for a given key and returns
-// a merged val, based on the configured merge operator.
-func (ss *segmentStack) getMerged(key, val []byte, segStart int,
-	base *segmentStack, readOptions ReadOptions) ([]byte, error) {
+// applyMergeOperands applies merge operands (given newest-first, as
+// collected during a top-to-bottom descent) on top of baseVal via a
+// single FullMerge(), after reversing them into the oldest-first order
+// that FullMerge expects.
+func (ss *segmentStack) applyMergeOperands(key, baseVal []byte,
+	operandsNewestFirst [][]byte) ([]byte, error) {
 	var mo MergeOperator
 	if ss.options != nil {
 		mo = ss.options.MergeOperator
@@ -152,12 +206,13 @@ func (ss *segmentStack) getMerged(key, val []byte, segStart int,
 		return nil, ErrMergeOperatorNil
 	}
 
-	vLower, err := ss.get(key, segStart, base, readOptions)
-	if err != nil {
-		return nil, err
+	n := len(operandsNewestFirst)
+	operands := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		operands[i] = operandsNewestFirst[n-1-i] // Reverse to oldest-first.
 	}
 
-	vMerged, ok := mo.FullMerge(key, vLower, [][]byte{val})
+	vMerged, ok := mo.FullMerge(key, baseVal, operands)
 	if !ok {
 		return nil, ErrMergeOperatorFullMergeFailed
 	}
