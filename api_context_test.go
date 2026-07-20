@@ -168,6 +168,69 @@ func TestExecuteBatchWithContextCancelDuringWait(t *testing.T) {
 	}
 }
 
+// TestSnapshotContextAndGetEx exercises the new context-aware and
+// not-found methods on the Snapshot interface (here backed by a
+// collection's segmentStack snapshot).
+func TestSnapshotContextAndGetEx(t *testing.T) {
+	m, err := NewCollection(DefaultCollectionOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	b, _ := m.NewBatch(2, 32)
+	_ = b.Set([]byte("normal"), []byte("v"))
+	_ = b.Del([]byte("gone"))
+	if err := m.ExecuteBatch(b, WriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+
+	ss, err := m.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+
+	// GetEx exists semantics at the Snapshot level.
+	if v, exists, err := ss.GetEx([]byte("normal"), ReadOptions{}); err != nil || !exists || string(v) != "v" {
+		t.Fatalf("ss.GetEx(normal) = %q,%v,%v; want \"v\",true,nil", v, exists, err)
+	}
+	if _, exists, err := ss.GetEx([]byte("gone"), ReadOptions{}); err != nil || exists {
+		t.Fatalf("ss.GetEx(gone) exists = %v; want false", exists)
+	}
+	if _, exists, err := ss.GetEx([]byte("missing"), ReadOptions{}); err != nil || exists {
+		t.Fatalf("ss.GetEx(missing) exists = %v; want false", exists)
+	}
+
+	// Canceled context short-circuits Snapshot reads/iterators.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ss.GetWithContext(ctx, []byte("normal"), ReadOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ss.GetWithContext canceled err = %v; want context.Canceled", err)
+	}
+	if _, _, err := ss.GetExWithContext(ctx, []byte("normal"), ReadOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ss.GetExWithContext canceled err = %v; want context.Canceled", err)
+	}
+	if _, err := ss.StartIteratorWithContext(ctx, nil, nil, IteratorOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("ss.StartIteratorWithContext canceled err = %v; want context.Canceled", err)
+	}
+
+	// A live context still produces a working iterator.
+	it, err := ss.StartIteratorWithContext(context.Background(), nil, nil, IteratorOptions{})
+	if err != nil {
+		t.Fatalf("ss.StartIteratorWithContext live err: %v", err)
+	}
+	k, v, err := it.Current()
+	if err != nil || string(k) != "normal" || string(v) != "v" {
+		t.Fatalf("iterator Current = %q,%q,%v; want normal,v,nil", k, v, err)
+	}
+	it.Close()
+}
+
 // TestExecuteBatchWithContextPreCanceled verifies an already-canceled
 // context is rejected up front.
 func TestExecuteBatchWithContextPreCanceled(t *testing.T) {

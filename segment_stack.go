@@ -9,6 +9,7 @@
 package moss
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 )
@@ -72,7 +73,30 @@ func (ss *segmentStack) Close() error {
 
 // Get retrieves a val from a segmentStack.
 func (ss *segmentStack) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	return ss.GetWithContext(context.Background(), key, readOptions)
+}
+
+// GetWithContext is like Get, but returns early with ctx.Err() if ctx
+// is already canceled or past its deadline.
+func (ss *segmentStack) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return ss.get(key, len(ss.a)-1, nil, readOptions)
+}
+
+// GetEx is like Get but also reports whether the key exists.
+func (ss *segmentStack) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return ss.GetExWithContext(context.Background(), key, readOptions)
+}
+
+// GetExWithContext is like GetEx, but returns early with ctx.Err() if
+// ctx is already canceled or past its deadline.
+func (ss *segmentStack) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	return getExVal(ss.GetWithContext(ctx, key, readOptions))
 }
 
 // get() retrieves a val from a segmentStack, but only considers

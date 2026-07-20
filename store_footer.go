@@ -10,6 +10,7 @@ package moss
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -453,6 +454,17 @@ func (f *Footer) segmentLocs() (SegmentLocs, *segmentStack) {
 // Get retrieves a val from the footer, and will return nil val
 // if the entry does not exist in the footer.
 func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	return f.GetWithContext(context.Background(), key, readOptions)
+}
+
+// GetWithContext is like Get, but returns early with ctx.Err() if ctx
+// is already canceled or past its deadline.
+func (f *Footer) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	_, ss := f.segmentLocs()
 	if ss == nil {
 		f.DecRef()
@@ -469,6 +481,19 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	return rv, err
 }
 
+// GetEx is like Get but also reports whether the key exists.
+func (f *Footer) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return f.GetExWithContext(context.Background(), key, readOptions)
+}
+
+// GetExWithContext is like GetEx, but returns early with ctx.Err() if
+// ctx is already canceled or past its deadline.
+func (f *Footer) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	return getExVal(f.GetWithContext(ctx, key, readOptions))
+}
+
 // StartIterator returns a new Iterator instance on this footer.
 //
 // On success, the returned Iterator will be positioned so that
@@ -479,6 +504,19 @@ func (f *Footer) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 // and an endKeyExcl of nil means the logical "top-most" possible key.
 func (f *Footer) StartIterator(startKeyIncl, endKeyExcl []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
+	return f.StartIteratorWithContext(context.Background(),
+		startKeyIncl, endKeyExcl, iteratorOptions)
+}
+
+// StartIteratorWithContext is like StartIterator, but returns early
+// with ctx.Err() if ctx is already canceled or past its deadline.
+func (f *Footer) StartIteratorWithContext(ctx context.Context,
+	startKeyIncl, endKeyExcl []byte,
+	iteratorOptions IteratorOptions) (Iterator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	_, ss := f.segmentLocs()
 	if ss == nil {
 		f.DecRef()

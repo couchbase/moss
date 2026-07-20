@@ -293,11 +293,7 @@ func (m *collection) GetExWithContext(ctx context.Context, key []byte,
 	// m.get() distinguishes a live Set/Merge (non-nil val, including a
 	// non-nil empty slice) from a missing key or a deletion tombstone
 	// (nil val), so val != nil is exactly "the key exists".
-	val, err := m.GetWithContext(ctx, key, readOptions)
-	if err != nil {
-		return nil, false, err
-	}
-	return val, val != nil, nil
+	return getExVal(m.GetWithContext(ctx, key, readOptions))
 }
 
 // NewBatch returns a new Batch instance with hinted amount of

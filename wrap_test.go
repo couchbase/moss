@@ -9,6 +9,7 @@
 package moss
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -30,9 +31,36 @@ func (f *fakeSnapshot) Get(key []byte, readOptions ReadOptions) ([]byte, error) 
 	return []byte("v"), nil
 }
 
+func (f *fakeSnapshot) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.Get(key, readOptions)
+}
+
+func (f *fakeSnapshot) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return getExVal(f.Get(key, readOptions))
+}
+
+func (f *fakeSnapshot) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	return getExVal(f.GetWithContext(ctx, key, readOptions))
+}
+
 func (f *fakeSnapshot) StartIterator(startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
 	return &iteratorSingle{op: 0}, nil
+}
+
+func (f *fakeSnapshot) StartIteratorWithContext(ctx context.Context,
+	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions) (Iterator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.StartIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 }
 
 func (f *fakeSnapshot) ChildCollectionNames() ([]string, error) { return nil, nil }

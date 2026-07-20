@@ -9,6 +9,7 @@
 package moss
 
 import (
+	"context"
 	"io"
 	"sync"
 )
@@ -89,6 +90,16 @@ func (w *SnapshotWrapper) Close() (err error) {
 // Get returns the key from the underlying snapshot.
 func (w *SnapshotWrapper) Get(key []byte, readOptions ReadOptions) (
 	[]byte, error) {
+	return w.GetWithContext(context.Background(), key, readOptions)
+}
+
+// GetWithContext returns the key from the underlying snapshot, honoring
+// the provided context.
+func (w *SnapshotWrapper) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Take our own ref under the lock so w.ss can't be closed/niled by
 	// a concurrent decRef() while we're reading it, then release the
 	// lock before the (potentially slow) underlying Get.  This matches
@@ -98,7 +109,27 @@ func (w *SnapshotWrapper) Get(key []byte, readOptions ReadOptions) (
 		return nil, err
 	}
 	defer w.decRef()
-	return ss.Get(key, readOptions)
+	return ss.GetWithContext(ctx, key, readOptions)
+}
+
+// GetEx is like Get but also reports whether the key exists.
+func (w *SnapshotWrapper) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return w.GetExWithContext(context.Background(), key, readOptions)
+}
+
+// GetExWithContext is like GetEx, honoring the provided context.
+func (w *SnapshotWrapper) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	ss, err := w.acquire()
+	if err != nil {
+		return nil, false, err
+	}
+	defer w.decRef()
+	return ss.GetExWithContext(ctx, key, readOptions)
 }
 
 // StartIterator initiates a start iterator over the underlying snapshot.
@@ -106,12 +137,25 @@ func (w *SnapshotWrapper) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions,
 ) (Iterator, error) {
+	return w.StartIteratorWithContext(context.Background(),
+		startKeyInclusive, endKeyExclusive, iteratorOptions)
+}
+
+// StartIteratorWithContext initiates an iterator over the underlying
+// snapshot, honoring the provided context.
+func (w *SnapshotWrapper) StartIteratorWithContext(ctx context.Context,
+	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions,
+) (Iterator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ss, err := w.acquire()
 	if err != nil {
 		return nil, err
 	}
 	defer w.decRef()
-	return ss.StartIterator(startKeyInclusive, endKeyExclusive,
+	return ss.StartIteratorWithContext(ctx, startKeyInclusive, endKeyExclusive,
 		iteratorOptions)
 }
 

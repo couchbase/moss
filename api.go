@@ -411,7 +411,27 @@ type Snapshot interface {
 
 	// Get retrieves a val from the Snapshot, and will return nil val
 	// if the entry does not exist in the Snapshot.
+	//
+	// NOTE: a nil result is ambiguous between "key not found" and "key
+	// present with a nil/empty value"; use GetEx() when that
+	// distinction matters.
 	Get(key []byte, readOptions ReadOptions) ([]byte, error)
+
+	// GetWithContext is like Get, but returns early with ctx.Err() if
+	// the provided context is already canceled or past its deadline.
+	GetWithContext(ctx context.Context, key []byte,
+		readOptions ReadOptions) ([]byte, error)
+
+	// GetEx is like Get but also reports whether the key exists,
+	// disambiguating a missing key (exists == false, val == nil) from a
+	// key present with a nil/empty value (exists == true).
+	GetEx(key []byte, readOptions ReadOptions) (
+		val []byte, exists bool, err error)
+
+	// GetExWithContext is like GetEx, but returns early with ctx.Err()
+	// if the provided context is already canceled or past its deadline.
+	GetExWithContext(ctx context.Context, key []byte,
+		readOptions ReadOptions) (val []byte, exists bool, err error)
 
 	// StartIterator returns a new Iterator instance on this Snapshot.
 	//
@@ -423,6 +443,13 @@ type Snapshot interface {
 	// possible key and an endKeyExclusive of nil means the logical
 	// key that's above the "top-most" possible key.
 	StartIterator(startKeyInclusive, endKeyExclusive []byte,
+		iteratorOptions IteratorOptions) (Iterator, error)
+
+	// StartIteratorWithContext is like StartIterator, but returns early
+	// with ctx.Err() if the provided context is already canceled or
+	// past its deadline.
+	StartIteratorWithContext(ctx context.Context,
+		startKeyInclusive, endKeyExclusive []byte,
 		iteratorOptions IteratorOptions) (Iterator, error)
 
 	// ChildCollectionNames returns an array of child collection name strings.
@@ -653,6 +680,18 @@ type CollectionStats struct {
 	CurCleanOps      uint64
 	CurCleanBytes    uint64
 	CurCleanSegments uint64
+}
+
+// getExVal adapts a plain (val, err) Get result into the GetEx
+// contract: a live value (non-nil, possibly empty) means the key
+// exists, while a nil value means the key is missing or deleted.  It
+// is shared by the Collection and Snapshot GetEx implementations so
+// the "exists" semantics stay identical across them.
+func getExVal(val []byte, err error) ([]byte, bool, error) {
+	if err != nil {
+		return nil, false, err
+	}
+	return val, val != nil, nil
 }
 
 // ------------------------------------------------------------

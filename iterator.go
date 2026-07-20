@@ -11,6 +11,7 @@ package moss
 import (
 	"bytes"
 	"container/heap"
+	"context"
 	"io"
 )
 
@@ -70,6 +71,19 @@ type cursor struct {
 func (ss *segmentStack) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
+	return ss.StartIteratorWithContext(context.Background(),
+		startKeyInclusive, endKeyExclusive, iteratorOptions)
+}
+
+// StartIteratorWithContext is like StartIterator, but returns early
+// with ctx.Err() if ctx is already canceled or past its deadline.
+func (ss *segmentStack) StartIteratorWithContext(ctx context.Context,
+	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions) (Iterator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	iter, err :=
 		ss.startIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 	if err != nil {

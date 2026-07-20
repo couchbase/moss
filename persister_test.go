@@ -10,6 +10,7 @@ package moss
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -671,6 +672,24 @@ func (p *testPersister) Get(key []byte,
 	return p.kvpairs[string(key)], nil
 }
 
+func (p *testPersister) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return p.Get(key, readOptions)
+}
+
+func (p *testPersister) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return getExVal(p.Get(key, readOptions))
+}
+
+func (p *testPersister) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	return getExVal(p.GetWithContext(ctx, key, readOptions))
+}
+
 func (p *testPersister) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions) (Iterator, error) {
@@ -678,6 +697,15 @@ func (p *testPersister) StartIterator(
 	defer p.mutex.RUnlock()
 	return newTestPersisterIterator(p.cloneLOCKED().kvpairs,
 		string(startKeyInclusive), string(endKeyExclusive)), nil
+}
+
+func (p *testPersister) StartIteratorWithContext(ctx context.Context,
+	startKeyInclusive, endKeyExclusive []byte,
+	iteratorOptions IteratorOptions) (Iterator, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return p.StartIterator(startKeyInclusive, endKeyExclusive, iteratorOptions)
 }
 
 func (p *testPersister) Update(higher Snapshot) (*testPersister, error) {
