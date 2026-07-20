@@ -616,6 +616,10 @@ func (a *segment) doSort() {
 	// concurrent reads.
 	sort.Sort(a)
 
+	// Build the sparse key index for large segments now that keys are
+	// in sorted order; a no-op for small segments.
+	a.buildInMemIndex()
+
 	if !SkipStats {
 		go a.rootCollection.updateStats(a)
 	}
@@ -785,6 +789,52 @@ func (a *segment) Valid() error {
 }
 
 // ------------------------------------------------------
+
+// Thresholds for auto-building the sparse segment key index (see
+// segmentKeysIndex) on large IN-MEMORY segments -- the point-lookup
+// binary search is memory-bound on large segments, and the index
+// narrows the search window with a small, contiguous, cache-friendly
+// sampled-key array.  buildIndex is a cheap no-op below the threshold,
+// so small batch segments pay only a size check.  These are distinct
+// from the store's SegmentKeysIndex* options (persisted segments).
+const inMemSegmentKeysIndexMinKeyBytes = 1 << 20 // Index >= ~1MB of keys.
+
+// inMemSegmentKeysIndexTargetHop is the desired number of source-segment
+// keys between adjacent sampled index keys.  A small hop keeps the
+// post-index search window small, so the speedup doesn't decay as the
+// segment grows; the index budget is sized from it (proportional to
+// segment size, ~1/targetHop of the key bytes), capped below.
+const inMemSegmentKeysIndexTargetHop = 32
+
+// inMemSegmentKeysIndexMaxBytes caps the per-segment in-memory index
+// size, bounding memory for pathologically large segments (at the cost
+// of a coarser hop above the cap).
+const inMemSegmentKeysIndexMaxBytes = 8 << 20 // 8MB.
+
+// buildInMemIndex builds the sparse key index for an in-memory segment
+// (batch-sorted or merge-produced) if it's large enough to benefit.
+// Measured ~13-14% faster point Gets on a 1M-entry segment, for both
+// short- and long-shared-prefix keys, for ~1/targetHop of the key bytes
+// in memory; a no-op below the threshold.
+func (a *segment) buildInMemIndex() {
+	if int(a.totKeyByte) < inMemSegmentKeysIndexMinKeyBytes {
+		return
+	}
+	keyCount := a.Len()
+	if keyCount == 0 {
+		return
+	}
+	keyAvgSize := int(a.totKeyByte) / keyCount
+
+	// Budget the index to sample ~every targetHop'th key (+4 bytes per
+	// sample for its offset), so a large segment gets a proportionally
+	// larger, still-small index rather than an ever-coarsening one.
+	quota := (keyCount / inMemSegmentKeysIndexTargetHop) * (keyAvgSize + 4)
+	if quota > inMemSegmentKeysIndexMaxBytes {
+		quota = inMemSegmentKeysIndexMaxBytes
+	}
+	a.buildIndex(quota, inMemSegmentKeysIndexMinKeyBytes)
+}
 
 // Builds and initializes the in-memory index for the segment.
 func (a *segment) buildIndex(quota int, minKeyBytes int) {

@@ -78,6 +78,11 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 		return nil, 0, err
 	}
 
+	// mergeInto writes entries in key order, so the merged segment is
+	// already sorted; build its sparse key index (no-op if small) to
+	// speed point lookups against this (often large) merged segment.
+	mergedSegment.buildInMemIndex()
+
 	a := make([]Segment, 0, newTopLevel+1)
 	a = append(a, ss.a[0:newTopLevel]...)
 	a = append(a, mergedSegment)
