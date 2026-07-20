@@ -9,14 +9,14 @@
 package moss
 
 import (
-	"io/ioutil"
+	"os"
 
 	"github.com/couchbase/ghistogram"
 )
 
 // Stats returns a map of stats.
 func (s *Store) Stats() (map[string]interface{}, error) {
-	finfos, err := ioutil.ReadDir(s.dir)
+	finfos, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,11 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 	var numBytesUsedDisk uint64
 	for _, finfo := range finfos {
 		if !finfo.IsDir() {
-			numBytesUsedDisk += uint64(finfo.Size())
+			info, err := finfo.Info()
+			if err != nil {
+				return nil, err
+			}
+			numBytesUsedDisk += uint64(info.Size())
 		}
 	}
 

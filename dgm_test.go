@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
@@ -170,6 +169,9 @@ func waitForPersistence(coll Collection) {
 }
 
 func Test_DGMLoad(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy DGM load test in short mode")
+	}
 	numItems := 400000
 	batchSize := 100
 	var memQuota uint64 = 128 * 1024 * 1024
@@ -191,7 +193,7 @@ func Test_DGMLoad(t *testing.T) {
 			t.Fatalf("Can't create directory %s: %v", tmpDir, err)
 		}
 	} else {
-		tmpDir, _ = ioutil.TempDir("", "mossStoreDGM")
+		tmpDir, _ = os.MkdirTemp("", "mossStoreDGM")
 		defer os.RemoveAll(tmpDir)
 	}
 

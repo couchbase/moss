@@ -11,7 +11,6 @@ package moss
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"sort"
@@ -106,7 +105,7 @@ func TestParseFNameSeq(t *testing.T) {
 }
 
 func TestOpenEmptyStore(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	s, err := OpenStore(tmpDir, StoreOptions{})
@@ -178,14 +177,14 @@ func TestOpenEmptyStore(t *testing.T) {
 		t.Errorf("expected 0 refs")
 	}
 
-	fileInfos, _ := ioutil.ReadDir(tmpDir)
+	fileInfos, _ := os.ReadDir(tmpDir)
 	if len(fileInfos) != 0 {
 		t.Errorf("expected no files")
 	}
 }
 
 func TestMMap(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var testData = []byte("0123456789ABCDEF")
@@ -288,7 +287,7 @@ func testSimpleStoreCleanupBadFiles(t *testing.T,
 			fref.DecRef()
 		},
 		"done": func(tmpDir string) {
-			fileInfos, err := ioutil.ReadDir(tmpDir)
+			fileInfos, err := os.ReadDir(tmpDir)
 			if err != nil {
 				t.Errorf("expected readdir to work, err: %v", err)
 			}
@@ -318,7 +317,7 @@ func testSimpleStoreEx(t *testing.T,
 	storePersistOptions StorePersistOptions,
 	collectionOptions CollectionOptions,
 	expectedNextFNameSeq int64) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	store, err := OpenStore(tmpDir, storeOptions)
@@ -513,7 +512,7 @@ func TestStoreOpsCompactionForce(t *testing.T) {
 }
 
 func testStoreOps(t *testing.T, spo StorePersistOptions) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	mo := &MergeOperatorStringAppend{Sep: ":"}
@@ -620,7 +619,7 @@ func TestStoreCompactionDeferredSort(t *testing.T) {
 
 func testStoreCompaction(t *testing.T, co CollectionOptions,
 	spo StorePersistOptions) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	co.MergeOperator = &MergeOperatorStringAppend{Sep: ":"}
@@ -744,8 +743,12 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 	if len(fileInfos) != 1 {
 		fileNames := []string{}
 		for _, fileInfo := range fileInfos {
+			var size int64
+			if info, err := fileInfo.Info(); err == nil {
+				size = info.Size()
+			}
 			fileNames = append(fileNames,
-				fmt.Sprintf("%s (%d)", fileInfo.Name(), fileInfo.Size()))
+				fmt.Sprintf("%s (%d)", fileInfo.Name(), size))
 		}
 		t.Errorf("expected only 1 file, got: %d, fileNames; %v",
 			len(fileInfos), fileNames)
@@ -888,7 +891,7 @@ func testStoreCompaction(t *testing.T, co CollectionOptions,
 }
 
 func TestOpenStoreCollection(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -1008,7 +1011,7 @@ func TestOpenStoreCollection(t *testing.T) {
 
 	// --------------------
 
-	fileInfos, err := ioutil.ReadDir(tmpDir)
+	fileInfos, err := os.ReadDir(tmpDir)
 	if err != nil {
 		t.Errorf("expected read dir to work")
 	}
@@ -1099,7 +1102,7 @@ func TestOpenStoreCollection(t *testing.T) {
 }
 
 func TestStoreCompactionDeletions(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -1224,7 +1227,7 @@ func TestStoreCompactionDeletions(t *testing.T) {
 }
 
 func TestStoreNilValue(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -1357,7 +1360,7 @@ func TestStoreNilValue(t *testing.T) {
 }
 
 func TestStoreSnapshotPrevious(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -1519,7 +1522,7 @@ func TestStoreSnapshotPrevious(t *testing.T) {
 }
 
 func TestStoreSnapshotRevert(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -1863,7 +1866,7 @@ func fetchOpsSetFromFooter(store *Store) uint64 {
 }
 
 func TestStoreReadOnlyOption(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	// Open store, coll in Regular mode, and write 10 items
@@ -1900,7 +1903,7 @@ func TestStoreReadOnlyOption(t *testing.T) {
 }
 
 func TestStoreCollHistograms(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	itemCount := 10000
@@ -1977,7 +1980,7 @@ func TestStoreCollHistograms(t *testing.T) {
 }
 
 func TestStoreCompactMaxSegments(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var store *Store
@@ -2036,7 +2039,7 @@ func TestStoreCompactMaxSegments(t *testing.T) {
 }
 
 func TestStoreCrashRecovery(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var store *Store
@@ -2139,7 +2142,7 @@ func TestStoreCrashRecovery(t *testing.T) {
 
 func TestStoreLargeDeletions(t *testing.T) {
 	numItems := 1000000
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	so := DefaultStoreOptions
@@ -2235,8 +2238,8 @@ func TestStoreLargeDeletions(t *testing.T) {
 // To ensure this does not cause test failures, retry a few times
 // before just returning the contents of the directory.
 func waitForCompactionCleanup(tmpDir string, secsToWait int) (
-	fileInfos []os.FileInfo, err error) {
-	fileInfos, err = ioutil.ReadDir(tmpDir)
+	fileInfos []os.DirEntry, err error) {
+	fileInfos, err = os.ReadDir(tmpDir)
 	if err != nil {
 		return
 	}
@@ -2249,7 +2252,7 @@ func waitForCompactionCleanup(tmpDir string, secsToWait int) (
 		file.Close()
 
 		time.Sleep(1 * time.Second)
-		fileInfos, err = ioutil.ReadDir(tmpDir)
+		fileInfos, err = os.ReadDir(tmpDir)
 	}
 	return
 }
@@ -2260,7 +2263,7 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 	ch := make(chan *testResults)
 
 	runTest := func(name string, batchSize, syncAfterBytes int) {
-		tmpDir, _ := ioutil.TempDir("", "mossStore")
+		tmpDir, _ := os.MkdirTemp("", "mossStore")
 		defer os.RemoveAll(tmpDir)
 
 		so := DefaultStoreOptions
@@ -2270,7 +2273,9 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 
 		store, coll, er := OpenStoreCollection(tmpDir, so, spo)
 		if er != nil || store == nil || coll == nil {
-			t.Fatalf("error opening store collection: %v", tmpDir)
+			t.Errorf("error opening store collection: %v", tmpDir)
+			ch <- nil
+			return
 		}
 
 		loadComplete := make(chan bool)
@@ -2281,7 +2286,9 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 			for x > 0 {
 				ba, err := coll.NewBatch(batchSize, batchSize*512)
 				if err != nil {
-					t.Fatalf("error creating new batch: %v", err)
+					t.Errorf("error creating new batch: %v", err)
+					loadComplete <- true
+					return
 				}
 
 				for i := 0; i < batchSize; i++ {
@@ -2293,12 +2300,16 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 
 				err = coll.ExecuteBatch(ba, WriteOptions{})
 				if err != nil {
-					t.Fatalf("error executing batch: %v", err)
+					t.Errorf("error executing batch: %v", err)
+					loadComplete <- true
+					return
 				}
 
 				err = ba.Close()
 				if err != nil {
-					t.Fatalf("error closing batch: %v", err)
+					t.Errorf("error closing batch: %v", err)
+					loadComplete <- true
+					return
 				}
 			}
 
@@ -2318,9 +2329,11 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 				fetchtimes[i] = time.Since(gstart)
 				expect := fmt.Sprintf("%128d", i+1)
 				if err != nil || string(val) != expect {
-					t.Fatalf("Unexpected error for key '%v':"+
+					t.Errorf("Unexpected error for key '%v':"+
 						" %v / Vals mismatch: '%v' != '%v'",
 						key, err, string(val), expect)
+					fetchComplete <- true
+					return
 				}
 				aggregate += fetchtimes[i].Nanoseconds()
 			}
@@ -2360,7 +2373,9 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 
 	var results []*testResults
 	for i := 0; i < 4; i++ {
-		results = append(results, <-ch)
+		if r := <-ch; r != nil {
+			results = append(results, r)
+		}
 	}
 
 	fmt.Printf("%8v (numItems: %10v) %19v %v\n",
@@ -2383,7 +2398,7 @@ func TestCompactionWithAndWithoutRegularSync(t *testing.T) {
 }
 
 func TestStorePartialCompactionWithMergeOperator(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var err error

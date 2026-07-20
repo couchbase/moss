@@ -6,6 +6,7 @@
 //  software will be governed by the Apache License, Version 2.0, included in
 //  the file licenses/APL2.txt.
 
+//go:build windows
 // +build windows
 
 package moss
@@ -15,7 +16,6 @@ package moss
 // to 64kiB (or, larger than the usual 4KB page size).
 //
 // See: https://social.msdn.microsoft.com/Forums/vstudio/en-US/972f36a4-26c9-466b-861a-5f40fa4cf4e7/about-the-dwallocationgranularity?forum=vclanguage
-//
 var AllocationGranularity = 65536 // 64kiB.
 
 // IsTimingCoarse is true on Windows because of the granularity of the time

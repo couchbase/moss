@@ -6,13 +6,13 @@
 //  software will be governed by the Apache License, Version 2.0, included in
 //  the file licenses/APL2.txt.
 
+//go:build gofuzz
 // +build gofuzz
 
 package moss
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -27,7 +27,7 @@ func TestGenerateSmatCorpus(t *testing.T) {
 			t.Fatalf("error from ByteEncoding, err: %v", err)
 		}
 		os.MkdirAll("workdir/corpus", 0700)
-		ioutil.WriteFile(fmt.Sprintf("workdir/corpus/%d", i), byteSequence, 0600)
+		os.WriteFile(fmt.Sprintf("workdir/corpus/%d", i), byteSequence, 0600)
 	}
 }
 

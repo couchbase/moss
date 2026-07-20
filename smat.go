@@ -6,13 +6,13 @@
 //  software will be governed by the Apache License, Version 2.0, included in
 //  the file licenses/APL2.txt.
 
+//go:build gofuzz
 // +build gofuzz
 
 package moss
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"time"
@@ -174,7 +174,7 @@ var prefix = "                          "
 func setupFunc(ctx smat.Context) (next smat.State, err error) {
 	c := ctx.(*smatContext)
 
-	c.tmpDir, err = ioutil.TempDir("", "mossStoreSMAT")
+	c.tmpDir, err = os.MkdirTemp("", "mossStoreSMAT")
 	if err != nil {
 		return nil, err
 	}

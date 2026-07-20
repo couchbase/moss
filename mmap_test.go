@@ -10,7 +10,6 @@ package moss
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestMultipleMMapsOnSameFile(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossMMap")
+	tmpDir, _ := os.MkdirTemp("", "mossMMap")
 	defer os.RemoveAll(tmpDir)
 
 	f, err := os.Create(tmpDir + string(os.PathSeparator) + "test.file")
@@ -67,7 +66,7 @@ func TestMultipleMMapsOnSameFile(t *testing.T) {
 }
 
 func TestMMapRef(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -196,7 +195,7 @@ func TestMMapRef(t *testing.T) {
 }
 
 func TestRefCounting(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	var mu sync.Mutex
@@ -402,7 +401,7 @@ func TestRefCounting(t *testing.T) {
 
 // SKIPPED because segfault isn't caught by recover()
 func SKIPPEDTestAccessAfterUnmap(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossMMap")
+	tmpDir, _ := os.MkdirTemp("", "mossMMap")
 	defer os.RemoveAll(tmpDir)
 
 	f, err := os.Create(tmpDir + string(os.PathSeparator) + "test.file")

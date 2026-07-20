@@ -390,14 +390,18 @@ func (m *collection) ExecuteBatch(bIn Batch,
 // recursive batch with potential child batches.
 // This function does a 3 way merge.
 // Consider the example below:
-//    Incoming batch (b)    existing (curStackTop)   childCollections map
-//   /       |      \           /     |     \           /     |     \
+//
+//	 Incoming batch (b)    existing (curStackTop)   childCollections map
+//	/       |      \           /     |     \           /     |     \
+//
 // child1  child2'  child4   child1 child2 child3    child1 child2 child3
 // (del)  (update)  (new)
 //
 // The result is to build a new stackTop & update childCollection map as:
-//    returned segmentStack (rv)     childCollections map
-//       /         |      \             /     |     \
+//
+//	returned segmentStack (rv)     childCollections map
+//	   /         |      \             /     |     \
+//
 // child2+child2' child3  child4     child2 child3 child4
 func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 	rv *segmentStack) {

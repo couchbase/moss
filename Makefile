@@ -1,43 +1,48 @@
 SHELL := /bin/bash
 
+# Tool versions installed by `make devsetup`.
+STATICCHECK_VERSION    ?= latest
+GOLANGCI_LINT_VERSION  ?= latest
+
+.PHONY: all test fasttest cover checkfmt checkvet lint staticcheck race \
+	tidy devsetup check
+
+all: check
+
+# Install the developer tooling used by the lint targets.  Uses the modern
+# `go install tool@version` mechanism (go get for tools was removed in Go 1.18).
 devsetup:
-	go get "github.com/kisielk/errcheck"
-	go get "github.com/golang/lint/golint"
-	go get "github.com/gordonklaus/ineffassign"
-	go get "github.com/client9/misspell/cmd/misspell"
-	go get "gopkg.in/alecthomas/gometalinter.v1"
+	go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 test:
-	go test ./
+	go test ./...
 
 fasttest:
-	go test -short ./
+	go test -short ./...
 
 cover:
-	go test -coverprofile=cover.out ./
-
-checkerrs:
-	errcheck -blank -asserts -ignoretests ./
+	go test -coverprofile=cover.out ./...
+	go tool cover -func=cover.out
 
 checkfmt:
-	! gofmt -l -d ./ 2>&1 | read
+	@fmt=$$(gofmt -l .); if [ -n "$$fmt" ]; then \
+		echo "gofmt needs to be run on:"; echo "$$fmt"; exit 1; fi
 
 checkvet:
-	go tool vet -all ./
+	go vet ./...
 
-checkiea:
-	ineffassign ./
-
-checkspell:
-	misspell -error ./
+staticcheck:
+	staticcheck ./...
 
 lint:
-	golint -set_exit_status -min_confidence 0.81 ./
+	golangci-lint run ./...
 
 race:
-	go test -race ./
+	go test -race ./...
 
-metalinter:
-	gometalinter.v1 --vendor --disable-all --enable=vet --enable=vetshadow --enable=golint --enable=ineffassign --enable=misspell --enable=gofmt --tests ./
+tidy:
+	go mod tidy
 
-.PHONY: all test devsetup fasttest lint cover checkerrs checkfmt checkvet checkiea checkspell race metalinter
+# The aggregate check run in CI.
+check: checkfmt checkvet test

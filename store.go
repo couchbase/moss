@@ -12,7 +12,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"sort"
@@ -515,7 +514,7 @@ func pageOffset(pos, pageSize int64) int64 {
 // --------------------------------------------------------
 
 func openStore(dir string, options StoreOptions) (*Store, error) {
-	fileInfos, err := ioutil.ReadDir(dir)
+	fileInfos, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

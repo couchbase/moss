@@ -12,7 +12,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -174,7 +173,7 @@ func benchmarkStore(b *testing.B, spec benchStoreSpec) {
 }
 
 func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
-	tmpDir, _ := ioutil.TempDir("", "mossStoreBenchmark")
+	tmpDir, _ := os.MkdirTemp("", "mossStoreBenchmark")
 	defer os.RemoveAll(tmpDir)
 
 	fmt.Printf("\n")
@@ -545,7 +544,7 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 
 	fmt.Printf("total time: %d (ms)\n", cumMSecs)
 
-	fileInfos, err := ioutil.ReadDir(tmpDir)
+	fileInfos, err := os.ReadDir(tmpDir)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -554,7 +553,10 @@ func benchmarkStoreDo(b *testing.B, spec benchStoreSpec, buf []byte) {
 		b.Fatalf("expected just 1 file")
 	}
 
-	fileInfo := fileInfos[0]
+	fileInfo, err := fileInfos[0].Info()
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	fmt.Printf("file size: %d (MB), amplification: %.3f\n",
 		fileInfo.Size()/1000000.0,

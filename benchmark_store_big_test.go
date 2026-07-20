@@ -6,6 +6,7 @@
 //  software will be governed by the Apache License, Version 2.0, included in
 //  the file licenses/APL2.txt.
 
+//go:build benchmark_store_big
 // +build benchmark_store_big
 
 package moss
@@ -15,8 +16,8 @@ import (
 )
 
 // Example usage:
-//   go test -timeout=10h -bench=BenchmarkStoreBig -tags=benchmark_store_big
 //
+//	go test -timeout=10h -bench=BenchmarkStoreBig -tags=benchmark_store_big
 func BenchmarkStoreBig_numItems1B_keySize20_valSize0_batchSize100000(b *testing.B) {
 	benchmarkStore(b, benchStoreSpec{
 		numItems: 1000000000, keySize: 20, valSize: 0, batchSize: 100000,

@@ -11,7 +11,6 @@ package moss
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"testing"
@@ -131,7 +130,7 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 	ch := make(chan *testResults)
 
 	runTest := func(name string, batchSize, quota, minSize int) {
-		tmpDir, _ := ioutil.TempDir("", "mossStore")
+		tmpDir, _ := os.MkdirTemp("", "mossStore")
 		defer os.RemoveAll(tmpDir)
 
 		start := time.Now()
@@ -144,14 +143,18 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 
 		store, coll, er := OpenStoreCollection(tmpDir, so, spo)
 		if er != nil || store == nil || coll == nil {
-			t.Fatalf("error opening store collection: %v", tmpDir)
+			t.Errorf("error opening store collection: %v", tmpDir)
+			ch <- nil
+			return
 		}
 
 		x := 0
 		for i := 0; i < numItems; i = i + batchSize {
 			ba, err := coll.NewBatch(batchSize, batchSize*512)
 			if err != nil {
-				t.Fatalf("error creating new batch: %v", err)
+				t.Errorf("error creating new batch: %v", err)
+				ch <- nil
+				return
 			}
 
 			for j := i + batchSize - 1; j >= i; j-- {
@@ -162,12 +165,16 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 			}
 			err = coll.ExecuteBatch(ba, WriteOptions{})
 			if err != nil {
-				t.Fatalf("error executing batch: %v", err)
+				t.Errorf("error executing batch: %v", err)
+				ch <- nil
+				return
 			}
 
 			err = ba.Close()
 			if err != nil {
-				t.Fatalf("error closing batch: %v", err)
+				t.Errorf("error closing batch: %v", err)
+				ch <- nil
+				return
 			}
 		}
 
@@ -184,8 +191,10 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 			fetchtimes[i] = time.Since(gstart)
 			expect := fmt.Sprintf("%128d", i*10)
 			if err != nil || string(val) != expect {
-				t.Fatalf("Unexpected error: %v / Vals mismatch: '%v' != '%v'",
+				t.Errorf("Unexpected error: %v / Vals mismatch: '%v' != '%v'",
 					err, string(val), expect)
+				ch <- nil
+				return
 			}
 			aggregate += fetchtimes[i].Nanoseconds()
 		}
@@ -213,7 +222,9 @@ func TestSegmentKindBasicWithAndWithoutIndex(t *testing.T) {
 
 	var results []*testResults
 	for i := 0; i < 4; i++ {
-		results = append(results, <-ch)
+		if r := <-ch; r != nil {
+			results = append(results, r)
+		}
 	}
 
 	fmt.Printf("%17v (numItems: %10v) %24v %v\n",

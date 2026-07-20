@@ -10,7 +10,6 @@ package moss
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
@@ -485,7 +484,7 @@ func TestSharedPrefixLen(t *testing.T) {
 }
 
 func TestIteratorSingleDone(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	store, m, err := OpenStoreCollection(tmpDir,

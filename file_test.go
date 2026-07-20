@@ -9,7 +9,6 @@
 package moss
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestFileRef(t *testing.T) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	file, _ := os.OpenFile(path.Join(tmpDir, "test.mmap"),

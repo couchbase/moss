@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -501,7 +500,7 @@ func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interfa
 		}
 	}
 
-	content, err := ioutil.ReadFile("/proc/stat")
+	content, err := os.ReadFile("/proc/stat")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		fields := strings.Fields(lines[0])
@@ -516,7 +515,7 @@ func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interfa
 		stats["cpu_iowait"] = (uint64)(cpuIowait)
 	}
 
-	content, err = ioutil.ReadFile("/proc/diskstats")
+	content, err = os.ReadFile("/proc/diskstats")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -537,7 +536,7 @@ func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interfa
 		}
 	}
 
-	content, err = ioutil.ReadFile("/proc/meminfo")
+	content, err = os.ReadFile("/proc/meminfo")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -565,7 +564,7 @@ func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interfa
 		stats["mapped"] = (uint64)(0)
 	}
 
-	content, err = ioutil.ReadFile("/proc/self/status")
+	content, err = os.ReadFile("/proc/self/status")
 	if err == nil {
 		lines := strings.Split(string(content), "\n")
 		for _, line := range lines {
@@ -868,6 +867,10 @@ func (dgm *dgmTest) closeMossStore() {
 }
 
 func TestMossDGM(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DGM soak harness in short mode; " +
+			"run explicitly with flags, e.g. -dbCreate -dbSize=... -numWriters=...")
+	}
 	dgm := dgmTest{}
 	dgm.dgmTestArgs(t)
 	st := time.Now()

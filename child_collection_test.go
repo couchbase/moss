@@ -11,7 +11,6 @@ package moss
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 )
@@ -171,7 +170,7 @@ type collTestParams struct {
 }
 
 func testChildCollections(t *testing.T, args *collTestParams) {
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 	store, err := OpenStore(tmpDir, DefaultStoreOptions)
 	if err != nil || store == nil {

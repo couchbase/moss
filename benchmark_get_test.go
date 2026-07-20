@@ -10,13 +10,12 @@ package moss
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 )
 
 func BenchmarkCollectionSnapshotGets(b *testing.B) {
-	tmpDir, _ := ioutil.TempDir("", "benchStore")
+	tmpDir, _ := os.MkdirTemp("", "benchStore")
 	defer os.RemoveAll(tmpDir)
 
 	store, coll, keys := createStoreAndWriteNItems(tmpDir, 10000, 100)
@@ -41,7 +40,7 @@ func BenchmarkCollectionSnapshotGets(b *testing.B) {
 }
 
 func BenchmarkCollectionGets(b *testing.B) {
-	tmpDir, _ := ioutil.TempDir("", "benchStore")
+	tmpDir, _ := os.MkdirTemp("", "benchStore")
 	defer os.RemoveAll(tmpDir)
 
 	store, coll, keys := createStoreAndWriteNItems(tmpDir, 10000, 100)

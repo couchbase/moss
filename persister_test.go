@@ -11,7 +11,6 @@ package moss
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sort"
 	"strings"
@@ -1161,7 +1160,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 func Test_JustLoad1Mitems(b *testing.T) {
 	numItems := 100000
 	batchSize := 100
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	so := DefaultStoreOptions
@@ -1214,7 +1213,7 @@ func Test_JustLoad1Mitems(b *testing.T) {
 func Test_LevelCompactDeletes(t *testing.T) {
 	numItems := 100000
 	batchSize := 100
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	so := DefaultStoreOptions
@@ -1319,7 +1318,7 @@ func Test_LevelCompactDeletes(t *testing.T) {
 func Test_IdleCompactionThrottle(t *testing.T) {
 	numItems := 1000
 	batchSize := 100
-	tmpDir, _ := ioutil.TempDir("", "mossStore")
+	tmpDir, _ := os.MkdirTemp("", "mossStore")
 	defer os.RemoveAll(tmpDir)
 
 	so := DefaultStoreOptions

@@ -129,29 +129,30 @@ func (s *Store) compactMaybe(higher Snapshot,
 // into a larger one.
 //
 // Return Values:
-//      0 => Full compaction into a new file.
-//     >0 => Partially Compact all the segments starting at this
-//           return index, and append this one segment at the end of
-//           the file while retaining all segments before this
-//           starting segment.
 //
-//     false => Append data to the end of the file.
-//     true  => Perform compaction.
+//	 0 => Full compaction into a new file.
+//	>0 => Partially Compact all the segments starting at this
+//	      return index, and append this one segment at the end of
+//	      the file while retaining all segments before this
+//	      starting segment.
+//
+//	false => Append data to the end of the file.
+//	true  => Perform compaction.
 //
 // Example:                                    ||
-//                                             ||
-//      Say CompactionLevelMaxSegments = 2     ||
-//                                             ||
-//         ||                  ||              ||
-//      || ||               || || ??           ||
-//      || ||          ==>  || || ??     ==>   ||
-//      || ||               || || ??           ||
-//      || ||               || || ??           ||
-//      || ||  || ||  ##    || || ??           ||
-//      || ||  || ||  ##    || || ??           ||
-//     ----------------->  ----------->      -----> (new file)
-//      level1 level0 new  level1 hits max!  final file
 //
+//	                                        ||
+//	 Say CompactionLevelMaxSegments = 2     ||
+//	                                        ||
+//	    ||                  ||              ||
+//	 || ||               || || ??           ||
+//	 || ||          ==>  || || ??     ==>   ||
+//	 || ||               || || ??           ||
+//	 || ||               || || ??           ||
+//	 || ||  || ||  ##    || || ??           ||
+//	 || ||  || ||  ##    || || ??           ||
+//	----------------->  ----------->      -----> (new file)
+//	 level1 level0 new  level1 hits max!  final file
 func calcPartialCompactionStart(slocs SegmentLocs, newDataSize uint64,
 	options *StoreOptions) (compStartIdx int, doCompact bool) {
 	maxSegmentsPerLevel := options.CompactionLevelMaxSegments
