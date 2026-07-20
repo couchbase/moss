@@ -69,6 +69,7 @@
 package moss
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -151,7 +152,27 @@ type Collection interface {
 
 	// Get retrieves a value from the collection for a given key
 	// and returns nil if the key is not found.
+	//
+	// NOTE: a nil result is ambiguous between "key not found" and "key
+	// present with a nil/empty value"; use GetEx() when that
+	// distinction matters.
 	Get(key []byte, readOptions ReadOptions) ([]byte, error)
+
+	// GetWithContext is like Get, but returns early with ctx.Err() if
+	// the provided context is already canceled or past its deadline.
+	GetWithContext(ctx context.Context, key []byte,
+		readOptions ReadOptions) ([]byte, error)
+
+	// GetEx is like Get but also reports whether the key exists,
+	// disambiguating a missing key (exists == false, val == nil) from a
+	// key present with a nil/empty value (exists == true).
+	GetEx(key []byte, readOptions ReadOptions) (
+		val []byte, exists bool, err error)
+
+	// GetExWithContext is like GetEx, but returns early with ctx.Err()
+	// if the provided context is already canceled or past its deadline.
+	GetExWithContext(ctx context.Context, key []byte,
+		readOptions ReadOptions) (val []byte, exists bool, err error)
 
 	// NewBatch returns a new Batch instance with preallocated
 	// resources.  See the Batch.Alloc() method.
@@ -161,6 +182,13 @@ type Collection interface {
 	// the Collection.  The Batch instance should be Close()'ed and
 	// not reused after ExecuteBatch() returns.
 	ExecuteBatch(b Batch, writeOptions WriteOptions) error
+
+	// ExecuteBatchWithContext is like ExecuteBatch, but if the provided
+	// context is canceled or hits its deadline while blocked waiting
+	// for the merger to catch up (see MaxPreMergerBatches), it aborts
+	// and returns ctx.Err() instead of continuing to wait.
+	ExecuteBatchWithContext(ctx context.Context, b Batch,
+		writeOptions WriteOptions) error
 
 	// Stats returns stats for this collection.  Note that stats might
 	// be updated asynchronously.

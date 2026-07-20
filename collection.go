@@ -9,6 +9,7 @@
 package moss
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -251,6 +252,17 @@ func (m *collection) newSnapshotLOCKED() (Snapshot, error) {
 // Get retrieves a value by iterating over all the segments within
 // the collection, if the key is not found a nil val is returned.
 func (m *collection) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
+	return m.GetWithContext(context.Background(), key, readOptions)
+}
+
+// GetWithContext is like Get, but returns early with ctx.Err() if ctx
+// is already canceled or past its deadline.
+func (m *collection) GetWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if m.isClosed() {
 		return nil, ErrClosed
 	}
@@ -264,6 +276,28 @@ func (m *collection) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	}
 
 	return val, err
+}
+
+// GetEx is like Get but also reports whether the key exists.  A
+// missing key yields (nil, false, nil); a key present with a nil/empty
+// value yields (val, true, nil).
+func (m *collection) GetEx(key []byte, readOptions ReadOptions) (
+	[]byte, bool, error) {
+	return m.GetExWithContext(context.Background(), key, readOptions)
+}
+
+// GetExWithContext is like GetEx, but returns early with ctx.Err() if
+// ctx is already canceled or past its deadline.
+func (m *collection) GetExWithContext(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, bool, error) {
+	// m.get() distinguishes a live Set/Merge (non-nil val, including a
+	// non-nil empty slice) from a missing key or a deletion tombstone
+	// (nil val), so val != nil is exactly "the key exists".
+	val, err := m.GetWithContext(ctx, key, readOptions)
+	if err != nil {
+		return nil, false, err
+	}
+	return val, val != nil, nil
 }
 
 // NewBatch returns a new Batch instance with hinted amount of
@@ -296,6 +330,18 @@ func (m *collection) ResetStackDirtyTop() error {
 // ExecuteBatch() returns.
 func (m *collection) ExecuteBatch(bIn Batch,
 	writeOptions WriteOptions) error {
+	return m.ExecuteBatchWithContext(context.Background(), bIn, writeOptions)
+}
+
+// ExecuteBatchWithContext is like ExecuteBatch, but if ctx is canceled
+// or hits its deadline while blocked waiting for the merger to catch
+// up (see MaxPreMergerBatches), it aborts and returns ctx.Err().
+func (m *collection) ExecuteBatchWithContext(ctx context.Context, bIn Batch,
+	writeOptions WriteOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	startTime := time.Now()
 
 	defer func() {
@@ -337,11 +383,34 @@ func (m *collection) ExecuteBatch(bIn Batch,
 
 	m.m.Lock()
 
+	// When ctx is cancelable, wake any blocked Wait() below once ctx
+	// fires so the loop can observe the cancellation and bail out.
+	// context.Background().Done() is nil, so the delegating
+	// ExecuteBatch() path spawns no watcher and pays nothing.
+	if done := ctx.Done(); done != nil {
+		stopWatch := make(chan struct{})
+		defer close(stopWatch)
+		go func() {
+			select {
+			case <-done:
+				m.m.Lock()
+				m.stackDirtyTopCond.Broadcast()
+				m.m.Unlock()
+			case <-stopWatch:
+			}
+		}()
+	}
+
 	for m.stackDirtyTop != nil &&
 		len(m.stackDirtyTop.a) >= maxPreMergerBatches {
 		if m.isClosed() {
 			m.m.Unlock()
 			return ErrClosed
+		}
+
+		if err := ctx.Err(); err != nil {
+			m.m.Unlock()
+			return err
 		}
 
 		if m.options.DeferredSort {
