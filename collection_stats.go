@@ -99,6 +99,13 @@ func (s *CollectionStats) AtomicCopyTo(r *CollectionStats) {
 	for i := 0; i < svet.NumField(); i++ {
 		rvef := rve.Field(i)
 		svef := sve.Field(i)
+		// CollectionStats is (and is meant to stay) all uint64 counters.
+		// Guard by Kind so that adding a non-uint64 field later can't
+		// turn the *uint64 type-assertions below into a runtime panic;
+		// such a field is simply skipped by this atomic copy.
+		if svef.Kind() != reflect.Uint64 {
+			continue
+		}
 		if rvef.CanAddr() && svef.CanAddr() {
 			rvefp := rvef.Addr().Interface()
 			svefp := svef.Addr().Interface()

@@ -269,7 +269,7 @@ func (m *collection) GetWithContext(ctx context.Context, key []byte,
 
 	atomic.AddUint64(&m.stats.TotGet, 1)
 
-	val, err := m.get(key, readOptions)
+	val, err := m.get(ctx, key, readOptions)
 
 	if err != nil {
 		atomic.AddUint64(&m.stats.TotGetErr, 1)
@@ -697,7 +697,8 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack),
 // get() retrieves a value by iterating over all the segment stacks,
 // and then the lower level snapshot of the collection in pursuit of
 // the key, if not found, a nil val is returned.
-func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
+func (m *collection) get(ctx context.Context, key []byte,
+	readOptions ReadOptions) ([]byte, error) {
 	// Create a pointer to the lower level snapshot by incrementing it's ref
 	// count and then pointers to stackClean, stackDirtyBase, stackDirtyMid
 	// and stackDirtyTop for the collection within lock.
@@ -743,7 +744,9 @@ func (m *collection) get(key []byte, readOptions ReadOptions) ([]byte, error) {
 
 	if lowerLevelSnapshot != nil {
 		if val == nil && err == nil {
-			val, err = lowerLevelSnapshot.Get(key, readOptions)
+			// The lower level (e.g. disk) read is the one that can
+			// actually block, so thread ctx through to it.
+			val, err = lowerLevelSnapshot.GetWithContext(ctx, key, readOptions)
 		}
 
 		lowerLevelSnapshot.decRef()
