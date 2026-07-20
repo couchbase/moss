@@ -89,10 +89,18 @@ func (s *Store) persistFooterUnsynced(file File, footer *Footer) error {
 		// requirement, mmap() can fail complaining about insufficient
 		// file space.
 		//
-		// To avoid this error, simply pad up the file up to a page
-		// boundary.  This pad of zeroes will not interfere with file
-		// recovery.
-		padding := make([]byte, int(pageAlignCeil(int64(footerWritten)))-footerWritten)
+		// To avoid this error, simply pad up the file to an allocation
+		// granularity boundary.  This pad of zeroes will not interfere
+		// with file recovery.  Note: we align to AllocationGranularity
+		// (the mmap offset requirement), not StorePageSize -- on arm64
+		// macOS those differ (16KiB vs 4KiB), so pageAlignCeil() would
+		// under-pad and re-introduce the mmap() failure this guards.
+		gran := AllocationGranularity
+		alignedLen := footerWritten
+		if rem := footerWritten % gran; rem != 0 {
+			alignedLen += gran - rem
+		}
+		padding := make([]byte, alignedLen-footerWritten)
 		_, err = file.WriteAt(padding, footerPos+int64(footerWritten))
 		if err != nil {
 			return err
@@ -137,6 +145,12 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 	pos int64) (*Footer, error) {
 	footerBeg := make([]byte, footerBegLen)
 
+	fileInfo, err := fref.file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	fileSize := fileInfo.Size()
+
 	// Align pos to the start of a page (floor).
 	pos = pageAlignFloor(pos)
 
@@ -176,6 +190,18 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 		var length uint32
 		if err := binary.Read(footerBegBuf, StoreEndian, &length); err != nil {
 			return nil, err
+		}
+
+		// Guard against a corrupt/torn footer whose on-disk length is
+		// implausible.  Without this, a length < footerBegLen makes a
+		// negative-sized (panicking) slice, a tiny length makes the
+		// StoreMagicEnd slicing below index out of range, and a huge
+		// length attempts a multi-GB allocation.  Treat such a footer
+		// as invalid and keep scanning backward for an older, good one.
+		minFooterLen := int64(footerBegLen + footerEndLen)
+		if int64(length) < minFooterLen || pos+int64(length) > fileSize {
+			pos -= int64(StorePageSize)
+			continue
 		}
 
 		data := make([]byte, int64(length)-int64(footerBegLen))
@@ -300,11 +326,21 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 			begOffsetDelta := int(begOffset - begOffsetActual)
 			nbytesActual := nbytes + begOffsetDelta
 
-			// check whether the actual file fits within the footer offsets
+			// Check that the mmap region [begOffsetActual,
+			// begOffsetActual+nbytesActual) actually lies within the
+			// file.  Guard the Stat error before touching fstats (a nil
+			// fstats.Name() would otherwise panic), and include
+			// begOffsetActual in the bounds check (comparing only
+			// nbytesActual to the size ignores where the region starts).
 			fstats, err := osFile.Stat()
-			if err != nil || nbytesActual > int(fstats.Size()) {
+			if err != nil {
+				return mrefs, fmt.Errorf(
+					"store: doLoadSegments stat error: %w", err)
+			}
+			if begOffsetActual+int64(nbytesActual) > fstats.Size() {
 				return mrefs, fmt.Errorf("store: doLoadSegments corrupted "+
-					"file: %s, err: %+v", fstats.Name(), err)
+					"file: %s, begOffsetActual: %d, nbytesActual: %d, size: %d",
+					fstats.Name(), begOffsetActual, nbytesActual, fstats.Size())
 			}
 
 			mm, err := mmap.MapRegion(osFile, nbytesActual, mmap.RDONLY, 0, begOffsetActual)

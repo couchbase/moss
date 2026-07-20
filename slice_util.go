@@ -12,7 +12,6 @@
 package moss
 
 import (
-	"reflect"
 	"unsafe"
 )
 
@@ -20,32 +19,33 @@ import (
 // default, an efficient O(1) implementation of this function is used,
 // but which requires the unsafe package.  See the "safe" build tag to
 // use an O(N) implementation that does not need the unsafe package.
+//
+// Uses unsafe.Slice/unsafe.SliceData rather than the deprecated
+// reflect.SliceHeader, so the backing array stays reachable by the GC
+// (building a SliceHeader field-by-field leaves the data referenced
+// only by a uintptr, which the GC does not treat as a live pointer).
 func Uint64SliceToByteSlice(in []uint64) ([]byte, error) {
-	inHeader := (*reflect.SliceHeader)(unsafe.Pointer(&in))
-
-	var out []byte
-	outHeader := (*reflect.SliceHeader)(unsafe.Pointer(&out))
-	outHeader.Data = inHeader.Data
-	outHeader.Len = inHeader.Len * 8
-	outHeader.Cap = inHeader.Cap * 8
-
-	return out, nil
+	if len(in) == 0 {
+		return nil, nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(in))),
+		len(in)*8), nil
 }
 
 // ByteSliceToUint64Slice gives access to []byte as []uint64.  By
 // default, an efficient O(1) implementation of this function is used,
 // but which requires the unsafe package.  See the "safe" build tag to
 // use an O(N) implementation that does not need the unsafe package.
+//
+// NOTE: the input's backing array must be 8-byte aligned (moss only
+// calls this on page-aligned mmap'd regions), and its length should be
+// a multiple of 8; any trailing bytes are ignored.
 func ByteSliceToUint64Slice(in []byte) ([]uint64, error) {
-	inHeader := (*reflect.SliceHeader)(unsafe.Pointer(&in))
-
-	var out []uint64
-	outHeader := (*reflect.SliceHeader)(unsafe.Pointer(&out))
-	outHeader.Data = inHeader.Data
-	outHeader.Len = inHeader.Len / 8
-	outHeader.Cap = outHeader.Len
-
-	return out, nil
+	if len(in) == 0 {
+		return nil, nil
+	}
+	return unsafe.Slice((*uint64)(unsafe.Pointer(unsafe.SliceData(in))),
+		len(in)/8), nil
 }
 
 // --------------------------------------------------------------

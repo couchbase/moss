@@ -449,9 +449,13 @@ func (s *Store) writeSegments(newSS, base *segmentStack,
 	}
 	compactionBufferSize := StorePageSize * compactionBufferPages
 
+	// Bound the kvs section to the space reserved for it before
+	// bufBegPos.  If the actual op count ever exceeds the estimate used
+	// to compute bufBegPos, the writer returns io.ErrShortBuffer rather
+	// than silently overwriting the buf section (data corruption).
 	compactWriter := &compactWriter{
 		file:           fileCompact,
-		kvsWriter:      newBufferedSectionWriter(fileCompact, kvsBegPos, 0, compactionBufferSize, s),
+		kvsWriter:      newBufferedSectionWriter(fileCompact, kvsBegPos, bufBegPos-kvsBegPos, compactionBufferSize, s),
 		bufWriter:      newBufferedSectionWriter(fileCompact, bufBegPos, 0, compactionBufferSize, s),
 		syncAfterBytes: syncAfterBytes,
 	}

@@ -52,23 +52,26 @@ func (iter *iteratorSingle) InitCloser(closer io.Closer) error {
 
 // Next returns ErrIteratorDone if the iterator is done.
 func (iter *iteratorSingle) Next() error {
-	err := iter.sc.Next()
-	if err != nil {
-		iter.op = 0
-		iter.k = nil
-		iter.v = nil
+	// Loop (rather than recurse) to skip deletion tombstones, so a long
+	// run of consecutive deletions can't overflow the goroutine stack.
+	for {
+		err := iter.sc.Next()
+		if err != nil {
+			iter.op = 0
+			iter.k = nil
+			iter.v = nil
 
-		// we DO want to return ErrIteratorDone here
-		return err
+			// we DO want to return ErrIteratorDone here
+			return err
+		}
+
+		iter.op, iter.k, iter.v = iter.sc.Current()
+		if iter.op != OperationDel ||
+			iter.iteratorOptions.IncludeDeletions {
+			return nil
+		}
+		// Otherwise this is a deletion we're skipping; continue looping.
 	}
-
-	iter.op, iter.k, iter.v = iter.sc.Current()
-	if iter.op != OperationDel ||
-		iter.iteratorOptions.IncludeDeletions {
-		return nil
-	}
-
-	return iter.Next()
 }
 
 func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
