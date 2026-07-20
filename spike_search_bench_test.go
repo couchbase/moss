@@ -321,6 +321,9 @@ func TestSpikeSearchVariantsCorrect(t *testing.T) {
 
 // TestSpikeSearchSizes reports the space each layout uses (run with -v).
 func TestSpikeSearchSizes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping heavy 1M-entry size report in -short")
+	}
 	const n = 1000000
 	for _, dist := range []string{"seq", "rand"} {
 		keys := spikeKeys(n, dist)
