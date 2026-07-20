@@ -1348,7 +1348,8 @@ func TestStoreNilValue(t *testing.T) {
 
 	store2, m2, err := OpenStoreCollection(tmpDir, storeOptions, spo)
 	if err != nil || store2 == nil || m2 == nil {
-		t.Errorf("expected reopen store to work")
+		t.Fatalf("expected reopen store to work, err: %v, store2==nil: %v, m2==nil: %v",
+			err, store2 == nil, m2 == nil)
 	}
 
 	checkCollection(m2)

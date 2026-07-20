@@ -11,7 +11,9 @@ package moss
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"sort"
@@ -607,7 +609,12 @@ func openStore(dir string, options StoreOptions) (*Store, error) {
 		}
 
 		if !options.KeepFiles {
-			rmFiles := append(fnames[0:i], fnames[i+1:]...)
+			// Build the remove-list explicitly rather than
+			// append(fnames[0:i], fnames[i+1:]...), which would splice
+			// in place and mutate fnames' backing array.
+			rmFiles := make([]string, 0, len(fnames)-1)
+			rmFiles = append(rmFiles, fnames[0:i]...)
+			rmFiles = append(rmFiles, fnames[i+1:]...)
 			if options.CollectionOptions.Log != nil {
 				options.CollectionOptions.Log("store: openStore,"+
 					" files to remove: %q", rmFiles)
@@ -748,7 +755,12 @@ func restoreCollection(co *CollectionOptions, storeFooter *Footer) (
 func removeFiles(dir string, fnames []string) error {
 	for _, fname := range fnames {
 		err := os.Remove(path.Join(dir, fname))
-		if err != nil {
+		// A file we're cleaning up may already be gone: store close /
+		// compaction removes superseded files asynchronously (see
+		// removeFileOnClose), so a concurrent removal can win the race.
+		// The goal here is "ensure these stale files are absent", so an
+		// already-absent file means the goal is met, not an error.
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
