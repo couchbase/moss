@@ -238,7 +238,7 @@ type CollectionOptions struct {
 
 	// Log is a callback invoked when the Collection needs to log a
 	// debug message.  Optional, may be nil.
-	Log func(format string, a ...interface{}) `json:"-"`
+	Log func(format string, a ...any) `json:"-"`
 
 	// OnError is an optional callback invoked when the Collection
 	// encounters an error.  This might happen when the background
@@ -267,29 +267,33 @@ type Event struct {
 // EventKind represents an event code for OnEvent() callbacks.
 type EventKind int
 
-// EventKindCloseStart is fired when a collection.Close() has begun.
-// The closing might take awhile to complete and an EventKindClose
-// will follow later.
-var EventKindCloseStart = EventKind(1)
+// The EventKind values are stable, exported constants (an enum), so
+// they cannot be accidentally reassigned by importers.
+const (
+	// EventKindCloseStart is fired when a collection.Close() has begun.
+	// The closing might take awhile to complete and an EventKindClose
+	// will follow later.
+	EventKindCloseStart = EventKind(1)
 
-// EventKindClose is fired when a collection has been fully closed.
-var EventKindClose = EventKind(2)
+	// EventKindClose is fired when a collection has been fully closed.
+	EventKindClose = EventKind(2)
 
-// EventKindMergerProgress is fired when the merger has completed a
-// round of merge processing.
-var EventKindMergerProgress = EventKind(3)
+	// EventKindMergerProgress is fired when the merger has completed a
+	// round of merge processing.
+	EventKindMergerProgress = EventKind(3)
 
-// EventKindPersisterProgress is fired when the persister has
-// completed a round of persistence processing.
-var EventKindPersisterProgress = EventKind(4)
+	// EventKindPersisterProgress is fired when the persister has
+	// completed a round of persistence processing.
+	EventKindPersisterProgress = EventKind(4)
 
-// EventKindBatchExecuteStart is fired when a collection is starting
-// to execute a batch.
-var EventKindBatchExecuteStart = EventKind(5)
+	// EventKindBatchExecuteStart is fired when a collection is starting
+	// to execute a batch.
+	EventKindBatchExecuteStart = EventKind(5)
 
-// EventKindBatchExecute is fired when a collection has finished
-// executing a batch.
-var EventKindBatchExecute = EventKind(6)
+	// EventKindBatchExecute is fired when a collection has finished
+	// executing a batch.
+	EventKindBatchExecute = EventKind(6)
+)
 
 // DefaultCollectionOptions are the default configuration options.
 var DefaultCollectionOptions = CollectionOptions{

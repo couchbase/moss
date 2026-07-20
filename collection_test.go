@@ -251,41 +251,28 @@ func TestBatchSort(t *testing.T) {
 		t.Errorf("wrong okv")
 	}
 
-	i := b2.findStartKeyInclusivePos(nil)
-	if i != 0 {
-		t.Errorf("wrong i")
+	posCases := []struct {
+		key  []byte
+		want int
+	}{
+		{nil, 0},
+		{[]byte(""), 0},
+		{[]byte("a"), 0},
+		{[]byte("b"), 0},
+		{[]byte("c"), 1},
+		{[]byte("d"), 1},
+		{[]byte("e"), 2},
+		{[]byte("f"), 2},
+		{[]byte("g"), 3},
 	}
-	i = b2.findStartKeyInclusivePos([]byte(""))
-	if i != 0 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("a"))
-	if i != 0 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("b"))
-	if i != 0 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("c"))
-	if i != 1 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("d"))
-	if i != 1 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("e"))
-	if i != 2 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("f"))
-	if i != 2 {
-		t.Errorf("wrong i")
-	}
-	i = b2.findStartKeyInclusivePos([]byte("g"))
-	if i != 3 {
-		t.Errorf("wrong i")
+	for _, tc := range posCases {
+		i, err := b2.findStartKeyInclusivePos(tc.key)
+		if err != nil {
+			t.Errorf("unexpected err for key %q: %v", tc.key, err)
+		}
+		if i != tc.want {
+			t.Errorf("wrong i for key %q: got %d, want %d", tc.key, i, tc.want)
+		}
 	}
 }
 

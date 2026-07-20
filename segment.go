@@ -345,7 +345,11 @@ func (c *segmentCursor) Current() (operation uint64, key []byte, val []byte) {
 }
 
 func (c *segmentCursor) Seek(startKeyInclusive []byte) error {
-	c.curr = c.s.findStartKeyInclusivePos(startKeyInclusive)
+	pos, err := c.s.findStartKeyInclusivePos(startKeyInclusive)
+	if err != nil {
+		return err
+	}
+	c.curr = pos
 	if c.curr < c.start {
 		c.curr = c.start
 	}
@@ -387,9 +391,17 @@ func (a *segment) Cursor(startKeyInclusive []byte, endKeyExclusive []byte) (
 		s:   a,
 		end: a.Len(),
 	}
-	rv.start = a.findStartKeyInclusivePos(startKeyInclusive)
+	start, err := a.findStartKeyInclusivePos(startKeyInclusive)
+	if err != nil {
+		return nil, err
+	}
+	rv.start = start
 	if endKeyExclusive != nil {
-		rv.end = a.findStartKeyInclusivePos(endKeyExclusive)
+		end, err := a.findStartKeyInclusivePos(endKeyExclusive)
+		if err != nil {
+			return nil, err
+		}
+		rv.end = end
 	}
 	rv.curr = rv.start
 	return rv, nil
@@ -420,22 +432,37 @@ func (a *segment) searchIndex(key []byte) (int, int) {
 	return 0, a.Len()
 }
 
-func (a *segment) findKeyPos(key []byte) (int, error) {
-	kvs := a.kvs
-	buf := a.buf
+// keyAt returns the key bytes for the entry at the given logical
+// position (0-based).  It bounds-checks both the kvs index array and
+// the buf backing array before slicing, so that a corrupt or
+// truncated segment (for example, an mmap'd file that is shorter than
+// its footer claims) yields ErrSegmentCorrupted instead of a SIGBUS
+// or an out-of-range panic.  All segment read paths that decode a key
+// out of a possibly-mmap'd buf should route through keyAt.
+func (a *segment) keyAt(pos int) ([]byte, error) {
+	x := pos * 2
+	if x < 0 || x+1 >= len(a.kvs) {
+		return nil, ErrSegmentCorrupted
+	}
+	keyLen := int((maskKeyLength & a.kvs[x]) >> 32)
+	kbeg := int(a.kvs[x+1])
+	if kbeg < 0 || keyLen < 0 || kbeg+keyLen > len(a.buf) {
+		return nil, ErrSegmentCorrupted
+	}
+	return a.buf[kbeg : kbeg+keyLen], nil
+}
 
-	if len(kvs) < 2 {
+func (a *segment) findKeyPos(key []byte) (int, error) {
+	if len(a.kvs) < 2 {
 		return -1, nil
 	}
 
-	startKeyLen := int((maskKeyLength & kvs[0]) >> 32)
-	startKeyBeg := int(kvs[1])
-	if startKeyBeg+startKeyLen > len(buf) {
-		return -1, ErrSegmentCorrupted
-	}
 	// If key smaller than smallest key, return early.
-	startCmp := bytes.Compare(key, buf[startKeyBeg:startKeyBeg+startKeyLen])
-	if startCmp < 0 {
+	startKey, err := a.keyAt(0)
+	if err != nil {
+		return -1, err
+	}
+	if bytes.Compare(key, startKey) < 0 {
 		return -1, nil
 	}
 
@@ -444,27 +471,20 @@ func (a *segment) findKeyPos(key []byte) (int, error) {
 		return -1, nil
 	}
 
-	// additional best effort guard against mmap buf beyond eof
-	x := 2 * (j - 1)
-	if x+1 > len(kvs) {
-		return -1, ErrSegmentCorrupted
-	}
-	endKeyLen := int((maskKeyLength & kvs[x]) >> 32)
-	endKeyBeg := int(kvs[x+1])
-	if endKeyBeg+endKeyLen > len(buf) {
-		return -1, ErrSegmentCorrupted
+	// Best-effort guard against an mmap'd buf that's shorter than the
+	// footer claims: validate the right-most candidate before looping.
+	if _, err := a.keyAt(j - 1); err != nil {
+		return -1, err
 	}
 
 	for i < j {
 		h := i + (j-i)/2 // Keep i <= h < j.
-		x := h * 2
-		klen := int((maskKeyLength & kvs[x]) >> 32)
-		kbeg := int(kvs[x+1])
-		if kbeg+klen > len(buf) {
-			return -1, ErrSegmentCorrupted
+		hKey, err := a.keyAt(h)
+		if err != nil {
+			return -1, err
 		}
 
-		cmp := bytes.Compare(buf[kbeg:kbeg+klen], key)
+		cmp := bytes.Compare(hKey, key)
 		if cmp == 0 {
 			return h, nil
 		} else if cmp < 0 {
@@ -481,31 +501,31 @@ func (a *segment) findKeyPos(key []byte) (int, error) {
 // the given (inclusive) start key.  With segment keys of [b, d, f],
 // looking for 'c' will return 1.  Looking for 'd' will return 1.
 // Looking for 'g' will return 3.  Looking for 'a' will return 0.
-func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
-	kvs := a.kvs
-	buf := a.buf
-
+func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) (int, error) {
 	i, j := a.searchIndex(startKeyInclusive)
 	if i == j {
-		return i
+		return i, nil
 	}
 
-	startKeyLen := int((maskKeyLength & kvs[0]) >> 32)
-	startKeyBeg := int(kvs[1])
-	startCmp := bytes.Compare(startKeyInclusive,
-		buf[startKeyBeg:startKeyBeg+startKeyLen])
-	if startCmp < 0 { // If key smaller than smallest key, return early.
-		return i
+	startKey, err := a.keyAt(0)
+	if err != nil {
+		return i, err
+	}
+	if bytes.Compare(startKeyInclusive, startKey) < 0 {
+		// If key smaller than smallest key, return early.
+		return i, nil
 	}
 
 	for i < j {
 		h := i + (j-i)/2 // Keep i <= h < j.
-		x := h * 2
-		klen := int((maskKeyLength & kvs[x]) >> 32)
-		kbeg := int(kvs[x+1])
-		cmp := bytes.Compare(buf[kbeg:kbeg+klen], startKeyInclusive)
+		hKey, err := a.keyAt(h)
+		if err != nil {
+			return i, err
+		}
+
+		cmp := bytes.Compare(hKey, startKeyInclusive)
 		if cmp == 0 {
-			return h
+			return h, nil
 		} else if cmp < 0 {
 			i = h + 1
 		} else {
@@ -513,23 +533,30 @@ func (a *segment) findStartKeyInclusivePos(startKeyInclusive []byte) int {
 		}
 	}
 
-	return i
+	return i, nil
 }
 
 // getOperationKeyVal() returns the operation, key, val for a given
 // logical entry position in the segment.
 func (a *segment) getOperationKeyVal(pos int) (uint64, []byte, []byte) {
 	x := pos * 2
-	if x < len(a.kvs) {
-		opklvl := a.kvs[x]
-		kstart := int(a.kvs[x+1])
-		operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
-		vstart := kstart + keyLen
-
-		return operation, a.buf[kstart:vstart], a.buf[vstart : vstart+valLen]
+	if x < 0 || x+1 >= len(a.kvs) {
+		return 0, nil, nil
 	}
 
-	return 0, nil, nil
+	opklvl := a.kvs[x]
+	kstart := int(a.kvs[x+1])
+	operation, keyLen, valLen := decodeOpKeyLenValLen(opklvl)
+	vstart := kstart + keyLen
+	vend := vstart + valLen
+
+	// Bounds-check against buf before slicing, so a corrupt or
+	// truncated (e.g. mmap'd) segment can't SIGBUS or panic here.
+	if kstart < 0 || keyLen < 0 || valLen < 0 || vend > len(a.buf) {
+		return 0, nil, nil
+	}
+
+	return operation, a.buf[kstart:vstart], a.buf[vstart:vend]
 }
 
 // ------------------------------------------------------

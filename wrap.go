@@ -89,7 +89,16 @@ func (w *SnapshotWrapper) Close() (err error) {
 // Get returns the key from the underlying snapshot.
 func (w *SnapshotWrapper) Get(key []byte, readOptions ReadOptions) (
 	[]byte, error) {
-	return w.ss.Get(key, readOptions)
+	// Take our own ref under the lock so w.ss can't be closed/niled by
+	// a concurrent decRef() while we're reading it, then release the
+	// lock before the (potentially slow) underlying Get.  This matches
+	// the mutex discipline of ChildCollectionNames/Snapshot below.
+	ss, err := w.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer w.decRef()
+	return ss.Get(key, readOptions)
 }
 
 // StartIterator initiates a start iterator over the underlying snapshot.
@@ -97,6 +106,24 @@ func (w *SnapshotWrapper) StartIterator(
 	startKeyInclusive, endKeyExclusive []byte,
 	iteratorOptions IteratorOptions,
 ) (Iterator, error) {
-	return w.ss.StartIterator(startKeyInclusive, endKeyExclusive,
+	ss, err := w.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer w.decRef()
+	return ss.StartIterator(startKeyInclusive, endKeyExclusive,
 		iteratorOptions)
+}
+
+// acquire returns the underlying snapshot with an extra ref-count
+// held, or ErrClosed if the wrapper has already been closed.  The
+// caller must balance a successful acquire() with a decRef().
+func (w *SnapshotWrapper) acquire() (Snapshot, error) {
+	w.m.Lock()
+	defer w.m.Unlock()
+	if w.ss == nil {
+		return nil, ErrClosed
+	}
+	w.refCount++
+	return w.ss, nil
 }

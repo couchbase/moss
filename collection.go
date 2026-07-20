@@ -123,7 +123,7 @@ func (m *collection) Close() error {
 	m.fireEvent(EventKindCloseStart, 0)
 	startTime := time.Now()
 	defer func() {
-		m.fireEvent(EventKindClose, time.Now().Sub(startTime))
+		m.fireEvent(EventKindClose, time.Since(startTime))
 	}()
 
 	atomic.AddUint64(&m.stats.TotCloseBeg, 1)
@@ -299,7 +299,7 @@ func (m *collection) ExecuteBatch(bIn Batch,
 	startTime := time.Now()
 
 	defer func() {
-		m.fireEvent(EventKindBatchExecute, time.Now().Sub(startTime))
+		m.fireEvent(EventKindBatchExecute, time.Since(startTime))
 	}()
 
 	atomic.AddUint64(&m.stats.TotExecuteBatchBeg, 1)
@@ -526,7 +526,7 @@ func (m *collection) updateStats(a *segment) {
 
 // Log invokes the user's configured Log callback, if any, if the
 // debug levels are met.
-func (m *collection) Logf(format string, a ...interface{}) {
+func (m *collection) Logf(format string, a ...any) {
 	if m.options.Debug > 0 &&
 		m.options.Log != nil {
 		m.options.Log(format, a...)

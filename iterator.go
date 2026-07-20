@@ -17,7 +17,7 @@ import (
 // DefaultNaiveSeekToMaxTries is the max number of attempts a forward
 // iterator.SeekTo() will loop using simple Next()'s before giving up
 // and starting a binary search for a given, forward seekToKey.
-var DefaultNaiveSeekToMaxTries = 100
+const DefaultNaiveSeekToMaxTries = 100
 
 // An iterator tracks a min-heap "scan-line" of cursors through a
 // segmentStack.  Iterator implements the sort.Interface and
@@ -434,13 +434,13 @@ func (iter *iterator) Swap(i, j int) {
 	iter.cursors[i], iter.cursors[j] = iter.cursors[j], iter.cursors[i]
 }
 
-func (iter *iterator) Push(x interface{}) {
+func (iter *iterator) Push(x any) {
 	// Push and Pop use pointer receivers because they modify the slice's length,
 	// not just its contents.
 	iter.cursors = append(iter.cursors, x.(*cursor))
 }
 
-func (iter *iterator) Pop() interface{} {
+func (iter *iterator) Pop() any {
 	n := len(iter.cursors)
 	x := iter.cursors[n-1]
 	iter.cursors = iter.cursors[0 : n-1]

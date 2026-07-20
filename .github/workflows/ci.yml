@@ -37,6 +37,14 @@ jobs:
       - name: Test
         run: go test -short -timeout 15m ./...
 
+      # Guard the non-unsafe fallback implementation (slice_util_safe.go),
+      # which is only compiled under the `safe` build tag.
+      - name: Build & test (-tags safe)
+        run: |
+          go build -tags safe ./...
+          go vet -tags safe ./...
+          go test -tags safe -short -timeout 15m ./...
+
   lint:
     name: gofmt
     runs-on: ubuntu-latest

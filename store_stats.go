@@ -15,7 +15,7 @@ import (
 )
 
 // Stats returns a map of stats.
-func (s *Store) Stats() (map[string]interface{}, error) {
+func (s *Store) Stats() (map[string]any, error) {
 	finfos, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (s *Store) Stats() (map[string]interface{}, error) {
 
 	files, numFilesOpen := s.allFiles()
 
-	return map[string]interface{}{
+	return map[string]any{
 		"num_bytes_used_disk":              numBytesUsedDisk,
 		"total_persists":                   totPersists,
 		"total_compactions":                totCompactions,

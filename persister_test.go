@@ -1006,7 +1006,7 @@ func TestPersistMergeOps_MB19667(t *testing.T) {
 	logCh := make(chan string)
 	logBlockCh := make(chan string)
 	mc.options.Debug = 1
-	mc.options.Log = func(format string, a ...interface{}) {
+	mc.options.Log = func(format string, a ...any) {
 		if logCh != nil {
 			logCh <- format
 		}

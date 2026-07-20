@@ -34,11 +34,13 @@ var StoreSuffix = ".moss"
 // StoreEndian is the preferred endianness used by moss
 var StoreEndian = binary.LittleEndian
 
-// StorePageSize is the page size used by moss
-var StorePageSize = 4096
+// StorePageSize is the page size used by moss.  It is part of the
+// on-disk file format (segment start offsets are page-aligned to it),
+// so it is a const and must not change once any files exist.
+const StorePageSize = 4096
 
 // StoreVersion must be bumped whenever the file format changes.
-var StoreVersion = uint32(4)
+const StoreVersion = uint32(4)
 
 // StoreMagicBeg is the magic byte sequence at the start of a footer
 var StoreMagicBeg = []byte("0m1o2s")
@@ -339,14 +341,14 @@ func (s *Store) removeFileOnClose(fref *FileRef) (os.FileInfo, error) {
 
 // Fetch all the files within the store, and the number of those
 // files that are open/in-use.
-func (s *Store) allFiles() (map[string]interface{}, int) {
-	files := make(map[string]interface{})
+func (s *Store) allFiles() (map[string]any, int) {
+	files := make(map[string]any)
 
 	s.m.Lock()
 	for filename, ref := range s.fileRefMap {
 		if ref != nil {
 			files[filename] =
-				map[string]interface{}{"ref_count": ref.FetchRefCount()}
+				map[string]any{"ref_count": ref.FetchRefCount()}
 		}
 	}
 	s.m.Unlock()
@@ -359,7 +361,7 @@ func (s *Store) allFiles() (map[string]interface{}, int) {
 		fd.Close()
 		if err == nil {
 			for _, finfo := range filelist {
-				fileEntry := map[string]interface{}{"ref_count": nil,
+				fileEntry := map[string]any{"ref_count": nil,
 					"file_size":     finfo.Size(),
 					"file_mode":     finfo.Mode(),
 					"file_modified": finfo.ModTime(),
@@ -367,7 +369,7 @@ func (s *Store) allFiles() (map[string]interface{}, int) {
 
 				referencedEntry, exists := files[finfo.Name()]
 				if exists {
-					refMap, _ := referencedEntry.(map[string]interface{})
+					refMap, _ := referencedEntry.(map[string]any)
 					fileEntry["ref_count"] = refMap["ref_count"]
 				}
 

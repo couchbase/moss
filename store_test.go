@@ -408,8 +408,8 @@ func testSimpleStoreEx(t *testing.T,
 		t.Errorf("expected 1 tracked open file")
 	}
 
-	files := sstats["files"].(map[string]interface{})
-	data := files["data-0000000000000001.moss"].(map[string]interface{})
+	files := sstats["files"].(map[string]any)
+	data := files["data-0000000000000001.moss"].(map[string]any)
 	if data["ref_count"].(int) < 1 {
 		t.Errorf("expected ref count of file to be >= 1")
 	}

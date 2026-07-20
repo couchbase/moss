@@ -100,7 +100,7 @@ type StoreOptions struct {
 
 	// Log is a callback invoked when store needs to log a debug
 	// message.  Optional, may be nil.
-	Log func(format string, a ...interface{}) `json:"-"`
+	Log func(format string, a ...any) `json:"-"`
 
 	// KeepFiles means that unused, obsoleted files will not be
 	// removed during OpenStore().  Keeping old files might be useful

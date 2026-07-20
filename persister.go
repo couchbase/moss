@@ -125,7 +125,7 @@ OUTER:
 
 		atomic.AddUint64(&m.stats.TotPersisterLoopRepeat, 1)
 
-		m.fireEvent(EventKindPersisterProgress, time.Now().Sub(startTime))
+		m.fireEvent(EventKindPersisterProgress, time.Since(startTime))
 	}
 
 	// TODO: More advanced eviction of stackClean.

@@ -19,7 +19,7 @@ import (
 // Uint64SliceToByteSlice gives access to []uint64 as []byte
 func Uint64SliceToByteSlice(in []uint64) ([]byte, error) {
 	buffer := bytes.NewBuffer(make([]byte, 0, len(in)*8))
-	err := binary.Write(buffer, STORE_ENDIAN, in)
+	err := binary.Write(buffer, StoreEndian, in)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func ByteSliceToUint64Slice(in []byte) ([]uint64, error) {
 	buffer := bytes.NewBuffer(in)
 
 	out := make([]uint64, len(in)/8)
-	err := binary.Read(buffer, STORE_ENDIAN, &out)
+	err := binary.Read(buffer, StoreEndian, &out)
 	if err != nil {
 		return nil, err
 	}

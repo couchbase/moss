@@ -148,7 +148,7 @@ OUTER:
 
 		atomic.AddUint64(&m.stats.TotMergerLoopRepeat, 1)
 
-		m.fireEvent(EventKindMergerProgress, time.Now().Sub(startTime))
+		m.fireEvent(EventKindMergerProgress, time.Since(startTime))
 	}
 
 	// TODO: Concurrent merging of disjoint slices of stackDirtyMid

@@ -30,7 +30,7 @@ var smatCompactionConcern = CompactionAllow
 
 // ------------------------------------------------
 
-func smatLog(prefix, format string, args ...interface{}) {
+func smatLog(prefix, format string, args ...any) {
 	if smatDebug {
 		fmt.Print(prefix)
 		fmt.Printf(format, args...)

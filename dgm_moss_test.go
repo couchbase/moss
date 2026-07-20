@@ -472,8 +472,8 @@ func (dgm *dgmTest) getFooterStats() (uint64, uint64, uint64, uint64) {
 	return totalOpsSet, totalOpsDel, totalKeyBytes, totalValBytes
 }
 
-func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interface{} {
-	stats := make(map[string]interface{})
+func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]any {
+	stats := make(map[string]any)
 
 	stats["numKeysWrite"] = atomic.LoadUint64(&dgm.numKeysWrite)
 	stats["numWriteBatches"] = atomic.LoadUint64(&dgm.numWriteBatches)
@@ -587,7 +587,7 @@ func (dgm *dgmTest) getDGMStats(lastSampleTime time.Duration) map[string]interfa
 	return stats
 }
 
-func (dgm *dgmTest) sampleStats(firstStats map[string]interface{}) {
+func (dgm *dgmTest) sampleStats(firstStats map[string]any) {
 	defer dgm.waitGroupSample.Done()
 	var outputFile *os.File
 
@@ -597,7 +597,7 @@ func (dgm *dgmTest) sampleStats(firstStats map[string]interface{}) {
 		outputFile, _ = os.Create(fileName)
 		defer outputFile.Close()
 
-		title := make(map[string]interface{})
+		title := make(map[string]any)
 
 		title["cfg_CompactionPercentage"] = dgm.store.options.CompactionPercentage
 		title["cfg_CompactionLevelMaxSegments"] = dgm.store.options.CompactionLevelMaxSegments
@@ -631,7 +631,7 @@ func (dgm *dgmTest) sampleStats(firstStats map[string]interface{}) {
 
 	for atomic.LoadInt32(&dgm.allStop) == 0 {
 		time.Sleep(dgm.sampleFrequency)
-		intervalStats := make(map[string]interface{})
+		intervalStats := make(map[string]any)
 
 		curr := dgm.getDGMStats(time.Since(lastSampleTime))
 
@@ -688,7 +688,7 @@ func (dgm *dgmTest) sampleStats(firstStats map[string]interface{}) {
 		dgm.openMossStore()
 
 		finalStats := dgm.getDGMStats(time.Since(lastSampleTime))
-		trailer := make(map[string]interface{})
+		trailer := make(map[string]any)
 		for k := range firstStats {
 			curVal, _ := finalStats[k].(uint64)
 			lastVal, _ := firstStats[k].(uint64)
