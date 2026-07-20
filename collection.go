@@ -694,9 +694,10 @@ func (m *collection) snapshot(skip uint32, cb func(*segmentStack),
 	return rv, heightClean, heightDirtyBase, heightDirtyMid, heightDirtyTop
 }
 
-// get() retrieves a value by iterating over all the segment stacks,
-// and then the lower level snapshot of the collection in pursuit of
-// the key, if not found, a nil val is returned.
+// get() retrieves a value by resolving the key across all of the
+// collection's segment stacks (newest to oldest: stackDirtyTop,
+// stackDirtyMid, stackDirtyBase, stackClean) and then the lower-level
+// snapshot.  If not found, a nil val is returned.
 func (m *collection) get(ctx context.Context, key []byte,
 	readOptions ReadOptions) ([]byte, error) {
 	// Create a pointer to the lower level snapshot by incrementing it's ref
@@ -705,54 +706,87 @@ func (m *collection) get(ctx context.Context, key []byte,
 	m.m.Lock()
 
 	lowerLevelSnapshot := m.lowerLevelSnapshot.addRef()
-	stackClean := m.stackClean
-	stackDirtyBase := m.stackDirtyBase
-	stackDirtyMid := m.stackDirtyMid
-	stackDirtyTop := m.stackDirtyTop
+	stacksNewestFirst := [...]*segmentStack{
+		m.stackDirtyTop, m.stackDirtyMid, m.stackDirtyBase, m.stackClean,
+	}
 
 	m.m.Unlock()
 
-	var val []byte
-	var err error
-
-	// Avoid going to the lower-level snapshot for the
-	// stackDirtyTop/Mid/Base/Clean Get()s since their lower level
-	// snapshots may be modified concurrently by
-	// collection_merger/persister.
-	readOptionsSLL := readOptions
-	readOptionsSLL.SkipLowerLevel = true
-
-	// Look for the key-value in the collection's segment stacks
-	// starting with the latest (stackDirtyTop), followed by
-	// stackDirtyMid, stackDirtyBase, stackClean, and if still not
-	// found look for it in the lowerLevelSnapshot.
-	if stackDirtyTop != nil {
-		val, err = stackDirtyTop.Get(key, readOptionsSLL)
+	var mo MergeOperator
+	if m.options != nil {
+		mo = m.options.MergeOperator
 	}
 
-	if val == nil && err == nil && stackDirtyMid != nil {
-		val, err = stackDirtyMid.Get(key, readOptionsSLL)
-	}
+	// Resolve the key by treating the (top -> mid -> base -> clean)
+	// stacks plus the lower-level snapshot as ONE logical LSM stack:
+	// collect OperationMerge operands (newest-first) while descending
+	// until a base value is found (an OperationSet, an OperationDel, or
+	// the lower level), then apply all operands with a single
+	// FullMerge().  Doing this across stacks -- rather than resolving
+	// each stack independently and stopping at the first non-nil result
+	// -- is required for merge chains whose operands live in a newer
+	// stack while their base value lives in an older stack / the lower
+	// level.
+	var mergeOperands [][]byte // Newest-first.
 
-	if val == nil && err == nil && stackDirtyBase != nil {
-		val, err = stackDirtyBase.Get(key, readOptionsSLL)
-	}
-
-	if val == nil && err == nil && stackClean != nil {
-		val, err = stackClean.Get(key, readOptionsSLL)
-	}
-
-	if lowerLevelSnapshot != nil {
-		if val == nil && err == nil {
-			// The lower level (e.g. disk) read is the one that can
-			// actually block, so thread ctx through to it.
-			val, err = lowerLevelSnapshot.GetWithContext(ctx, key, readOptions)
+	for _, ss := range stacksNewestFirst {
+		if ss == nil {
+			continue
 		}
 
-		lowerLevelSnapshot.decRef()
+		ss.ensureSorted(0, len(ss.a)-1)
+
+		for seg := len(ss.a) - 1; seg >= 0; seg-- {
+			op, val, err := ss.a[seg].Get(key)
+			if err != nil {
+				if lowerLevelSnapshot != nil {
+					lowerLevelSnapshot.decRef()
+				}
+				return nil, err
+			}
+			if val == nil {
+				continue
+			}
+			if op == OperationMerge {
+				mergeOperands = append(mergeOperands, val) // Newest-first.
+				continue
+			}
+
+			// op is OperationSet or OperationDel: the base value for any
+			// collected merge operands (Del is a nil base).
+			var baseVal []byte
+			if op != OperationDel {
+				baseVal = val
+			}
+			if lowerLevelSnapshot != nil {
+				lowerLevelSnapshot.decRef()
+			}
+			if len(mergeOperands) == 0 {
+				return baseVal, nil
+			}
+			return applyMergeOperands(mo, key, baseVal, mergeOperands)
+		}
 	}
 
-	return val, err
+	// No base value found in the in-memory stacks; the base (if any)
+	// comes from the lower-level snapshot.  It's the read that can
+	// actually block, so thread ctx through to it.
+	var lowerVal []byte
+	var err error
+	if lowerLevelSnapshot != nil {
+		if !readOptions.SkipLowerLevel {
+			lowerVal, err = lowerLevelSnapshot.GetWithContext(ctx, key, readOptions)
+		}
+		lowerLevelSnapshot.decRef()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(mergeOperands) == 0 {
+		return lowerVal, nil
+	}
+	return applyMergeOperands(mo, key, lowerVal, mergeOperands)
 }
 
 func (m *collection) getOrInitChildStack(ss *segmentStack,

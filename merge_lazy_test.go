@@ -65,35 +65,37 @@ func (mm *mergeModel) expected(key string) (bool, string) {
 // returns, both via Get and via a snapshot iterator.
 func checkAll(t *testing.T, m Collection, models map[string]*mergeModel, phase string) {
 	t.Helper()
-	// NOTE: this checks via Snapshot().Get(), which resolves merges over
-	// a single unified segmentStack (exactly the lazy resolveMerge path
-	// under test).  The direct collection.Get() path is intentionally
-	// NOT used here: it resolves each dirty stack independently and has
-	// a separate, pre-existing cross-stack merge bug (operands in the
-	// dirty-top whose base value lives in a lower stack), tracked apart
-	// from this lazy-merge change.
+	// Check both read paths: the direct collection.Get() and
+	// Snapshot().Get().  Both must resolve merge chains that span the
+	// dirty stacks (operands in a newer stack, base value in an older
+	// stack / the lower level) consistently with the reference model.
 	ss, err := m.Snapshot()
 	if err != nil {
 		t.Fatalf("[%s] Snapshot err: %v", phase, err)
 	}
 	defer ss.Close()
 
-	for key, mm := range models {
-		absent, want := mm.expected(key)
-
-		got, err := ss.Get([]byte(key), ReadOptions{})
-		if err != nil {
-			t.Fatalf("[%s] snapshot Get(%q) err: %v", phase, key, err)
+	check := func(via string, got []byte, getErr error, key string, absent bool, want string) {
+		if getErr != nil {
+			t.Fatalf("[%s/%s] Get(%q) err: %v", phase, via, key, getErr)
 		}
 		if absent {
 			if got != nil {
-				t.Fatalf("[%s] snapshot key %q: expected absent, got %q", phase, key, got)
+				t.Fatalf("[%s/%s] key %q: expected absent, got %q", phase, via, key, got)
 			}
-		} else {
-			if got == nil || string(got) != want {
-				t.Fatalf("[%s] snapshot key %q: got %q, want %q", phase, key, got, want)
-			}
+		} else if got == nil || string(got) != want {
+			t.Fatalf("[%s/%s] key %q: got %q, want %q", phase, via, key, got, want)
 		}
+	}
+
+	for key, mm := range models {
+		absent, want := mm.expected(key)
+
+		gotC, errC := m.Get([]byte(key), ReadOptions{})
+		check("collection", gotC, errC, key, absent, want)
+
+		gotS, errS := ss.Get([]byte(key), ReadOptions{})
+		check("snapshot", gotS, errS, key, absent, want)
 	}
 }
 

@@ -160,7 +160,8 @@ func (ss *segmentStack) resolveMerge(key []byte, segStart int,
 			if len(mergeOperands) == 0 {
 				return baseVal, nil
 			}
-			return ss.applyMergeOperands(key, baseVal, mergeOperands)
+			return applyMergeOperands(ss.mergeOperator(), key, baseVal,
+				mergeOperands)
 		}
 	}
 
@@ -173,7 +174,14 @@ func (ss *segmentStack) resolveMerge(key []byte, segStart int,
 	if len(mergeOperands) == 0 {
 		return lowerVal, nil
 	}
-	return ss.applyMergeOperands(key, lowerVal, mergeOperands)
+	return applyMergeOperands(ss.mergeOperator(), key, lowerVal, mergeOperands)
+}
+
+func (ss *segmentStack) mergeOperator() MergeOperator {
+	if ss.options != nil {
+		return ss.options.MergeOperator
+	}
+	return nil
 }
 
 // getLowerLevel retrieves a val from the level below this segmentStack:
@@ -196,12 +204,8 @@ func (ss *segmentStack) getLowerLevel(key []byte, base *segmentStack,
 // collected during a top-to-bottom descent) on top of baseVal via a
 // single FullMerge(), after reversing them into the oldest-first order
 // that FullMerge expects.
-func (ss *segmentStack) applyMergeOperands(key, baseVal []byte,
+func applyMergeOperands(mo MergeOperator, key, baseVal []byte,
 	operandsNewestFirst [][]byte) ([]byte, error) {
-	var mo MergeOperator
-	if ss.options != nil {
-		mo = ss.options.MergeOperator
-	}
 	if mo == nil {
 		return nil, ErrMergeOperatorNil
 	}
