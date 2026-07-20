@@ -4,3 +4,5 @@
 *.out
 *-fuzz.zip
 workdir
+*.test
+*.prof
