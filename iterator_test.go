@@ -11,6 +11,7 @@ package moss
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -579,5 +580,53 @@ func TestIteratorSingleDone(t *testing.T) {
 		if err != ErrIteratorDone {
 			t.Errorf("loop - expected Next() ErrIteratorDone, got: %v", err)
 		}
+	}
+}
+
+// TestIteratorSingleManyDeletionsNoStackOverflow builds a single
+// segment with a huge run of consecutive deletion tombstones between
+// two live Sets, then does the single Next() that must skip them all.
+// With the old recursive Next() this overflowed the goroutine stack;
+// the loop version runs in O(1) stack.  A reduced max-stack makes the
+// regression deterministic: recursion would exceed it and crash.
+func TestIteratorSingleManyDeletionsNoStackOverflow(t *testing.T) {
+	const nDeletes = 200000
+
+	prev := debug.SetMaxStack(1 << 20) // 1 MiB; ample for the loop, not recursion.
+	defer debug.SetMaxStack(prev)
+
+	// buf: byte 0 is the shared key, byte 1 is the shared value.
+	buf := []byte("kv")
+	entries := make([]entry, 0, nDeletes+2)
+	entries = append(entries, entry{OperationSet, 1, 1, 0}) // pos 0: live
+	for i := 0; i < nDeletes; i++ {
+		entries = append(entries, entry{OperationDel, 1, 0, 0})
+	}
+	entries = append(entries, entry{OperationSet, 1, 1, 0}) // last: live
+	seg := makeSegment(buf, entries...)
+
+	cur, err := seg.Cursor(nil, nil)
+	if err != nil {
+		t.Fatalf("Cursor: %v", err)
+	}
+	iter := &iteratorSingle{s: seg, sc: cur}
+	iter.op, iter.k, iter.v = cur.Current()
+
+	// Positioned at the first live entry.
+	if _, _, err := iter.Current(); err != nil {
+		t.Fatalf("initial Current err: %v", err)
+	}
+
+	// This single Next() skips all nDeletes tombstones in one call.
+	if err := iter.Next(); err != nil {
+		t.Fatalf("Next() over %d deletions err: %v", nDeletes, err)
+	}
+	if _, _, err := iter.Current(); err != nil {
+		t.Fatalf("Current after skip err: %v; expected the trailing live entry", err)
+	}
+
+	// Now exhausted.
+	if err := iter.Next(); err != ErrIteratorDone {
+		t.Fatalf("final Next() err = %v; want ErrIteratorDone", err)
 	}
 }

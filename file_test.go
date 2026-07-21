@@ -9,6 +9,7 @@
 package moss
 
 import (
+	"io"
 	"os"
 	"path"
 	"sync"
@@ -101,5 +102,30 @@ func TestFileRef(t *testing.T) {
 
 	if ToOsFile(file) != file {
 		t.Errorf("expected ToOsFile(file) == file")
+	}
+}
+
+type nopWriterAt struct{}
+
+func (nopWriterAt) WriteAt(p []byte, off int64) (int, error) { return len(p), nil }
+
+// TestBufferedSectionWriterMaxBytes verifies the section-writer bound
+// that the compaction kvs writer now relies on (A9): a write that would
+// exceed max returns io.ErrShortBuffer instead of overrunning into the
+// adjacent (buf) section.
+func TestBufferedSectionWriterMaxBytes(t *testing.T) {
+	w := newBufferedSectionWriter(nopWriterAt{}, 0, 10, 4096, nil)
+	defer w.Stop()
+
+	if n, err := w.Write(make([]byte, 8)); err != nil || n != 8 {
+		t.Fatalf("Write(8) = %d, %v; want 8, nil", n, err)
+	}
+	// 8 + 5 = 13 > max(10) -> must be refused.
+	if _, err := w.Write(make([]byte, 5)); err != io.ErrShortBuffer {
+		t.Fatalf("over-max Write err = %v; want io.ErrShortBuffer", err)
+	}
+	// A write that exactly reaches max is allowed.
+	if _, err := w.Write(make([]byte, 2)); err != nil {
+		t.Fatalf("Write to exactly max err = %v; want nil", err)
 	}
 }

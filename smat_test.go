@@ -12,10 +12,11 @@
 package moss
 
 import (
-	"log"
-	"testing"
-
+	"fmt"
 	"github.com/mschoch/smat"
+	"log"
+	"os"
+	"testing"
 )
 
 // Crashers found by smat, captured as pairs of strings.  A pair is a
@@ -101,4 +102,38 @@ func TestSmatCrashers(t *testing.T) {
 	}
 
 	smatDebug = smatDebugPrev
+}
+
+func TestGenerateSmatCorpus(t *testing.T) {
+	for i, actionSeq := range smatActionSeqs {
+		byteSequence, err := actionSeq.ByteEncoding(&smatContext{},
+			smat.ActionID('S'), smat.ActionID('T'), actionMap)
+		if err != nil {
+			t.Fatalf("error from ByteEncoding, err: %v", err)
+		}
+		os.MkdirAll("workdir/corpus", 0700)
+		os.WriteFile(fmt.Sprintf("workdir/corpus/%d", i), byteSequence, 0600)
+	}
+}
+
+var smatActionSeqs = []smat.ActionSeq{
+	{
+		smat.ActionID('g'),
+		smat.ActionID('B'),
+		smat.ActionID('s'),
+		smat.ActionID('.'),
+		smat.ActionID('d'),
+		smat.ActionID('.'),
+		smat.ActionID('s'),
+		smat.ActionID('.'),
+		smat.ActionID('b'),
+		smat.ActionID('g'),
+		smat.ActionID('H'),
+		smat.ActionID('I'),
+		smat.ActionID('>'),
+		smat.ActionID('i'),
+		smat.ActionID('h'),
+		smat.ActionID('$'),
+		smat.ActionID('g'),
+	},
 }

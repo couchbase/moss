@@ -10,17 +10,18 @@ package moss
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"github.com/blevesearch/mmap-go"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/blevesearch/mmap-go"
 )
 
 func TestPageAlign(t *testing.T) {
@@ -2524,5 +2525,141 @@ func TestStorePartialCompactionWithMergeOperator(t *testing.T) {
 		// Before the fix for MB-29664, the retrieved Get() value
 		// would incorrectly be ":b:c".
 		t.Errorf("expected k0 to be a:b:c, got: %q", v)
+	}
+}
+
+// TestRemoveFilesToleratesMissing guards the fix for an intermittent
+// reopen failure: OpenStore lists the directory, then removes stale
+// files, but store-close/compaction removes superseded files
+// asynchronously (removeFileOnClose spawns a goroutine).  A file can
+// therefore already be gone by the time removeFiles() runs, and an
+// already-absent file must not be treated as an error (else
+// OpenStore/OpenStoreCollection intermittently returns a nil store).
+func TestRemoveFilesToleratesMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	real := "data-0000000000000001.moss"
+	if err := os.WriteFile(filepath.Join(dir, real), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The list mixes a present file with an already-removed one.
+	err := removeFiles(dir, []string{real, "data-0000000000000002.moss"})
+	if err != nil {
+		t.Fatalf("removeFiles must tolerate an already-missing file, got: %v", err)
+	}
+
+	// The present file must actually have been removed.
+	if _, err := os.Stat(filepath.Join(dir, real)); !os.IsNotExist(err) {
+		t.Fatalf("expected %q to be removed, stat err: %v", real, err)
+	}
+
+	// Removing an entirely-empty/all-missing set is a no-op success.
+	if err := removeFiles(dir, []string{"nope-a.moss", "nope-b.moss"}); err != nil {
+		t.Fatalf("removeFiles over all-missing files should succeed, got: %v", err)
+	}
+}
+
+// TestScanFooterSkipsCorruptTrailingFooter persists a real store, then
+// appends a page whose header has valid magic+version but an
+// implausible length.  ScanFooter must skip that torn footer and
+// recover the previous good one, rather than panicking on a
+// negative/huge make() (A4).
+func TestScanFooterSkipsCorruptTrailingFooter(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mossScanFooter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Persist one good footer containing key "k" -> "v".
+	store, err := OpenStore(tmpDir, DefaultStoreOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coll, err := NewCollection(DefaultCollectionOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coll.Start(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := coll.NewBatch(1, 8)
+	_ = b.Set([]byte("k"), []byte("v"))
+	if err := coll.ExecuteBatch(b, WriteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+	ss, err := coll.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	llss, err := store.Persist(ss, StorePersistOptions{})
+	if err != nil || llss == nil {
+		t.Fatalf("Persist: %v", err)
+	}
+	ss.Close()
+	llss.Close()
+	coll.Close()
+	store.Close()
+
+	// Locate the data file.
+	dents, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dataFile string
+	for _, d := range dents {
+		if filepath.Ext(d.Name()) == StoreSuffix {
+			dataFile = filepath.Join(tmpDir, d.Name())
+		}
+	}
+	if dataFile == "" {
+		t.Fatal("no .moss data file found")
+	}
+
+	// Append a corrupt trailing footer page: valid magic-beg + valid
+	// version + implausibly small length (1), then pad to a full page.
+	f, err := os.OpenFile(dataFile, os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := f.Stat()
+	p := pageAlignCeil(fi.Size())
+
+	var hdr bytes.Buffer
+	hdr.Write(StoreMagicBeg)
+	hdr.Write(StoreMagicBeg)
+	_ = binary.Write(&hdr, StoreEndian, uint32(StoreVersion))
+	_ = binary.Write(&hdr, StoreEndian, uint32(1)) // implausible length
+
+	page := make([]byte, StorePageSize)
+	copy(page, hdr.Bytes())
+	if _, err := f.WriteAt(page, p); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	// Reopen: must not panic, and must recover "k" -> "v" from the good
+	// footer below the corrupt trailing page.
+	store2, coll2, err := OpenStoreCollection(tmpDir, DefaultStoreOptions,
+		StorePersistOptions{})
+	if err != nil {
+		t.Fatalf("reopen failed (ScanFooter did not recover): %v", err)
+	}
+	defer store2.Close()
+	defer coll2.Close()
+
+	ss2, err := coll2.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss2.Close()
+	v, err := ss2.Get([]byte("k"), ReadOptions{})
+	if err != nil {
+		t.Fatalf("Get after recovery: %v", err)
+	}
+	if string(v) != "v" {
+		t.Fatalf("recovered value = %q, want %q", v, "v")
 	}
 }
