@@ -488,25 +488,24 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			rv.a = append(rv.a, b.segment)
 		}
 
-		for cName, cBatch := range b.childBatches {
-			if cBatch == deletedChildBatchMarker { // child1 in diagram above.
-				delete(m.childCollections, cName)
-				continue
-			}
+		// Apply child-collection deletes first (child1 in diagram above),
+		// dropping the prior incarnation.  A pure delete ends here; a
+		// same-batch delete+recreate (name also in childBatches) then
+		// falls through the create loop below and, seeing !exists, mints
+		// a fresh incarNum -- exactly as a cross-batch delete+recreate.
+		for cName := range b.childCollectionsDeleted {
+			delete(m.childCollections, cName)
+		}
 
+		for cName, cBatch := range b.childBatches {
 			if len(m.childCollections) == 0 {
 				m.childCollections = make(map[string]*collection)
 			}
 
-			// Consume the one-shot same-batch delete+recreate signal.  On
-			// a reincarnation we drop the prior incarnation here so the
-			// block below sees !exists, bumps the incarNum, and starts
-			// fresh -- the bumped incarNum then drops the old segments at
-			// every level, exactly as a cross-batch delete+recreate does.
-			reincarnate := cBatch.consumeReplacesPriorIncarnation()
-			if reincarnate {
-				delete(m.childCollections, cName)
-			}
+			// reincarnate: this child was also deleted in this batch, so
+			// its prior incarnation was just dropped above -- do not carry
+			// over its old dirty segments.
+			reincarnate := b.childCollectionsDeleted[cName]
 
 			childCollection, exists := m.childCollections[cName]
 			if !exists { // Child collection being created for first time.
@@ -527,8 +526,6 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			if !reincarnate &&
 				curStackTop != nil && len(curStackTop.childSegStacks) > 0 {
 				// child2 from existing stackDirtyTop in diagram above.
-				// (Skipped on a same-batch delete+recreate: the prior
-				// incarnation's dirty segments must not carry over.)
 				prevChildSegStack = curStackTop.childSegStacks[cName]
 			}
 

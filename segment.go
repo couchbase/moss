@@ -886,26 +886,21 @@ type batch struct {
 	// A batch is a type of segment with childCollections.
 	*segment
 
-	// childBatches track the segments of child collections indexed by their
-	// unique collection names.
+	// childBatches track the (created/updated) segments of child
+	// collections indexed by their unique collection names.
 	childBatches map[string]*batch
 
-	// replacesPriorIncarnation is a one-shot signal, set when this (child)
-	// batch was created via NewChildCollectionBatch over a same-batch
-	// DelChildCollection of the same name (a delete+recreate within one
-	// batch).  Because the client addresses children by NAME and
-	// childBatches has one slot per name, that Del+New pair collapses into
-	// a single slot and the delete would otherwise be lost.  This bit
-	// preserves it: buildStackDirtyTop consumes the signal (see
-	// consumeReplacesPriorIncarnation) and mints a fresh incarNum for the
-	// child, exactly as a cross-batch delete+recreate does -- the bumped
-	// incarNum then drops the prior incarnation's segments at every level.
-	replacesPriorIncarnation bool
+	// childCollectionsDeleted records, as first-class immutable batch
+	// content, which child collections were deleted in this batch (a set
+	// of names).  Deletes are tracked separately from childBatches -- not
+	// as a sentinel stuffed into that same map -- so that a same-batch
+	// DelChildCollection(name) + NewChildCollectionBatch(name) do not
+	// collide on one slot.  At execute time buildStackDirtyTop applies
+	// these deletes first (dropping the prior incarnation); a name present
+	// in BOTH sets is a delete+recreate, so the recreate mints a fresh
+	// incarNum, exactly as a cross-batch delete+recreate does.
+	childCollectionsDeleted map[string]bool
 }
-
-// deletedChildBatchMarker conveys a delete request from
-// DelChildCollection() to ExecuteBatch().
-var deletedChildBatchMarker = &batch{}
 
 // newBatch() allocates a segment with hinted amount of resources.
 func newBatch(rootCollection *collection, options BatchOptions) (
@@ -931,17 +926,12 @@ func (b *batch) NewChildCollectionBatch(collectionName string,
 	if b.childBatches == nil { // First creation of child batch.
 		b.childBatches = make(map[string]*batch)
 	}
-
-	// A same-batch DelChildCollection(name) followed by
-	// NewChildCollectionBatch(name) collides on this single map slot.  The
-	// new batch wins, but we remember (via the flag) that a delete
-	// preceded it so buildStackDirtyTop drops the prior incarnation rather
-	// than merging the new keys onto the old (stale-leak) ones.
-	if b.childBatches[collectionName] == deletedChildBatchMarker {
-		childBatch.replacesPriorIncarnation = true
-	}
-
 	b.childBatches[collectionName] = childBatch
+
+	// A same-batch Del(name) then New(name) is a delete+recreate: the
+	// name stays in childCollectionsDeleted so buildStackDirtyTop drops
+	// the prior incarnation and the recreate starts fresh.  (Do NOT clear
+	// the deleted mark here.)
 
 	return childBatch, err
 }
@@ -951,30 +941,19 @@ func (b *batch) DelChildCollection(collectionName string) error {
 		return ErrNoSuchCollection
 	}
 
-	if b.childBatches == nil { // No previous child batches seen.
-		b.childBatches = make(map[string]*batch)
+	if b.childCollectionsDeleted == nil {
+		b.childCollectionsDeleted = make(map[string]bool)
 	}
+	b.childCollectionsDeleted[collectionName] = true
 
-	// The parent batch remembers this batch with deletion sentinel.
-	b.childBatches[collectionName] = deletedChildBatchMarker
+	// A same-batch New(name) then Del(name) cancels the create: drop any
+	// child batch so only the delete remains.
+	delete(b.childBatches, collectionName)
 
 	return nil
 }
 
-// consumeReplacesPriorIncarnation reports whether this child batch was
-// created via a same-batch delete+recreate (see the field doc) and
-// clears the one-shot signal so a single build pass observes it once.
-func (b *batch) consumeReplacesPriorIncarnation() bool {
-	rv := b.replacesPriorIncarnation
-	b.replacesPriorIncarnation = false
-	return rv
-}
-
 func (b *batch) readyDeferredSort() {
-	if b == deletedChildBatchMarker {
-		return
-	}
-
 	for _, childBatch := range b.childBatches {
 		childBatch.readyDeferredSort()
 	}
@@ -985,10 +964,6 @@ func (b *batch) readyDeferredSort() {
 // RequestSort() returns true if all child batches are sorted and
 // false if sorting has been asynchronously scheduled.
 func (b *batch) RequestSort() bool {
-	if b == deletedChildBatchMarker {
-		return true
-	}
-
 	// false because we must never wait for sorter else it can deadlock.
 	sorted := b.segment.RequestSort(false)
 
@@ -1000,10 +975,6 @@ func (b *batch) RequestSort() bool {
 }
 
 func (b *batch) doSort() {
-	if b == deletedChildBatchMarker {
-		return
-	}
-
 	b.segment.doSort()
 
 	for _, childBatch := range b.childBatches {
@@ -1012,10 +983,10 @@ func (b *batch) doSort() {
 }
 
 func (b *batch) isEmpty() bool {
-	if len(b.childBatches) != 0 {
-		// Presence of child batches indicates a non-empty batch even
-		// if the child batches themselves are empty. This is so that
-		// collection creation/deletions will work.
+	if len(b.childBatches) != 0 || len(b.childCollectionsDeleted) != 0 {
+		// Presence of child batches or child-collection deletes indicates
+		// a non-empty batch even if the child batches themselves are
+		// empty. This is so that collection creation/deletions will work.
 		return false
 	}
 

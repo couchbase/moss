@@ -304,11 +304,12 @@ func TestChildDelNonexistentNoCrash(t *testing.T) {
 
 // TestChildSameBatchDelRecreate regresses a fixed bug: a delete +
 // recreate of the same child in ONE batch used to collide in the batch's
-// childBatches map (one slot per name), losing the delete so the
-// recreated child merged onto the prior incarnation's data (stale leak).
-// NewChildCollectionBatch now flags the recreate (replacesPriorIncarnation)
-// so buildStackDirtyTop drops the prior incarnation and starts fresh,
-// exactly as a cross-batch delete+recreate does.
+// childBatches map (a delete sentinel and the new batch fighting over one
+// slot), losing the delete so the recreated child merged onto the prior
+// incarnation's data (stale leak).  Deletes are now tracked in their own
+// set (childCollectionsDeleted), so buildStackDirtyTop applies the delete
+// and the recreate mints a fresh incarNum, exactly as a cross-batch
+// delete+recreate does.
 func TestChildSameBatchDelRecreate(t *testing.T) {
 	for _, mergeBetween := range []bool{false, true} {
 		name := "noMerge"
