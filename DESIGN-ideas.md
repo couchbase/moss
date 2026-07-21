@@ -181,15 +181,19 @@ CONFIRMED (have failing/pending tests):
      (e.g. mark the recreated child batch as replacing, so buildStackDirtyTop
      bumps incarNum and starts fresh). Test: TestChildSameBatchDelRecreatePending.
 
-  2. Child-collection ops not counted in dirty accounting.
-     segmentStack.Stats() ignores childSegStacks, so a child-only write
-     leaves CurDirtyOps/CurDirtyBytes at 0. This breaks waitForPersistence
-     (returns early) and the MaxDirtyOps/MaxDirtyKeyValBytes back-pressure
-     (a child-heavy write workload never blocks -> unbounded dirty memory).
-     NOTE: a naive fix (recurse in Stats) HANGS waitForPersistence, because
-     child dirty state is not reconciled with the persister's clean
-     transition -- so the real fix must also track child ops through
-     persist/clean, not just count them. Test: TestChildDirtyAccountingPending.
+  2. [FIXED e15a8c5] Child-collection ops not counted in dirty accounting.
+     segmentStack.Stats() ignored childSegStacks, so a child-only write
+     left CurDirtyOps/CurDirtyBytes at 0 (broke waitForPersistence + the
+     MaxDirtyOps/MaxDirtyKeyValBytes back-pressure). Stats() now recurses.
+     The naive one-line fix HUNG because two other work-detection sites
+     used len(stack.a) instead of the recursive isEmpty() (mergerWaitForWork
+     parked the merger; the persister's idle nudge skipped a child-only
+     stackDirtyMid) -- both now use isEmpty(). That also surfaced a
+     pre-existing child-only-STORE persist bug: startOrReuseFile located the
+     file via top-level SegmentLocs[0] (empty for a child-only store), so it
+     started a new file each persist -> "doLoadSegments fref mismatch"
+     retried forever; new Footer.anyFileRef searches the footer tree. Tests:
+     TestChildDirtyAccounting, TestChildStoreDirtyAccountingPersists.
 
   3. [FIXED 961eafb] Raw Footer child read-after-reopen loses data.
      Child Footers loaded from disk are JSON-unmarshaled with refs==0 (vs
