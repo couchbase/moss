@@ -336,3 +336,65 @@ For example segmentStack implements child collection as follows:
 Note: Since child collections are recursively linked with higher
 collections, any child collection snapshots opened must be explicity
 closed in order to prevent resource leaks.
+
+Improvements in the spike-2026-refresh line
+===========================================
+
+The spike-2026-refresh work (2026) modernized the build and hardened and
+extended moss without changing the on-disk file format.  See
+DESIGN-ideas.md for the performance investigation and measured findings,
+and the git log for the individual commits.
+
+Build & portability
+--------------------
+
+Bumped to a current Go toolchain with modernized build tags and idioms,
+and fixed an Apple Silicon (arm64) bug where mmap() offsets were aligned
+to a hard-coded 4 KiB page size instead of the OS page size (16 KiB on
+arm64 macOS); mmap alignment now derives from os.Getpagesize().
+
+Correctness & crash-safety
+--------------------------
+
+  * Ported the MB-47549 SIGBUS bounds guards to all segment read paths
+    (a single bounds-checked key-decode helper), so a corrupt/truncated
+    mmap'd segment yields ErrSegmentCorrupted instead of a crash.
+  * Store-open robustness: ScanFooter validates the on-disk footer length
+    before allocating/slicing (a torn footer no longer panics; the scan
+    falls back to an older footer), and stale-file cleanup tolerates a
+    file already removed by asynchronous close/compaction (this fixed a
+    rare intermittent reopen failure).
+  * collection.Get now resolves a merge chain across ALL of the dirty and
+    clean stacks plus the lower level as ONE logical LSM stack; it
+    previously resolved each stack independently and could return a
+    partial merge when a key's operands and base value spanned stacks.
+  * Iterator tombstone-skipping is iterative (was unbounded recursion),
+    and the non-unsafe ("safe" build-tag) slice path was repaired.
+
+Merge
+-----
+
+Merge operand resolution is now "lazy": a single top-to-bottom walk that
+collects operands and applies them with one FullMerge(), replacing the
+recursive per-operand FullMerge() that re-walked the stack each time.
+
+API modernization (additive, backward compatible)
+--------------------------------------------------
+
+The Collection and Snapshot interfaces gained context-aware variants
+(GetWithContext, ExecuteBatchWithContext, StartIteratorWithContext) that
+honor cancellation/deadlines, and a GetEx()/GetExWithContext() that
+disambiguates a missing key from a key present with a nil/empty value.
+The old methods delegate to the new ones.  A Go 1.23+ range-over-func
+adapter (All / AllWithContext, iter.Seq2) was added over Snapshot.
+
+Performance
+-----------
+
+Large segments now auto-build the existing sparse key index in memory
+(not just when persisted), narrowing the point-lookup binary search;
+measured ~13-14% faster Get at 1M entries.  A self-contained benchmark
+suite (heavy reads, writes, mixed, merge, iteration) reports throughput
+and hot-path allocations.  Further segment search/format directions
+(blocked+front-coded, adaptive per-segment entry width) were spiked and
+measured; see DESIGN-ideas.md.
