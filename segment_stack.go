@@ -47,6 +47,7 @@ func (ss *segmentStack) addRef() {
 func (ss *segmentStack) decRef() {
 	ss.m.Lock()
 	ss.refs--
+	var childSegStacks map[string]*segmentStack
 	if ss.refs <= 0 {
 		if ss.stats != nil { // Only update stats if snapshot is on collection.
 			atomic.AddUint64(&ss.stats.TotSnapshotInternalClose, 1)
@@ -55,8 +56,21 @@ func (ss *segmentStack) decRef() {
 			ss.lowerLevelSnapshot.Close()
 			ss.lowerLevelSnapshot = nil
 		}
+		// A segmentStack owns one ref on each of its child segStacks
+		// (created with refs==1), so release that ownership recursively
+		// when finally freed -- otherwise the children's lowerLevelSnapshots
+		// (mmap/FileRef handles once a store is attached) are never closed
+		// and superseded data files are never deleted.
+		childSegStacks = ss.childSegStacks
+		ss.childSegStacks = nil
 	}
 	ss.m.Unlock()
+
+	// Outside the lock (each child's decRef takes the child's own lock
+	// and recurses into grandchildren).
+	for _, childSegStack := range childSegStacks {
+		childSegStack.decRef()
+	}
 }
 
 // ------------------------------------------------------

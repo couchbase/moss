@@ -208,6 +208,56 @@ func TestChildStoreSameBatchDelRecreate(t *testing.T) {
 	}
 }
 
+// TestChildSnapshotCloseReleasesChildLowerLevels regresses bug #7:
+// segmentStack.decRef did not recurse into childSegStacks, so a snapshot's
+// child (and grandchild) segStacks were never released -- their
+// lowerLevelSnapshots (mmap/FileRef handles once a store is attached)
+// stayed open, pinning superseded data files.  decRef now recurses.
+func TestChildSnapshotCloseReleasesChildLowerLevels(t *testing.T) {
+	dir := t.TempDir()
+	store, m := ccOpenStore(t, dir, CompactionAllow)
+	defer store.Close()
+	defer m.Close()
+
+	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("t"), []byte("v"))
+		cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
+		_ = cb.Set([]byte("ck"), []byte("cv"))
+		gb, _ := cb.NewChildCollectionBatch("g", BatchOptions{})
+		_ = gb.Set([]byte("gk"), []byte("gv"))
+	})
+	waitForPersistence(m)
+
+	// Use the internal snapshot() (refs==1, not the ref-2 cached
+	// Collection.Snapshot()) so a single Close() actually frees it and we
+	// observe the recursive child release.
+	mc := m.(*collection)
+	sss, _, _, _, _ := mc.snapshot(0, nil, false)
+
+	childSS := sss.childSegStacks["c"]
+	if childSS == nil {
+		t.Fatal("missing child c segStack in snapshot")
+	}
+	grandSS := childSS.childSegStacks["g"]
+	if grandSS == nil {
+		t.Fatal("missing grandchild g segStack in snapshot")
+	}
+	if childSS.lowerLevelSnapshot == nil || grandSS.lowerLevelSnapshot == nil {
+		t.Fatal("expected store-backed child/grandchild lowerLevelSnapshots")
+	}
+
+	sss.Close()
+
+	// The snapshot's final decRef must have recursed into its child
+	// segStacks, closing their lowerLevelSnapshots.
+	if childSS.lowerLevelSnapshot != nil {
+		t.Error("child segStack lowerLevelSnapshot not closed on snapshot close (leak)")
+	}
+	if grandSS.lowerLevelSnapshot != nil {
+		t.Error("grandchild segStack lowerLevelSnapshot not closed on snapshot close (leak)")
+	}
+}
+
 // TestChildStoreDirtyAccountingPersists regresses the dirty-accounting
 // fix end-to-end: a CHILD-ONLY write (no top-level key) must register as
 // dirty, then actually drain to clean via the merger+persister -- i.e.
