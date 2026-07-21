@@ -526,6 +526,37 @@ func (f *Footer) segmentLocs() (SegmentLocs, *segmentStack) {
 	return slocs, ss
 }
 
+// ssWithChildren returns a segmentStack view of this footer that includes
+// its child collections' segment stacks (built recursively from
+// ChildFooters).  footer.ss itself carries ONLY the top-level segments --
+// children live in footer.ChildFooters -- so idle/full compaction (which
+// works off the footer's own segmentStack, with no incoming "higher"
+// snapshot to supply children) must use this to avoid dropping children.
+// The returned stacks are read-only views sharing the underlying segments
+// (the caller holds the footer's ref for their lifetime).
+func (f *Footer) ssWithChildren() *segmentStack {
+	if f.ss == nil {
+		return nil
+	}
+	// Build a fresh stack rather than copying *f.ss (which would copy its
+	// sync.Mutex).  footer.ss does not carry an incarNum (doLoadSegments
+	// leaves it 0); take the footer's so downstream incarNum checks match.
+	rv := &segmentStack{
+		options:            f.ss.options,
+		stats:              f.ss.stats,
+		a:                  f.ss.a,
+		lowerLevelSnapshot: f.ss.lowerLevelSnapshot,
+		incarNum:           f.incarNum,
+	}
+	if len(f.ChildFooters) > 0 {
+		rv.childSegStacks = make(map[string]*segmentStack, len(f.ChildFooters))
+		for cName, childFooter := range f.ChildFooters {
+			rv.childSegStacks[cName] = childFooter.ssWithChildren()
+		}
+	}
+	return rv
+}
+
 // anyFileRef returns a FileRef backing any of this footer's loaded
 // segments, searching its own SegmentLocs first and then its child
 // footers recursively.  It lets the store locate its current file even

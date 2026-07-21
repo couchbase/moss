@@ -264,8 +264,12 @@ func (s *Store) compact(footer *Footer, partialCompactStart int,
 
 		newSS, newBase = s.mergeSegStacks(footer, partialCompactStart, ssHigher)
 	} else {
-		newSS = footer.ss      // Safe as footer ref count is held positive.
-		if len(newSS.a) <= 1 { // No incoming data & 1 or fewer footer segments.
+		// ssWithChildren (not footer.ss): footer.ss carries only the
+		// top-level segments, so compacting footer.ss alone would drop
+		// every child collection.  Safe as footer ref count is held.
+		newSS = footer.ssWithChildren()
+		if len(newSS.a) <= 1 && len(newSS.childSegStacks) == 0 {
+			// No incoming data & 1 or fewer footer segments & no children.
 			return ErrNothingToCompact // no need to perform compaction.
 		}
 	}
@@ -383,23 +387,32 @@ func (s *Store) mergeSegStacks(footer *Footer, splicePoint int,
 		if len(rv.childSegStacks) == 0 {
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
+		// Child collections are ALWAYS fully compacted (splicePoint 0),
+		// regardless of the parent's partial splicePoint: a child has an
+		// independent (usually smaller) segment count, so applying the
+		// top-level splicePoint would panic (slice out of range) or
+		// mis-split the child's segments.
 		if footer == nil {
 			rv.childSegStacks[cName], _ =
-				s.mergeSegStacks(nil, splicePoint, newStack)
+				s.mergeSegStacks(nil, 0, newStack)
 			continue
 		}
 
 		childFooter, exists := footer.ChildFooters[cName]
 		if exists {
-			if childFooter.incarNum != higher.incarNum {
-				// Fast child collection recreation, must not merge
-				// segments from prior incarnation.
+			// Compare the child footer's incarnation to the CHILD stack's
+			// (newStack), not the parent's (higher) -- they differ, so
+			// comparing to higher.incarNum here dropped every persisted
+			// child's segments.  A genuine mismatch means a fast
+			// delete+recreate, where we must not merge the prior
+			// incarnation.  (Matches buildNewFooter's child check.)
+			if childFooter.incarNum != newStack.incarNum {
 				childFooter = nil
 			}
 		}
 
 		rv.childSegStacks[cName], _ =
-			s.mergeSegStacks(childFooter, splicePoint, newStack)
+			s.mergeSegStacks(childFooter, 0, newStack)
 	}
 
 	return rv, rvBase
@@ -411,18 +424,12 @@ func (right *Footer) spliceFooter(left *Footer, splicePoint int) {
 	slocs = append(slocs, right.SegmentLocs...)
 	right.SegmentLocs = slocs
 
-	for cName, childFooter := range right.ChildFooters {
-		storeChildFooter, exists := left.ChildFooters[cName]
-		if exists {
-			if storeChildFooter.incarNum != childFooter.incarNum {
-				// Fast child collection recreation, ok to drop store footer's
-				// segments from prior incarnation.
-				continue
-			}
-
-			childFooter.spliceFooter(storeChildFooter, splicePoint)
-		}
-	}
+	// Only the top-level collection is partially compacted; child
+	// collections are fully compacted (see mergeSegStacks), so compactFooter
+	// already holds each child's complete SegmentLocs -- there is no prior
+	// prefix to splice back, and applying the top-level splicePoint to a
+	// child (with an independent, smaller segment count) would panic or
+	// mis-split it.  Hence no recursion into ChildFooters here.
 }
 
 func (s *Store) writeSegments(newSS, base *segmentStack,
@@ -492,6 +499,11 @@ func (s *Store) writeSegments(newSS, base *segmentStack,
 
 	compactFooter = &Footer{
 		refs: 1,
+		// Preserve the incarnation so a later compaction/persist's
+		// incarNum check keeps (rather than drops) these compacted
+		// segments -- child footers, built by the recursive calls below,
+		// each inherit their own child stack's incarNum this way.
+		incarNum: newSS.incarNum,
 		SegmentLocs: []SegmentLoc{
 			{
 				Kind:       SegmentKindBasic,
