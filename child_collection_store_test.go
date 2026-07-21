@@ -72,12 +72,19 @@ func TestChildStoreDeletePersisted(t *testing.T) {
 	dir := t.TempDir()
 
 	store, m := ccOpenStore(t, dir, CompactionAllow)
+	// Top-level markers force CurDirtyOps > 0 so waitForPersistence is
+	// reliable (child-only writes don't register as dirty -- see
+	// TestChildDirtyAccountingPending).
 	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("marker"), []byte("1"))
 		cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
 		_ = cb.Set([]byte("k"), []byte("v"))
 	})
 	waitForPersistence(m)
-	ccExec(t, m, func(b Batch) { _ = b.DelChildCollection("c") })
+	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("marker"), []byte("2"))
+		_ = b.DelChildCollection("c")
+	})
 	waitForPersistence(m)
 	m.Close()
 	store.Close()
@@ -145,6 +152,10 @@ func TestChildStoreCompaction(t *testing.T) {
 	store, m := ccOpenStore(t, dir, CompactionForce)
 	for i := 0; i < 5; i++ {
 		ccExec(t, m, func(b Batch) {
+			// Top-level marker so CurDirtyOps > 0 and waitForPersistence
+			// is reliable (child-only writes don't register as dirty --
+			// see TestChildDirtyAccountingPending).
+			_ = b.Set([]byte("marker"), []byte("m"))
 			cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
 			_ = cb.Set([]byte("k"), []byte("v"))
 			gb, _ := cb.NewChildCollectionBatch("g", BatchOptions{})
@@ -179,15 +190,12 @@ func TestChildStoreCompaction(t *testing.T) {
 	}
 }
 
-// KNOWN BUG: child Footers loaded from disk are JSON-unmarshaled with
-// refs==0 (vs refs=1 on the fresh-persist path), and Footer.DecRef never
-// recurses into ChildFooters.  So via the raw *Store/*Footer API, the
-// first ChildCollectionSnapshot+Close drives a reloaded child footer to
-// 0 and frees it (ss=nil, mmap unmapped), and a second read returns
-// empty -- silent data loss.  (The Collection API path is unaffected.)
-func TestChildFooterReadTwicePending(t *testing.T) {
-	t.Skip("KNOWN BUG: raw Footer.ChildCollectionSnapshot child footers init refs==0; 2nd read after reopen loses data")
-
+// TestChildFooterReadTwice regresses a fixed bug: child Footers loaded
+// from disk used to be JSON-unmarshaled with refs==0, so via the raw
+// *Store/*Footer API the first ChildCollectionSnapshot+Close drove a
+// reloaded child footer to 0 and freed it, and a second read returned
+// empty (silent data loss). ScanFooter now initChildRefs()'s them to 1.
+func TestChildFooterReadTwice(t *testing.T) {
 	dir := t.TempDir()
 	store, m := ccOpenStore(t, dir, CompactionAllow)
 	ccExec(t, m, func(b Batch) {
@@ -215,5 +223,54 @@ func TestChildFooterReadTwicePending(t *testing.T) {
 	c2.Close()
 	if string(v1) != "v" || string(v2) != "v" {
 		t.Fatalf("raw Footer child reads = %q, %q; want v, v (2nd read lost data)", v1, v2)
+	}
+}
+
+// TestChildFooterCloseReleasesChildren regresses the child-footer leak:
+// Footer.DecRef must recurse into ChildFooters, so that fully releasing
+// a footer releases its (and its grandchildren's) segments -- otherwise
+// child mmaps/FileRefs are pinned forever and superseded files are never
+// deleted.
+func TestChildFooterCloseReleasesChildren(t *testing.T) {
+	dir := t.TempDir()
+	store, m := ccOpenStore(t, dir, CompactionAllow)
+	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("marker"), []byte("m"))
+		cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
+		_ = cb.Set([]byte("k"), []byte("v"))
+		gb, _ := cb.NewChildCollectionBatch("g", BatchOptions{})
+		_ = gb.Set([]byte("gk"), []byte("gv"))
+	})
+	waitForPersistence(m)
+	m.Close()
+	store.Close()
+
+	store2, err := OpenStore(dir, DefaultStoreOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	footSnap, _ := store2.Snapshot()
+	foot := footSnap.(*Footer)
+
+	childF := foot.ChildFooters["c"]
+	if childF == nil || childF.SegmentLocs == nil {
+		t.Fatal("missing/unloaded child footer c")
+	}
+	grandF := childF.ChildFooters["g"]
+	if grandF == nil || grandF.SegmentLocs == nil {
+		t.Fatal("missing/unloaded grandchild footer g")
+	}
+
+	// Release both the snapshot ref and the store's own footer ref.
+	footSnap.Close()
+	store2.Close()
+
+	// The parent's final DecRef must have recursed and released the
+	// child and grandchild footers' segments.
+	if childF.SegmentLocs != nil {
+		t.Errorf("child footer segments not released on parent close (leak)")
+	}
+	if grandF.SegmentLocs != nil {
+		t.Errorf("grandchild footer segments not released on parent close (leak)")
 	}
 }

@@ -66,9 +66,10 @@ func (s *Store) revertToSnapshot(revertToFooter *Footer, options StorePersistOpt
 
 	footer := &Footer{
 		refs:        1,
-		SegmentLocs: slocs,
-		ss:          revertToFooter.ss,
-	}
+		incarNum:    revertToFooter.incarNum, // Preserve incarnation so a
+		SegmentLocs: slocs,                   // later buildNewFooter/merge
+		ss:          revertToFooter.ss,       // incarNum check doesn't drop
+	} // the reverted child's segments.
 
 	for cName, childFooter := range revertToFooter.ChildFooters {
 		newChildFooter, err := s.revertToSnapshot(childFooter, options)

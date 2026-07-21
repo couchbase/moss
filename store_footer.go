@@ -243,6 +243,13 @@ func ScanFooter(options *StoreOptions, fref *FileRef, fileName string,
 				return nil, err
 			}
 
+			// json.Unmarshal leaves child footers with refs==0; give
+			// each the ownership ref held by its parent (as the
+			// fresh-persist path does), so a child snapshot's
+			// AddRef/Close cycle can't drive it to 0 and free it while
+			// the parent footer still references it.
+			f.initChildRefs()
+
 			// json.Unmarshal would have just loaded the map.
 			// We now need to load each segment into the map.
 			// Also recursively load child footer segment stacks.
@@ -411,6 +418,9 @@ func (f *Footer) doLoadSegments(options *StoreOptions, fref *FileRef,
 
 // ChildCollectionNames returns an array of child collection name strings.
 func (f *Footer) ChildCollectionNames() ([]string, error) {
+	// Lock: DecRef may concurrently nil f.ChildFooters at end-of-life.
+	f.m.Lock()
+	defer f.m.Unlock()
 	var childNames = make([]string, len(f.ChildFooters))
 	idx := 0
 	for name := range f.ChildFooters {
@@ -424,6 +434,13 @@ func (f *Footer) ChildCollectionNames() ([]string, error) {
 // collection by its name.
 func (f *Footer) ChildCollectionSnapshot(childCollectionName string) (
 	Snapshot, error) {
+	// Lock: the map read + child AddRef must be atomic w.r.t. DecRef,
+	// which (at end-of-life) nils f.ChildFooters and then DecRef's each
+	// child.  Holding f.m guarantees we either observe the intact map and
+	// bump the child's ref before DecRef can drop it, or observe the
+	// niled map and return cleanly.
+	f.m.Lock()
+	defer f.m.Unlock()
 	childFooter, exists := f.ChildFooters[childCollectionName]
 	if !exists {
 		return nil, nil
@@ -445,16 +462,40 @@ func (f *Footer) AddRef() {
 	f.m.Unlock()
 }
 
-// DecRef decreases the ref count on this footer
+// DecRef decreases the ref count on this footer.  A footer owns exactly
+// one ref on each of its child footers, so when a footer is finally
+// released it recursively releases that ownership on its children
+// (AddRef does NOT recurse: a child snapshot ref-counts the child footer
+// directly via ChildCollectionSnapshot).
 func (f *Footer) DecRef() {
 	f.m.Lock()
 	f.refs--
+	var children map[string]*Footer
 	if f.refs <= 0 {
 		f.SegmentLocs.DecRef()
 		f.SegmentLocs = nil
 		f.ss = nil
+		children = f.ChildFooters
+		f.ChildFooters = nil
 	}
 	f.m.Unlock()
+
+	// Release the parent's ownership ref on each child, outside the
+	// lock (child DecRef acquires the child's own lock and recurses).
+	for _, childFooter := range children {
+		childFooter.DecRef()
+	}
+}
+
+// initChildRefs recursively sets refs=1 on all descendant child footers.
+// json.Unmarshal (in ScanFooter) leaves them at 0; each child footer is
+// owned by its parent (that ownership ref is released by the parent's
+// DecRef), matching the fresh-persist path in buildNewFooter.
+func (f *Footer) initChildRefs() {
+	for _, childFooter := range f.ChildFooters {
+		childFooter.refs = 1
+		childFooter.initChildRefs()
+	}
 }
 
 // Length returns the length of this footer
