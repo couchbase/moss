@@ -10,7 +10,30 @@ package moss
 
 import (
 	"testing"
+	"time"
 )
+
+// waitForPersistenceBounded is waitForPersistence with a deadline, so a
+// regression that stalls the dirty->clean transition fails the test fast
+// instead of hanging until the whole test binary times out.
+func waitForPersistenceBounded(t *testing.T, coll Collection, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		stats, err := coll.Stats()
+		if err == nil && stats.CurDirtyOps <= 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("persistence did not drain in %v (CurDirtyOps=%d "+
+				"top=%d mid=%d base=%d clean=%d); child-only dirty state "+
+				"not reconciled with clean", d, stats.CurDirtyOps,
+				stats.CurDirtyTopOps, stats.CurDirtyMidOps,
+				stats.CurDirtyBaseOps, stats.CurCleanOps)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func ccOpenStore(t *testing.T, dir string, concern CompactionConcern) (*Store, Collection) {
 	t.Helper()
@@ -182,6 +205,50 @@ func TestChildStoreSameBatchDelRecreate(t *testing.T) {
 	}
 	if v, _ := ccChildGet(t, ss, "c", "old"); v != nil {
 		t.Fatalf("after reopen same-batch recreate leaked stale old = %q, want nil", v)
+	}
+}
+
+// TestChildStoreDirtyAccountingPersists regresses the dirty-accounting
+// fix end-to-end: a CHILD-ONLY write (no top-level key) must register as
+// dirty, then actually drain to clean via the merger+persister -- i.e.
+// waitForPersistence must complete and the data must survive reopen.
+// Before the fix, child ops weren't counted (waitForPersistence returned
+// early / data could be dropped), and naively counting them without
+// waking the merger for child-only work hung the drain.
+func TestChildStoreDirtyAccountingPersists(t *testing.T) {
+	dir := t.TempDir()
+
+	store, m := ccOpenStore(t, dir, CompactionAllow)
+
+	// Child-only writes across several batches, NO top-level marker.
+	for i := 0; i < 5; i++ {
+		ccExec(t, m, func(b Batch) {
+			cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
+			_ = cb.Set([]byte("k"), []byte("v"))
+			gb, _ := cb.NewChildCollectionBatch("g", BatchOptions{})
+			_ = gb.Set([]byte("gk"), []byte("gv"))
+		})
+	}
+
+	// A child-only write must be visible as dirty.
+	if st, _ := m.Stats(); st.CurDirtyOps == 0 {
+		t.Fatal("child-only writes left CurDirtyOps=0")
+	}
+
+	// ... and must drain to clean (no top-level marker needed anymore).
+	waitForPersistenceBounded(t, m, 10*time.Second)
+
+	m.Close()
+	store.Close()
+
+	store2, m2 := ccOpenStore(t, dir, CompactionAllow)
+	defer store2.Close()
+	defer m2.Close()
+
+	ss, _ := m2.Snapshot()
+	defer ss.Close()
+	if v, has := ccChildGet(t, ss, "c", "k"); !has || string(v) != "v" {
+		t.Fatalf("after reopen child c k = %q (has=%v), want v", v, has)
 	}
 }
 

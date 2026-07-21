@@ -526,6 +526,33 @@ func (f *Footer) segmentLocs() (SegmentLocs, *segmentStack) {
 	return slocs, ss
 }
 
+// anyFileRef returns a FileRef backing any of this footer's loaded
+// segments, searching its own SegmentLocs first and then its child
+// footers recursively.  It lets the store locate its current file even
+// when the top-level collection has no segments of its own (e.g. a store
+// holding only child-collection data).  Returns nil if no loaded segment
+// is found anywhere in the footer tree.
+func (f *Footer) anyFileRef() *FileRef {
+	f.m.Lock()
+	for i := range f.SegmentLocs {
+		if mref := f.SegmentLocs[i].mref; mref != nil && mref.fref != nil {
+			fref := mref.fref
+			f.m.Unlock()
+			return fref
+		}
+	}
+	children := f.ChildFooters
+	f.m.Unlock()
+
+	for _, childFooter := range children {
+		if fref := childFooter.anyFileRef(); fref != nil {
+			return fref
+		}
+	}
+
+	return nil
+}
+
 // --------------------------------------------------------
 
 // Get retrieves a val from the footer, and will return nil val

@@ -207,7 +207,11 @@ func (m *collection) mergerWaitForWork(pings []ping) (
 
 	m.m.Lock()
 
-	if m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0 {
+	// isEmpty() (not len(.a)) so that a child-only write -- whose work
+	// lives in stackDirtyTop.childSegStacks with an empty top-level .a --
+	// keeps the merger awake to ingest it, rather than orphaning it (which
+	// would leave it forever dirty and hang waitForPersistence).
+	if m.stackDirtyTop == nil || m.stackDirtyTop.isEmpty() {
 		m.waitDirtyIncomingCh = make(chan struct{})
 		waitDirtyIncomingCh = m.waitDirtyIncomingCh
 	}

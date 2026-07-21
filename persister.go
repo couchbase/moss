@@ -44,9 +44,12 @@ OUTER:
 			//
 			// So, we notify/awake the merger here so that it can feed
 			// stackDirtyMid down to the persister as stackDirtyBase.
+			// isEmpty() (not len(.a)) so a child-only stackDirtyMid --
+			// empty top-level .a but non-empty childSegStacks -- still
+			// nudges the merger to feed it down as stackDirtyBase.
 			if m.waitDirtyIncomingCh != nil && // Merger is indeed asleep.
-				(m.stackDirtyMid != nil && len(m.stackDirtyMid.a) > 0) &&
-				(m.stackDirtyTop == nil || len(m.stackDirtyTop.a) <= 0) {
+				(m.stackDirtyMid != nil && !m.stackDirtyMid.isEmpty()) &&
+				(m.stackDirtyTop == nil || m.stackDirtyTop.isEmpty()) {
 				m.NotifyMerger("from-persister", false)
 			}
 

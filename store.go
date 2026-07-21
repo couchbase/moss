@@ -259,11 +259,16 @@ func (s *Store) startOrReuseFile() (fref *FileRef, file File, err error) {
 	defer s.m.Unlock()
 
 	if s.footer != nil {
-		slocs, _ := s.footer.segmentLocs()
-		defer s.footer.DecRef()
+		s.footer.AddRef()
+		// anyFileRef (not just top-level SegmentLocs[0]) so that a store
+		// holding ONLY child-collection data -- whose top-level
+		// SegmentLocs is empty -- still reuses its existing file rather
+		// than starting a new one (which would leave the child segments'
+		// mrefs pointing at the old file: "doLoadSegments fref mismatch").
+		fref := s.footer.anyFileRef()
+		s.footer.DecRef()
 
-		if len(slocs) > 0 {
-			fref := slocs[0].mref.fref
+		if fref != nil {
 			file := fref.AddRef()
 
 			return fref, file, nil

@@ -264,15 +264,29 @@ func (sss *SegmentStackStats) AddTo(dest *SegmentStackStats) {
 	dest.CurSegments += sss.CurSegments
 }
 
-// Stats returns the stats for this segment stack.
+// Stats returns the stats for this segment stack, including the stats of
+// all of its (recursive) child collection segment stacks -- so that a
+// child-only write registers as dirty in CurDirtyOps/CurDirtyBytes (which
+// drives waitForPersistence and the MaxDirtyOps/MaxDirtyKeyValBytes
+// back-pressure).  This mirrors isEmpty(), which likewise recurses.
 func (ss *segmentStack) Stats() *SegmentStackStats {
-	rv := &SegmentStackStats{CurSegments: uint64(len(ss.a))}
+	rv := &SegmentStackStats{}
+	ss.statsTo(rv)
+	return rv
+}
+
+// statsTo accumulates this segment stack's stats (and its child
+// collections' stats, recursively) into rv.
+func (ss *segmentStack) statsTo(rv *SegmentStackStats) {
+	rv.CurSegments += uint64(len(ss.a))
 	for _, seg := range ss.a {
 		rv.CurOps += uint64(seg.Len())
 		nk, nv := seg.NumKeyValBytes()
 		rv.CurBytes += nk + nv
 	}
-	return rv
+	for _, childSegStack := range ss.childSegStacks {
+		childSegStack.statsTo(rv)
+	}
 }
 
 // ChildCollectionNames returns an array of child collection name strings.

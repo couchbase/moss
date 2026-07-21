@@ -377,13 +377,12 @@ func TestChildSameBatchDelRecreateNewThenDel(t *testing.T) {
 	}
 }
 
-// KNOWN BUG: child-collection mutations are not counted in the
-// collection's CurDirtyOps/CurDirtyBytes (segmentStack.Stats ignores
-// childSegStacks), which breaks waitForPersistence and the
+// TestChildDirtyAccounting regresses a fixed bug: child-collection
+// mutations were not counted in CurDirtyOps/CurDirtyBytes (segmentStack.Stats
+// ignored childSegStacks), which broke waitForPersistence and the
 // MaxDirtyOps/MaxDirtyKeyValBytes back-pressure for child-only writes.
-func TestChildDirtyAccountingPending(t *testing.T) {
-	t.Skip("KNOWN BUG: child-collection ops not counted in CurDirtyOps (breaks back-pressure + waitForPersistence)")
-
+// segmentStack.Stats now recurses into childSegStacks.
+func TestChildDirtyAccounting(t *testing.T) {
 	m := ccNewColl(t)
 	defer m.Close()
 
@@ -398,5 +397,8 @@ func TestChildDirtyAccountingPending(t *testing.T) {
 	}
 	if st.CurDirtyOps == 0 {
 		t.Fatalf("child-only write left CurDirtyOps=0; child ops must be counted")
+	}
+	if st.CurDirtyBytes == 0 {
+		t.Fatalf("child-only write left CurDirtyBytes=0; child bytes must be counted")
 	}
 }
