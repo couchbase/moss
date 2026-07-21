@@ -227,9 +227,12 @@ FLAGGED BY REVIEW (not yet independently reproduced with a test):
      writeSegments preserves incarNum so later compactions don't re-drop.
      Tests: TestChildStorePersistNilKeepsChildren,
      TestChildStoreCompactionKeepsAllData, TestChildStorePartialCompaction.
-  7. segmentStack.decRef/Close doesn't recurse into childSegStacks -> leaks
-     child lower-level (mmap/File) handles once a store is attached; benign
-     (GC-reclaimed) for pure in-memory.
+  7. [FIXED 4fe153e] segmentStack.decRef/Close didn't recurse into
+     childSegStacks -> leaked child lower-level (mmap/File) handles once a
+     store is attached (superseded data files never deleted); benign
+     (GC-reclaimed) for pure in-memory. decRef now releases the parent's
+     owned ref on each child recursively (same shape as Footer.DecRef).
+     Test: TestChildSnapshotCloseReleasesChildLowerLevels.
   8. [FIXED 961eafb] store_revert.go builds reverted child footers with incarNum==0, so a
      later buildNewFooter/mergeSegStacks incarNum comparison spuriously
      drops the reverted child's segments; plus an error-path child leak.
@@ -238,3 +241,10 @@ Common theme: the child-Footer ref-count model is asymmetric (parent
 AddRef/DecRef ignore ChildFooters; the two child-footer creation paths
 disagree on initial refs). #3+#4+#8 share that root cause and should be
 fixed together, carefully, as a dedicated pass.
+
+STATUS (2026 spike-2026-refresh): ALL of the above are now fixed --
+#1 (0cf49b5), #2 (e15a8c5), #3/#4/#8 (961eafb), #5/#6 + an entangled
+compaction incarNum defect (3874bed), #7 (4fe153e).  Recurring root cause
+across #3/#4/#7/#8: parent ref-count / release operations (Footer and
+segmentStack) did not recurse into children; the child + Footer levels now
+both release owned child refs recursively.
