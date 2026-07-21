@@ -211,14 +211,22 @@ FLAGGED BY REVIEW (not yet independently reproduced with a test):
      are never released and superseded data files are never deleted after
      compaction (disk grows unbounded); accumulates per persist. Same root
      cause as #3.
-  5. store.Persist(nil, CompactionForce) (idle/full compaction with
-     higher==nil) rebuilds a footer with NO ChildFooters -> drops all child
-     collections. Reachable via the exported API; not hit by the normal
-     collection persister (always passes a non-nil higher).
-  6. Partial/leveled compaction applies the top-level splicePoint index to
-     child footers (which have independent segment counts) -> out-of-range
-     panic or mis-split child data when a child has fewer segments than the
-     top level (MB-29664-adjacent).
+  5. [FIXED 3874bed] store.Persist(nil, CompactionForce) (idle/full
+     compaction with higher==nil) rebuilt a footer from footer.ss (which
+     carries no child segStacks) -> dropped all child collections. Fixed
+     via Footer.ssWithChildren(). Reachable via the exported API; not hit
+     by the normal collection persister (always passes a non-nil higher).
+  6. [FIXED 3874bed] Partial/leveled compaction applied the top-level
+     splicePoint index to child footers (which have independent, usually
+     smaller segment counts) -> out-of-range panic or mis-split
+     (MB-29664-adjacent). Fixed: children are always fully compacted
+     (splicePoint 0) in mergeSegStacks/spliceFooter. Also fixed an
+     entangled incarNum defect -- mergeSegStacks compared the child
+     footer's incarNum to the PARENT stack's (always unequal), dropping
+     persisted child segments on EVERY compaction; now child-to-child, and
+     writeSegments preserves incarNum so later compactions don't re-drop.
+     Tests: TestChildStorePersistNilKeepsChildren,
+     TestChildStoreCompactionKeepsAllData, TestChildStorePartialCompaction.
   7. segmentStack.decRef/Close doesn't recurse into childSegStacks -> leaks
      child lower-level (mmap/File) handles once a store is attached; benign
      (GC-reclaimed) for pure in-memory.
