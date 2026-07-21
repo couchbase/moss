@@ -171,7 +171,7 @@ for the historical record and the numbering the write-up references.
 
 CONFIRMED (have failing/pending tests):
 
-  1. Same-batch delete+recreate collides (in-memory).
+  1. [FIXED e072ae0] Same-batch delete+recreate collides (in-memory).
      DelChildCollection(name) and NewChildCollectionBatch(name) both write
      b.childBatches[name] (one slot per name), so within ONE batch only
      the last wins: Del-then-New leaks the prior incarnation's keys
