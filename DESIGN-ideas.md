@@ -156,6 +156,19 @@ survival, iteration, and compaction survival were all verified CORRECT
 and are covered by passing tests.  The bugs below are pre-existing (not
 introduced by the spike-2026 work).
 
+FIXED (commit 961eafb, "ref-count fix cluster") -- items 3, 4, and 8
+below shared the asymmetric child-Footer ref-count model and were fixed
+together in a dedicated pass: Footer.DecRef now recurses into ChildFooters
+(item 4 leak), ScanFooter initChildRefs()'s reopened child footers to
+refs=1 (item 3 read-after-reopen data loss), and revertToSnapshot
+preserves child incarNum (item 8). Because DecRef now writes
+f.ChildFooters at end-of-life, ChildCollectionSnapshot / ChildCollectionNames
+were changed to take f.m -- the formerly lockless map reads were only
+safe while the field was immutable, and -race flagged the write/read data
+race. Regression tests: TestChildFooterCloseReleasesChildren,
+TestChildFooterReadTwice.  Items 3/4/8 are kept below (tagged [FIXED])
+for the historical record and the numbering the write-up references.
+
 CONFIRMED (have failing/pending tests):
 
   1. Same-batch delete+recreate collides (in-memory).
@@ -178,7 +191,7 @@ CONFIRMED (have failing/pending tests):
      transition -- so the real fix must also track child ops through
      persist/clean, not just count them. Test: TestChildDirtyAccountingPending.
 
-  3. Raw Footer child read-after-reopen loses data.
+  3. [FIXED 961eafb] Raw Footer child read-after-reopen loses data.
      Child Footers loaded from disk are JSON-unmarshaled with refs==0 (vs
      refs=1 on the fresh-persist path), and Footer.DecRef/AddRef never
      recurse into ChildFooters. Via the raw *Store/*Footer API, the first
@@ -189,7 +202,7 @@ CONFIRMED (have failing/pending tests):
 
 FLAGGED BY REVIEW (not yet independently reproduced with a test):
 
-  4. Leak: because Footer.AddRef/DecRef don't recurse into ChildFooters
+  4. [FIXED 961eafb] Leak: because Footer.AddRef/DecRef don't recurse into ChildFooters
      (and doLoadSegments AddRef's each child sloc), child mmaps/FileRefs
      are never released and superseded data files are never deleted after
      compaction (disk grows unbounded); accumulates per persist. Same root
@@ -205,7 +218,7 @@ FLAGGED BY REVIEW (not yet independently reproduced with a test):
   7. segmentStack.decRef/Close doesn't recurse into childSegStacks -> leaks
      child lower-level (mmap/File) handles once a store is attached; benign
      (GC-reclaimed) for pure in-memory.
-  8. store_revert.go builds reverted child footers with incarNum==0, so a
+  8. [FIXED 961eafb] store_revert.go builds reverted child footers with incarNum==0, so a
      later buildNewFooter/mergeSegStacks incarNum comparison spuriously
      drops the reverted child's segments; plus an error-path child leak.
 
