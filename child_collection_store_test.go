@@ -145,6 +145,46 @@ func TestChildStoreDeleteRecreateNoStale(t *testing.T) {
 	}
 }
 
+// TestChildStoreSameBatchDelRecreate: a same-batch delete+recreate of a
+// child (the fixed collision bug) must not resurrect the prior
+// incarnation's keys after persist+reopen.
+func TestChildStoreSameBatchDelRecreate(t *testing.T) {
+	dir := t.TempDir()
+
+	store, m := ccOpenStore(t, dir, CompactionAllow)
+	// Top-level markers keep waitForPersistence reliable (see
+	// TestChildDirtyAccountingPending).
+	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("marker"), []byte("1"))
+		cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
+		_ = cb.Set([]byte("old"), []byte("1"))
+	})
+	waitForPersistence(m)
+	// Same batch: wipe c then repopulate it.
+	ccExec(t, m, func(b Batch) {
+		_ = b.Set([]byte("marker"), []byte("2"))
+		_ = b.DelChildCollection("c")
+		cb, _ := b.NewChildCollectionBatch("c", BatchOptions{})
+		_ = cb.Set([]byte("new"), []byte("2"))
+	})
+	waitForPersistence(m)
+	m.Close()
+	store.Close()
+
+	store2, m2 := ccOpenStore(t, dir, CompactionAllow)
+	defer store2.Close()
+	defer m2.Close()
+
+	ss, _ := m2.Snapshot()
+	defer ss.Close()
+	if v, has := ccChildGet(t, ss, "c", "new"); !has || string(v) != "2" {
+		t.Fatalf("after reopen same-batch recreate new = %q (has=%v), want 2", v, has)
+	}
+	if v, _ := ccChildGet(t, ss, "c", "old"); v != nil {
+		t.Fatalf("after reopen same-batch recreate leaked stale old = %q, want nil", v)
+	}
+}
+
 // TestChildStoreCompaction: children survive a forced full compaction.
 func TestChildStoreCompaction(t *testing.T) {
 	dir := t.TempDir()

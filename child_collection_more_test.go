@@ -302,30 +302,77 @@ func TestChildDelNonexistentNoCrash(t *testing.T) {
 // They assert the CORRECT behavior and are t.Skip'd; remove the Skip
 // once the bug is fixed.  See DESIGN-ideas.md "Child collection bugs".
 
-// KNOWN BUG: a delete + recreate of the same child in ONE batch collide
-// in the batch's childBatches map (one slot per name), so the delete is
-// lost and the recreated child merges onto the prior incarnation's data
-// -> stale keys leak.  (Cross-batch delete+recreate works correctly.)
-func TestChildSameBatchDelRecreatePending(t *testing.T) {
-	t.Skip("KNOWN BUG: same-batch DelChildCollection + NewChildCollectionBatch collide; stale data leaks")
+// TestChildSameBatchDelRecreate regresses a fixed bug: a delete +
+// recreate of the same child in ONE batch used to collide in the batch's
+// childBatches map (one slot per name), losing the delete so the
+// recreated child merged onto the prior incarnation's data (stale leak).
+// NewChildCollectionBatch now flags the recreate (replacesPriorIncarnation)
+// so buildStackDirtyTop drops the prior incarnation and starts fresh,
+// exactly as a cross-batch delete+recreate does.
+func TestChildSameBatchDelRecreate(t *testing.T) {
+	for _, mergeBetween := range []bool{false, true} {
+		name := "noMerge"
+		if mergeBetween {
+			name = "mergeAll"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := ccNewColl(t)
+			defer m.Close()
+			mc := m.(*collection)
 
+			// Populate A in its own batch first.
+			ccExec(t, m, func(b Batch) {
+				cb, _ := b.NewChildCollectionBatch("A", BatchOptions{})
+				_ = cb.Set([]byte("old"), []byte("1"))
+			})
+			if mergeBetween {
+				mc.NotifyMerger("mergeAll", true)
+			}
+
+			// Same batch: wipe A, then repopulate it.
+			ccExec(t, m, func(b Batch) {
+				_ = b.DelChildCollection("A") // intent: wipe A ...
+				cb, _ := b.NewChildCollectionBatch("A", BatchOptions{})
+				_ = cb.Set([]byte("new"), []byte("2")) // ... then repopulate.
+			})
+			if mergeBetween {
+				mc.NotifyMerger("mergeAll", true)
+			}
+
+			ss, _ := m.Snapshot()
+			defer ss.Close()
+			if v, has := ccChildGet(t, ss, "A", "new"); !has || string(v) != "2" {
+				t.Fatalf("same-batch wipe+recreate new = %q (has=%v), want 2", v, has)
+			}
+			if v, _ := ccChildGet(t, ss, "A", "old"); v != nil {
+				t.Fatalf("same-batch wipe+recreate leaked stale old = %q, want nil", v)
+			}
+		})
+	}
+}
+
+// TestChildSameBatchDelRecreateNewThenDel: within one batch, creating a
+// child and then deleting it leaves the child gone (delete wins).
+func TestChildSameBatchDelRecreateNewThenDel(t *testing.T) {
 	m := ccNewColl(t)
 	defer m.Close()
 
+	// Pre-existing A.
 	ccExec(t, m, func(b Batch) {
 		cb, _ := b.NewChildCollectionBatch("A", BatchOptions{})
 		_ = cb.Set([]byte("old"), []byte("1"))
 	})
+	// Same batch: recreate A (with new data) then delete it -> gone.
 	ccExec(t, m, func(b Batch) {
-		_ = b.DelChildCollection("A") // intent: wipe A ...
 		cb, _ := b.NewChildCollectionBatch("A", BatchOptions{})
-		_ = cb.Set([]byte("new"), []byte("2")) // ... then repopulate.
+		_ = cb.Set([]byte("new"), []byte("2"))
+		_ = b.DelChildCollection("A")
 	})
 
 	ss, _ := m.Snapshot()
 	defer ss.Close()
-	if v, _ := ccChildGet(t, ss, "A", "old"); v != nil {
-		t.Fatalf("same-batch wipe+recreate leaked stale old = %q, want nil", v)
+	if _, has := ccChildGet(t, ss, "A", "new"); has {
+		t.Fatal("same-batch new-then-del: child A should be gone")
 	}
 }
 

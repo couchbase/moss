@@ -497,6 +497,17 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 			if len(m.childCollections) == 0 {
 				m.childCollections = make(map[string]*collection)
 			}
+
+			// Consume the one-shot same-batch delete+recreate signal.  On
+			// a reincarnation we drop the prior incarnation here so the
+			// block below sees !exists, bumps the incarNum, and starts
+			// fresh -- the bumped incarNum then drops the old segments at
+			// every level, exactly as a cross-batch delete+recreate does.
+			reincarnate := cBatch.consumeReplacesPriorIncarnation()
+			if reincarnate {
+				delete(m.childCollections, cName)
+			}
+
 			childCollection, exists := m.childCollections[cName]
 			if !exists { // Child collection being created for first time.
 				m.highestIncarNum++
@@ -513,8 +524,11 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				rv.childSegStacks = make(map[string]*segmentStack)
 			}
 			var prevChildSegStack *segmentStack
-			if curStackTop != nil && len(curStackTop.childSegStacks) > 0 {
+			if !reincarnate &&
+				curStackTop != nil && len(curStackTop.childSegStacks) > 0 {
 				// child2 from existing stackDirtyTop in diagram above.
+				// (Skipped on a same-batch delete+recreate: the prior
+				// incarnation's dirty segments must not carry over.)
 				prevChildSegStack = curStackTop.childSegStacks[cName]
 			}
 

@@ -889,6 +889,18 @@ type batch struct {
 	// childBatches track the segments of child collections indexed by their
 	// unique collection names.
 	childBatches map[string]*batch
+
+	// replacesPriorIncarnation is a one-shot signal, set when this (child)
+	// batch was created via NewChildCollectionBatch over a same-batch
+	// DelChildCollection of the same name (a delete+recreate within one
+	// batch).  Because the client addresses children by NAME and
+	// childBatches has one slot per name, that Del+New pair collapses into
+	// a single slot and the delete would otherwise be lost.  This bit
+	// preserves it: buildStackDirtyTop consumes the signal (see
+	// consumeReplacesPriorIncarnation) and mints a fresh incarNum for the
+	// child, exactly as a cross-batch delete+recreate does -- the bumped
+	// incarNum then drops the prior incarnation's segments at every level.
+	replacesPriorIncarnation bool
 }
 
 // deletedChildBatchMarker conveys a delete request from
@@ -919,6 +931,16 @@ func (b *batch) NewChildCollectionBatch(collectionName string,
 	if b.childBatches == nil { // First creation of child batch.
 		b.childBatches = make(map[string]*batch)
 	}
+
+	// A same-batch DelChildCollection(name) followed by
+	// NewChildCollectionBatch(name) collides on this single map slot.  The
+	// new batch wins, but we remember (via the flag) that a delete
+	// preceded it so buildStackDirtyTop drops the prior incarnation rather
+	// than merging the new keys onto the old (stale-leak) ones.
+	if b.childBatches[collectionName] == deletedChildBatchMarker {
+		childBatch.replacesPriorIncarnation = true
+	}
+
 	b.childBatches[collectionName] = childBatch
 
 	return childBatch, err
@@ -937,6 +959,15 @@ func (b *batch) DelChildCollection(collectionName string) error {
 	b.childBatches[collectionName] = deletedChildBatchMarker
 
 	return nil
+}
+
+// consumeReplacesPriorIncarnation reports whether this child batch was
+// created via a same-batch delete+recreate (see the field doc) and
+// clears the one-shot signal so a single build pass observes it once.
+func (b *batch) consumeReplacesPriorIncarnation() bool {
+	rv := b.replacesPriorIncarnation
+	b.replacesPriorIncarnation = false
+	return rv
 }
 
 func (b *batch) readyDeferredSort() {
