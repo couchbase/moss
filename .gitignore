@@ -1,8 +1,10 @@
 .*~
 #*
-*.tmp
-*.out
 *-fuzz.zip
-workdir
-*.test
+*.out
 *.prof
+*.test
+*.tmp
+workdir
+/tmp/
+/moss-test-data/
