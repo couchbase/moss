@@ -143,3 +143,73 @@ Future ideas (unmeasured)
     during a Get, not just at method entry.
   * See also IDEAS.md for older, longer-horizon ideas (incremental
     compaction, checksums, columnar side-structures, compression, etc.).
+
+
+Child collection bugs (found 2026)
+==================================
+
+An adversarial test pass over the child-collections feature (see
+child_collection_more_test.go, child_collection_store_test.go) plus two
+code reviews found the following.  The in-memory and persisted
+delete/recreate-across-batches paths, isolation, nesting, untouched-child
+survival, iteration, and compaction survival were all verified CORRECT
+and are covered by passing tests.  The bugs below are pre-existing (not
+introduced by the spike-2026 work).
+
+CONFIRMED (have failing/pending tests):
+
+  1. Same-batch delete+recreate collides (in-memory).
+     DelChildCollection(name) and NewChildCollectionBatch(name) both write
+     b.childBatches[name] (one slot per name), so within ONE batch only
+     the last wins: Del-then-New leaks the prior incarnation's keys
+     (delete lost, new batch merges onto old data, incarNum not bumped);
+     New-then-Del silently loses the new data. Cross-batch delete+recreate
+     is fine. Fix idea: represent "deleted-then-recreated" distinctly
+     (e.g. mark the recreated child batch as replacing, so buildStackDirtyTop
+     bumps incarNum and starts fresh). Test: TestChildSameBatchDelRecreatePending.
+
+  2. Child-collection ops not counted in dirty accounting.
+     segmentStack.Stats() ignores childSegStacks, so a child-only write
+     leaves CurDirtyOps/CurDirtyBytes at 0. This breaks waitForPersistence
+     (returns early) and the MaxDirtyOps/MaxDirtyKeyValBytes back-pressure
+     (a child-heavy write workload never blocks -> unbounded dirty memory).
+     NOTE: a naive fix (recurse in Stats) HANGS waitForPersistence, because
+     child dirty state is not reconciled with the persister's clean
+     transition -- so the real fix must also track child ops through
+     persist/clean, not just count them. Test: TestChildDirtyAccountingPending.
+
+  3. Raw Footer child read-after-reopen loses data.
+     Child Footers loaded from disk are JSON-unmarshaled with refs==0 (vs
+     refs=1 on the fresh-persist path), and Footer.DecRef/AddRef never
+     recurse into ChildFooters. Via the raw *Store/*Footer API, the first
+     ChildCollectionSnapshot+Close drives a reloaded child footer to 0 and
+     frees it (ss=nil, mmap unmapped); a second read returns empty (silent
+     data loss, potential use-after-unmap). The Collection API path is
+     unaffected (verified). Test: TestChildFooterReadTwicePending.
+
+FLAGGED BY REVIEW (not yet independently reproduced with a test):
+
+  4. Leak: because Footer.AddRef/DecRef don't recurse into ChildFooters
+     (and doLoadSegments AddRef's each child sloc), child mmaps/FileRefs
+     are never released and superseded data files are never deleted after
+     compaction (disk grows unbounded); accumulates per persist. Same root
+     cause as #3.
+  5. store.Persist(nil, CompactionForce) (idle/full compaction with
+     higher==nil) rebuilds a footer with NO ChildFooters -> drops all child
+     collections. Reachable via the exported API; not hit by the normal
+     collection persister (always passes a non-nil higher).
+  6. Partial/leveled compaction applies the top-level splicePoint index to
+     child footers (which have independent segment counts) -> out-of-range
+     panic or mis-split child data when a child has fewer segments than the
+     top level (MB-29664-adjacent).
+  7. segmentStack.decRef/Close doesn't recurse into childSegStacks -> leaks
+     child lower-level (mmap/File) handles once a store is attached; benign
+     (GC-reclaimed) for pure in-memory.
+  8. store_revert.go builds reverted child footers with incarNum==0, so a
+     later buildNewFooter/mergeSegStacks incarNum comparison spuriously
+     drops the reverted child's segments; plus an error-path child leak.
+
+Common theme: the child-Footer ref-count model is asymmetric (parent
+AddRef/DecRef ignore ChildFooters; the two child-footer creation paths
+disagree on initial refs). #3+#4+#8 share that root cause and should be
+fixed together, carefully, as a dedicated pass.
