@@ -103,21 +103,17 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 	// stack, dropping any deleted collections present in base but not
 	// in me.
 
-	for cName, childSegStack := range ss.childSegStacks {
+	for cName, childSegStack := range ss.childStacks() {
 		var baseSegStack *segmentStack
 		if base != nil {
-			var exists bool
-			if base.childSegStacks != nil {
-				baseSegStack, exists = base.childSegStacks[cName]
-			}
-			if exists {
-				if baseSegStack.incarNum != childSegStack.incarNum {
-					// The base segment stack carries a child collection
-					// which was subsequently recreated.
-					baseSegStack = nil
-					// The dirtyBase's old segmentStacks will be closed by
-					// the collection merger after successful merge.
-				}
+			baseSegStack = base.childStack(cName)
+			if baseSegStack != nil &&
+				baseSegStack.incarNum != childSegStack.incarNum {
+				// The base segment stack carries a child collection
+				// which was subsequently recreated.
+				baseSegStack = nil
+				// The dirtyBase's old segmentStacks will be closed by
+				// the collection merger after successful merge.
 			}
 		}
 

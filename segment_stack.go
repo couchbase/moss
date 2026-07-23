@@ -85,6 +85,37 @@ func (ss *segmentStack) Close() error {
 
 // ------------------------------------------------------
 
+// childStacks returns a shallow copy of ss's child segment stacks, taken
+// under ss.m.  decRef() nils ss.childSegStacks at end-of-life under the same
+// lock, so every reader must go through this (or childStack) rather than
+// ranging the map directly -- a lockless range would data-race that write.
+// Returns nil (no allocation) for the common case of no child collections.
+// The returned map is a private copy the caller may range without the lock;
+// the child stacks it references stay valid as long as the caller holds the
+// parent alive (a parent owns a ref on each child).
+func (ss *segmentStack) childStacks() map[string]*segmentStack {
+	ss.m.Lock()
+	defer ss.m.Unlock()
+	if len(ss.childSegStacks) == 0 {
+		return nil
+	}
+	rv := make(map[string]*segmentStack, len(ss.childSegStacks))
+	for name, childSegStack := range ss.childSegStacks {
+		rv[name] = childSegStack
+	}
+	return rv
+}
+
+// childStack returns the child segment stack for the given name (nil if
+// none), reading ss.childSegStacks under ss.m -- see childStacks.
+func (ss *segmentStack) childStack(name string) *segmentStack {
+	ss.m.Lock()
+	defer ss.m.Unlock()
+	return ss.childSegStacks[name]
+}
+
+// ------------------------------------------------------
+
 // Get retrieves a val from a segmentStack.
 func (ss *segmentStack) Get(key []byte, readOptions ReadOptions) ([]byte, error) {
 	return ss.GetWithContext(context.Background(), key, readOptions)
@@ -310,18 +341,17 @@ func (ss *segmentStack) statsTo(rv *SegmentStackStats) {
 		nk, nv := seg.NumKeyValBytes()
 		rv.CurBytes += nk + nv
 	}
-	for _, childSegStack := range ss.childSegStacks {
+	for _, childSegStack := range ss.childStacks() {
 		childSegStack.statsTo(rv)
 	}
 }
 
 // ChildCollectionNames returns an array of child collection name strings.
 func (ss *segmentStack) ChildCollectionNames() ([]string, error) {
-	var childCollections = make([]string, len(ss.childSegStacks))
-	idx := 0
-	for name := range ss.childSegStacks {
-		childCollections[idx] = name
-		idx++
+	childStacks := ss.childStacks()
+	childCollections := make([]string, 0, len(childStacks))
+	for name := range childStacks {
+		childCollections = append(childCollections, name)
 	}
 	return childCollections, nil
 }
@@ -330,11 +360,8 @@ func (ss *segmentStack) ChildCollectionNames() ([]string, error) {
 // collection by its name.
 func (ss *segmentStack) ChildCollectionSnapshot(childCollectionName string) (
 	Snapshot, error) {
-	if ss.childSegStacks == nil {
-		return nil, nil
-	}
-	childSegStack, exists := ss.childSegStacks[childCollectionName]
-	if !exists {
+	childSegStack := ss.childStack(childCollectionName)
+	if childSegStack == nil {
 		return nil, nil
 	}
 	childSegStack.addRef()
@@ -345,7 +372,7 @@ func (ss *segmentStack) ChildCollectionSnapshot(childCollectionName string) (
 // are sorted from 0 to end.
 func (ss *segmentStack) ensureFullySorted() {
 	ss.ensureSorted(0, len(ss.a)-1)
-	for _, childSnapshot := range ss.childSegStacks {
+	for _, childSnapshot := range ss.childStacks() {
 		childSnapshot.ensureFullySorted()
 	}
 }
@@ -354,7 +381,7 @@ func (ss *segmentStack) isEmpty() bool {
 	if len(ss.a) > 0 {
 		return false
 	}
-	for _, childSegStack := range ss.childSegStacks {
+	for _, childSegStack := range ss.childStacks() {
 		if !childSegStack.isEmpty() {
 			return false
 		}

@@ -523,10 +523,9 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 				rv.childSegStacks = make(map[string]*segmentStack)
 			}
 			var prevChildSegStack *segmentStack
-			if !reincarnate &&
-				curStackTop != nil && len(curStackTop.childSegStacks) > 0 {
+			if !reincarnate && curStackTop != nil {
 				// child2 from existing stackDirtyTop in diagram above.
-				prevChildSegStack = curStackTop.childSegStacks[cName]
+				prevChildSegStack = curStackTop.childStack(cName)
 			}
 
 			// Recursively merge & build the child collection batches.
@@ -541,7 +540,7 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 
 	// There could be child collections in existing curStackTop that
 	// were not in the batch, so copy over those recursively too.
-	for cName, childStack := range curStackTop.childSegStacks {
+	for cName, childSegStack := range curStackTop.childStacks() {
 		if len(rv.childSegStacks) == 0 {
 			rv.childSegStacks = make(map[string]*segmentStack)
 		}
@@ -555,13 +554,13 @@ func (m *collection) buildStackDirtyTop(b *batch, curStackTop *segmentStack) (
 		childCollection, exists := m.childCollections[cName]
 		if !exists || // This child collection was deleted OR
 			// it was quickly recreated in the incoming batch.
-			childCollection.incarNum != childStack.incarNum {
+			childCollection.incarNum != childSegStack.incarNum {
 			continue // Do not copy over to new stackDirtyTop.
 		}
 
 		// Case of child3 from existing curStackTop in diagram above.
 		rv.childSegStacks[cName] =
-			childCollection.buildStackDirtyTop(nil, childStack)
+			childCollection.buildStackDirtyTop(nil, childSegStack)
 	}
 
 	return rv
@@ -848,23 +847,13 @@ func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 
 	dst.a = append(dst.a, src.a...)
 
-	// Read src's child stacks under src.m: segmentStack.decRef() nils
-	// childSegStacks at end-of-life under that same lock, so a lockless range
-	// here would data-race that write.  (This is the appendChildStacks
-	// sibling of the lockless child-map read that was fixed for
-	// ChildCollectionSnapshot / ChildCollectionNames.)  Snapshot the entries
-	// under the lock, then release before recursing -- the src stacks read
-	// here are installed collection stacks held live for this snapshot, and
-	// each holds a ref on its children, so the captured child pointers stay
-	// valid for the recursion below.
-	src.m.Lock()
-	srcChildStacks := make(map[string]*segmentStack, len(src.childSegStacks))
-	for cName, srcChildStack := range src.childSegStacks {
-		srcChildStacks[cName] = srcChildStack
-	}
-	src.m.Unlock()
-
-	for cName, srcChildStack := range srcChildStacks {
+	// Read src's child stacks under src.m (via childStacks) rather than
+	// ranging the map directly: segmentStack.decRef() nils childSegStacks at
+	// end-of-life under that same lock, so a lockless range would data-race
+	// that write.  The src stacks read here are installed collection stacks
+	// held live for this snapshot, and each holds a ref on its children, so
+	// the captured child pointers stay valid for the recursion below.
+	for cName, srcChildStack := range src.childStacks() {
 		childCollection, exists := m.childCollections[cName]
 		if !exists || // This child collection was dropped recently, OR
 			// this child collection was recreated quickly.
