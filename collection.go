@@ -848,7 +848,23 @@ func (m *collection) appendChildStacks(dst, src *segmentStack) *segmentStack {
 
 	dst.a = append(dst.a, src.a...)
 
+	// Read src's child stacks under src.m: segmentStack.decRef() nils
+	// childSegStacks at end-of-life under that same lock, so a lockless range
+	// here would data-race that write.  (This is the appendChildStacks
+	// sibling of the lockless child-map read that was fixed for
+	// ChildCollectionSnapshot / ChildCollectionNames.)  Snapshot the entries
+	// under the lock, then release before recursing -- the src stacks read
+	// here are installed collection stacks held live for this snapshot, and
+	// each holds a ref on its children, so the captured child pointers stay
+	// valid for the recursion below.
+	src.m.Lock()
+	srcChildStacks := make(map[string]*segmentStack, len(src.childSegStacks))
 	for cName, srcChildStack := range src.childSegStacks {
+		srcChildStacks[cName] = srcChildStack
+	}
+	src.m.Unlock()
+
+	for cName, srcChildStack := range srcChildStacks {
 		childCollection, exists := m.childCollections[cName]
 		if !exists || // This child collection was dropped recently, OR
 			// this child collection was recreated quickly.
