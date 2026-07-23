@@ -66,11 +66,14 @@ func (iter *iteratorSingle) Next() error {
 		}
 
 		iter.op, iter.k, iter.v = iter.sc.Current()
-		if iter.op != OperationDel ||
+		if !isTombstone(iter.op) ||
 			iter.iteratorOptions.IncludeDeletions {
 			return nil
 		}
 		// Otherwise this is a deletion we're skipping; continue looping.
+		// (A single segment is one stack level, so a range tombstone here
+		// never shadows a sibling key -- a same-level point op wins -- and
+		// only the tombstone rows themselves are skipped.)
 	}
 }
 
@@ -107,7 +110,7 @@ func (iter *iteratorSingle) SeekTo(seekToKey []byte) error {
 
 	iter.op, iter.k, iter.v = iter.sc.Current()
 	if !iter.iteratorOptions.IncludeDeletions &&
-		iter.op == OperationDel {
+		isTombstone(iter.op) {
 		return iter.Next()
 	}
 
@@ -123,7 +126,7 @@ func (iter *iteratorSingle) Current() ([]byte, []byte, error) {
 		return nil, nil, ErrIteratorDone
 	}
 
-	if iter.op == OperationDel {
+	if isTombstone(iter.op) {
 		return nil, nil, nil
 	}
 

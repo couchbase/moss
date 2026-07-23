@@ -182,6 +182,13 @@ type SegmentLoc struct {
 	TotKeyByte uint64
 	TotValByte uint64
 
+	// TotOpsDelRange counts OperationDelRange (range tombstone) entries in
+	// the segment.  Additive field: absent (zero) in footers written by
+	// older moss versions, so reading old files stays back-compatible; a
+	// nonzero value tells loadBasicSegment to rebuild the range-delete
+	// coverage side-list.
+	TotOpsDelRange uint64
+
 	mref *mmapRef // Immutable and ephemeral / non-persisted.
 }
 

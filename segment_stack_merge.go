@@ -80,8 +80,10 @@ func (ss *segmentStack) merge(mergeAll bool, base *segmentStack) (
 
 	// mergeInto writes entries in key order, so the merged segment is
 	// already sorted; build its sparse key index (no-op if small) to
-	// speed point lookups against this (often large) merged segment.
+	// speed point lookups against this (often large) merged segment, and
+	// collect any range-delete tombstones into the coverage side-list.
 	mergedSegment.buildInMemIndex()
+	mergedSegment.buildRangeDels()
 
 	a := make([]Segment, 0, newTopLevel+1)
 	a = append(a, ss.a[0:newTopLevel]...)
@@ -179,10 +181,15 @@ OUTER:
 			return err
 		}
 
-		if optimizeTail && len(iter.cursors) == 1 {
+		if optimizeTail && len(iter.cursors) == 1 && !iter.hasRangeDels {
 			// When only 1 cursor remains, copy the remains of the
 			// last segment more directly instead of Next()'ing
 			// through the iterator.
+			//
+			// Disabled when range tombstones are present: a now-exhausted
+			// higher segment's range tombstone can still logically cover
+			// keys in this last segment's tail, so those entries must go
+			// through the coverage-aware Next() path rather than a raw copy.
 			cursor := iter.cursors[0]
 
 			var op uint64

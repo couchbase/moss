@@ -168,12 +168,13 @@ below is measured yet; they are recorded here as candidate spikes.
 
 Highest-leverage (fit moss's LSM grain):
 
-  * Range delete (DeleteRange tombstone). Reindexing a field or dropping a
-    term's postings today means scan-then-Del of every key -- O(n) writes.
-    A first-class range tombstone that is O(1) to write and resolved during
-    merge/read (a'la RocksDB) is the biggest index-maintenance win. Fits as
-    a new operation type alongside OperationSet/Del/Merge (api.go). One
-    immutable tombstone entry instead of thousands of point deletes.
+  * Range delete (DeleteRange tombstone) -- SPIKED, see findings below.
+    Reindexing a field or dropping a term's postings today means
+    scan-then-Del of every key -- O(n) writes. A first-class range tombstone
+    that is O(1) to write and resolved during merge/read (a'la RocksDB) is
+    the biggest index-maintenance win. Fits as a new operation type alongside
+    OperationSet/Del/Merge (api.go). One immutable tombstone entry instead of
+    thousands of point deletes.
   * Approximate range count from the segment index. Planners need "roughly
     how many rows match x BETWEEN a AND b" WITHOUT scanning. The existing
     sampled segmentKeysIndex (segment_index.go) can yield a cheap cardinality
@@ -215,6 +216,107 @@ Suggested first spikes: range-delete tombstones (biggest maintenance win,
 clean LSM fit) and approximate range counts (unlocks a planner, cheap on the
 existing segment index). Merge operators and key-only iteration are close
 behind and comparatively easy.
+
+DeleteRange tombstone -- SHIPPED (graduated from the spike below)
+-----------------------------------------------------------------
+
+The spike (below) was graduated into a real moss feature: Batch.DelRange(
+startKeyInclusive, endKeyExclusive).  Highlights of the implementation, which
+followed the spike's design almost exactly:
+
+  * OperationDelRange = 0x04 (api.go); the tombstone is an inline segment
+    entry keyed by lo with val=hi.  Because moss's whole merge/persist/
+    compact pipeline is (op,key,val)-tuple based, the inline form persists,
+    mmaps, and compacts with NO new file-format region -- only an additive
+    SegmentLoc.TotOpsDelRange counter (zero in old footers, so reads stay
+    back-compatible).  This is simpler than the "new SegmentKind region"
+    guessed under Integration cost below.
+  * A per-segment sorted+coalesced rangeDels side-list (segment.go) is the
+    coverage lookup, built at doSort / merge-finalize / loadBasicSegment,
+    exactly mirroring the sparse segmentKeysIndex pattern.  Point Get filters
+    out DelRange entries; segments with none pay one len==0 branch.
+  * resolveMerge (segment_stack.go) treats a covering tombstone as a nil Del
+    base, checked only after ruling out a same-level point op (point wins).
+  * The iterator (iterator.go/iterator_single.go) skips tombstone rows unless
+    IncludeDeletions, and shadows data rows covered by a higher-level
+    tombstone -- which also does the merge-time space reclaim.  The mergeInto
+    tail-copy optimization is disabled only when range tombstones are present
+    (hasRangeDels), so the common path is unchanged.
+  * Compaction preserve-vs-drop falls straight out of the existing
+    includeDeletes flag: partial compaction keeps tombstones (lower levels
+    remain), full compaction drops them AND reclaims covered entries
+    (TestDelRangeFullCompactionReclaims asserts the persisted segment shrinks
+    to exactly the live-key count with zero tombstones).
+
+Tests: del_range_test.go (in-memory, precedence/revive, in-memory merge,
+merge-operator nil base, bad-range, DeferredSort, segment-level preserve-vs-
+drop, persist+reopen via mmap, full-compaction reclaim, child collections).
+Full suite green; the common (no-DelRange) path is unregressed.
+
+Deferred (unchanged from the plan): per-op ordering for same-batch point-op
+vs range-delete overlap (currently documented undefined); AllocDelRange
+zero-copy variant; reverse-iteration seek-past.
+
+Pre-existing race found while validating (NOT DelRange): `go test -race
+-run TestChild -count=40` reproduces a data race -- collection.appendChildStacks
+(collection.go:851) reads a segmentStack's childSegStacks while the merger's
+segmentStack.decRef (segment_stack.go:65) writes childSegStacks=nil under
+ss.m.  Confirmed identical on the clean tree (commit a154bc0, no DelRange).
+It is the appendChildStacks sibling of the lockless-child-map read that the
+2026 child-collection pass fixed for ChildCollectionSnapshot/Names; that fix
+missed appendChildStacks.  Tracked separately from this feature.
+
+
+DeleteRange tombstone -- SPIKED (benchmark_spike_test.go)
+---------------------------------------------------------
+
+A self-contained prototype (BenchmarkSpikeDelRange, TestSpikeDelRange*)
+models a range tombstone over moss's REAL *segment for the data plane and
+measures it head-to-head against the point-Del status quo. Design that fits
+moss with no common-path regression:
+
+  * Encoding: maskOperation is a 4-bit nibble (segment.go); only Set/Del/
+    Merge (0x01/0x02/0x03) are used, so OperationDelRange = 0x04 is free. A
+    tombstone stores key=lo, val=hi (hi exclusive).
+  * Precedence: resolveMerge (segment_stack.go) already walks the stack
+    newest->oldest and treats a point Del as a nil merge base. A range
+    tombstone behaves identically but matches an INTERVAL, so a covering
+    tombstone shadows a lower Set while a newer Set above it survives
+    (verified by TestSpikeDelRangeCorrect's revive case).
+  * Storage: a small per-segment sorted+coalesced []keyRange beside the kvs
+    array. A segment with zero range tombstones pays one len==0 branch per
+    Get; the point-lookup binary search is untouched. Coverage is O(log R)
+    over the (tiny) range list.
+  * Iteration: a cursor entering a covered span Seek()s straight to hi
+    instead of visiting-and-discarding every deleted entry.
+
+Findings (1M x 24B seq keys, empty values = index-style; drop 200k = 20%;
+M2 Pro):
+
+    metric                         point-Del        range tombstone   win
+    record the drop (maintain)     6.14 ms/op       41 ns/op          ~150000x
+      (scan + build M tombstones)  34 MB, 38 allocs 128 B, 1 alloc
+    delete-segment footprint       8.0 MB (200k)    64 B              ~125000x
+    Get on a dropped key           354 ns           37 ns             ~9.6x
+    Get on a surviving key         604 ns           609 ns            parity
+    full scan of survivors         35.0 ms          7.97 ms           ~4.4x
+
+The surviving-key Get parity is the key safety result: the coverage check
+adds no measurable cost to the common (non-deleted) read path. The dropped-
+key Get and scan wins come from not carrying/visiting M point tombstones;
+the maintenance and space wins are the headline (one entry vs M). The point-
+Del scan baseline is if anything generous -- it does one del-Get per base
+key, fewer ops than moss's real heap merge, which visits both the base key
+AND its tombstone.
+
+Integration cost (not in the spike): a new OperationDelRange SegmentKind
+region so tombstones persist (SegmentLoc gains a range-list offset/len);
+resolveMerge + the iterator gain the coverage check / seek-past; and
+compaction must coalesce adjacent tombstones and DROP a range tombstone once
+it has shadowed everything below it (a tombstone reaching the base level is
+dead). Back-compat is not required for a major version. Verdict: worth
+building -- clean LSM fit, large maintenance/space wins, no common-path
+read regression.
 
 
 Longer-horizon ideas (merged from IDEAS.md)

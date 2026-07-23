@@ -134,6 +134,10 @@ var ErrAborted = errors.New("operation-aborted")
 // ErrSegmentCorrupted is returned upon any segment corruptions.
 var ErrSegmentCorrupted = errors.New("segment-corrupted")
 
+// ErrBadRange is returned when a range operation is given a
+// startKeyInclusive that is not strictly less than its endKeyExclusive.
+var ErrBadRange = errors.New("bad-range")
+
 // A Collection represents an ordered mapping of key-val entries,
 // where a Collection is snapshot'able and atomically updatable.
 type Collection interface {
@@ -371,6 +375,20 @@ type Batch interface {
 	// the key and val may be reused by the caller.
 	Merge(key, val []byte) error
 
+	// DelRange deletes every key in the half-open range
+	// [startKeyInclusive, endKeyExclusive) via a single range tombstone,
+	// instead of one Del() per key -- the efficient way to drop a whole
+	// key range (for example, a secondary-index prefix).  It returns
+	// ErrBadRange unless startKeyInclusive < endKeyExclusive.  DelRange()
+	// copies the key bytes into the Batch, so the caller may reuse them.
+	//
+	// Within a single Batch, a key should not be the target of both a
+	// point operation (Set/Del/Merge) and be interior to a DelRange; the
+	// result of that overlap is undefined (batch operations are an
+	// unordered set with unique keys).  Across batches, a newer point
+	// operation correctly shadows an older range delete and vice-versa.
+	DelRange(startKeyInclusive, endKeyExclusive []byte) error
+
 	// ----------------------------------------------------
 
 	// Alloc provides a slice of bytes "owned" by the Batch, to reduce
@@ -563,6 +581,15 @@ const OperationDel = uint64(0x0200000000000000)
 // OperationMerge merges the new value with the existing value associated with
 // the key, as described by the configured MergeOperator.
 const OperationMerge = uint64(0x0300000000000000)
+
+// OperationDelRange deletes every key in the half-open range
+// [startKeyInclusive, endKeyExclusive) as a single tombstone entry,
+// rather than one deletion per key.  It is encoded as an entry whose key
+// is the startKeyInclusive and whose value is the endKeyExclusive.  A
+// range tombstone shadows any older (lower stack level) entry whose key
+// falls in its range, and is itself shadowed by any newer (higher level)
+// point operation on a covered key.  See Batch.DelRange.
+const OperationDelRange = uint64(0x0400000000000000)
 
 // A MergeOperator may be implemented by applications that wish to
 // optimize their read-compute-write use cases.  Write-heavy counters,

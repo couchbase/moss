@@ -507,14 +507,15 @@ func (s *Store) writeSegments(newSS, base *segmentStack,
 		SegmentLocs: []SegmentLoc{
 			{
 				Kind:       SegmentKindBasic,
-				KvsOffset:  uint64(kvsBegPos),
-				KvsBytes:   uint64(compactWriter.kvsWriter.Offset() - kvsBegPos),
-				BufOffset:  uint64(bufBegPos),
-				BufBytes:   uint64(compactWriter.bufWriter.Offset() - bufBegPos),
-				TotOpsSet:  compactWriter.totOperationSet,
-				TotOpsDel:  compactWriter.totOperationDel,
-				TotKeyByte: compactWriter.totKeyByte,
-				TotValByte: compactWriter.totValByte,
+				KvsOffset:      uint64(kvsBegPos),
+				KvsBytes:       uint64(compactWriter.kvsWriter.Offset() - kvsBegPos),
+				BufOffset:      uint64(bufBegPos),
+				BufBytes:       uint64(compactWriter.bufWriter.Offset() - bufBegPos),
+				TotOpsSet:      compactWriter.totOperationSet,
+				TotOpsDel:      compactWriter.totOperationDel,
+				TotKeyByte:     compactWriter.totKeyByte,
+				TotValByte:     compactWriter.totValByte,
+				TotOpsDelRange: compactWriter.totOperationDelRange,
 			},
 		},
 	}
@@ -557,11 +558,12 @@ type compactWriter struct {
 	// Bytes written since the last Sync().
 	bytesSinceSync int
 
-	totOperationSet   uint64
-	totOperationDel   uint64
-	totOperationMerge uint64
-	totKeyByte        uint64
-	totValByte        uint64
+	totOperationSet      uint64
+	totOperationDel      uint64
+	totOperationMerge    uint64
+	totOperationDelRange uint64
+	totKeyByte           uint64
+	totValByte           uint64
 }
 
 func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
@@ -611,6 +613,8 @@ func (cw *compactWriter) Mutate(operation uint64, key, val []byte) error {
 		cw.totOperationDel++
 	case OperationMerge:
 		cw.totOperationMerge++
+	case OperationDelRange:
+		cw.totOperationDelRange++
 	default:
 	}
 

@@ -38,6 +38,12 @@ type iterator struct {
 	closer io.Closer
 
 	iteratorOptions IteratorOptions
+
+	// hasRangeDels is true when any participating segment carries range
+	// tombstones, so the iterator must apply range-delete coverage; when
+	// false (the common case) the coverage checks and the disabling of the
+	// merge tail-copy optimization are skipped entirely.
+	hasRangeDels bool
 }
 
 // A cursor rerpresents a logical entry position inside a segment in a
@@ -145,6 +151,10 @@ func (ss *segmentStack) startIterator(
 	for ssIndex := minSegmentLevel; ssIndex <= maxSegmentLevel; ssIndex++ {
 		b := ss.a[ssIndex]
 
+		if rd, ok := b.(rangeDeleter); ok && rd.hasRangeDels() {
+			iter.hasRangeDels = true
+		}
+
 		sc, err := b.Cursor(startKeyInclusive, endKeyExclusive)
 		if err != nil {
 			return nil, err
@@ -206,14 +216,49 @@ func (ss *segmentStack) startIterator(
 
 	heap.Init(iter)
 
-	if !iteratorOptions.IncludeDeletions {
-		entryEx, _, _, _ := iter.CurrentEx()
-		if entryEx.Operation == OperationDel {
+	// Advance past a leading entry that must not be surfaced: a deletion
+	// tombstone (point Del or a range tombstone row) when deletions are
+	// excluded, or a data entry shadowed by a newer range tombstone.
+	if len(iter.cursors) > 0 {
+		c := iter.cursors[0]
+		if iter.shouldSkip(c.op, c.k, c.ssIndex) {
 			iter.Next()
 		}
 	}
 
 	return iter, nil
+}
+
+// shouldSkip reports whether the entry (op, key) at stack level ssIndex
+// must not be surfaced by this iterator.
+//
+//   - A tombstone row (point Del or a range-tombstone entry) is surfaced
+//     only when IncludeDeletions is set (normal reads and full compaction
+//     drop tombstones; merges and partial compactions preserve them to
+//     carry the deletion downward).
+//   - A data row (Set/Merge) is skipped when a newer (higher stack level)
+//     range tombstone covers its key -- the range-delete shadowing, applied
+//     for reads AND during merge/compaction (where it reclaims space).
+func (iter *iterator) shouldSkip(op uint64, key []byte, ssIndex int) bool {
+	switch op {
+	case OperationDel, OperationDelRange:
+		return !iter.iteratorOptions.IncludeDeletions
+	default:
+		return iter.hasRangeDels && iter.coveredByHigher(key, ssIndex)
+	}
+}
+
+// coveredByHigher reports whether any segment strictly above ssIndex (a
+// newer stack level within this iterator's segment range) has a range
+// tombstone covering key.
+func (iter *iterator) coveredByHigher(key []byte, ssIndex int) bool {
+	maxLevel := iter.iteratorOptions.MaxSegmentHeight - 1
+	for i := ssIndex + 1; i <= maxLevel; i++ {
+		if rd, ok := iter.ss.a[i].(rangeDeleter); ok && rd.covers(key) {
+			return true
+		}
+	}
+	return false
 }
 
 // Close must be invoked to release resources.
@@ -287,9 +332,9 @@ func (iter *iterator) Next() error {
 		}
 
 		if !iteratorBytesEqual(iter.cursors[0].k, lastK) {
-			if !iter.iteratorOptions.IncludeDeletions &&
-				iter.cursors[0].op == OperationDel {
-				lastK = iter.cursors[0].k
+			c := iter.cursors[0]
+			if iter.shouldSkip(c.op, c.k, c.ssIndex) {
+				lastK = c.k
 				continue
 			}
 
@@ -298,6 +343,13 @@ func (iter *iterator) Next() error {
 	}
 
 	return ErrIteratorDone
+}
+
+// isTombstone reports whether op is a deletion operation -- a point Del or
+// a range-delete tombstone -- both of which are surfaced by an iterator
+// only when IncludeDeletions is set.
+func isTombstone(op uint64) bool {
+	return op == OperationDel || op == OperationDelRange
 }
 
 func iteratorBytesEqual(a, b []byte) bool {
@@ -393,7 +445,7 @@ func (iter *iterator) Current() ([]byte, []byte, error) {
 	}
 
 	op := entryEx.Operation
-	if op == OperationDel {
+	if op == OperationDel || op == OperationDelRange {
 		return nil, nil, nil
 	}
 

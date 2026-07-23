@@ -666,3 +666,338 @@ func BenchmarkSpikeSearch(b *testing.B) {
 		b.Run(dist+"/eytzinger", func(b *testing.B) { benchSpikeGet(b, dist, eyt.Get, keys) })
 	}
 }
+
+// ============================================================================
+// DeleteRange tombstone SPIKE (not used by moss core).
+//
+// Motivation (secondary-index use case, see DESIGN-ideas.md): dropping an
+// index or reindexing a field means deleting a whole contiguous key range,
+// e.g. every (fieldValue, docId) posting under one prefix.  Today that costs
+// one point Del per key: a full range scan to enumerate the keys, then M
+// tombstones that bloat the newest segment and are re-visited on every read
+// and compaction until they finally shadow their M targets away.
+//
+// A DeleteRange tombstone encodes the whole [lo, hi) interval as ONE entry.
+// It fits moss's grain with no change to the common read path:
+//
+//   * Encoding: maskOperation is a 4-bit nibble (segment.go); only
+//     Set/Del/Merge (0x01/0x02/0x03) are used, so OperationDelRange = 0x04
+//     is free.  A tombstone stores key=lo, val=hi (hi exclusive).
+//   * Precedence: resolveMerge (segment_stack.go) already walks the stack
+//     newest->oldest and treats a point Del as a nil merge base.  A range
+//     tombstone behaves identically -- it just matches an INTERVAL rather
+//     than one key -- so a covering tombstone at a higher level shadows a
+//     lower Set, while a newer Set above the tombstone survives.
+//   * Storage: kept as a small per-segment sorted+coalesced []keyRange
+//     alongside the kvs array, so a segment with zero range tombstones pays
+//     one len==0 branch per Get and the point-lookup binary search is
+//     untouched.  Coverage is an O(log R) search over the (tiny) range list.
+//   * Iteration (iterator.go): a cursor entering a covered span Seek()s
+//     straight to hi instead of visiting -- and discarding -- every deleted
+//     entry, turning an O(M) scan tax into O(log).
+//
+// This spike models exactly that over moss's REAL *segment for the data
+// plane, and measures the three claimed wins (maintenance write cost, read
+// cost, scan cost) head-to-head against the point-Del status quo on the
+// same data.  The point-Del scan baseline below is if anything generous: it
+// checks one del-segment per base key, fewer ops than moss's real heap
+// merge, which visits both the base key AND its tombstone.
+
+// (keyRange is now defined in segment.go, the graduated implementation.)
+
+// rdSegment is a segment augmented with a DeleteRange tombstone list.
+// rangeDels is kept sorted by lo and coalesced (non-overlapping), which is
+// what a real merge/compaction would maintain.
+type rdSegment struct {
+	s         *segment
+	rangeDels []keyRange
+}
+
+// covers reports whether any range tombstone in this segment covers key,
+// via an O(log R) search over the sorted, coalesced range list.
+func (rs *rdSegment) covers(key []byte) bool {
+	rd := rs.rangeDels
+	if len(rd) == 0 { // The common case: one cheap branch, no search.
+		return false
+	}
+	// Rightmost range whose lo <= key.
+	i := sort.Search(len(rd), func(i int) bool {
+		return bytes.Compare(rd[i].lo, key) > 0
+	})
+	if i == 0 {
+		return false
+	}
+	return bytes.Compare(key, rd[i-1].hi) < 0
+}
+
+// coveringRange returns the tombstone covering key (for the scan skip).
+func coveringRange(rd []keyRange, key []byte) (keyRange, bool) {
+	if len(rd) == 0 {
+		return keyRange{}, false
+	}
+	i := sort.Search(len(rd), func(i int) bool {
+		return bytes.Compare(rd[i].lo, key) > 0
+	})
+	if i == 0 {
+		return keyRange{}, false
+	}
+	c := rd[i-1]
+	if bytes.Compare(key, c.hi) < 0 {
+		return c, true
+	}
+	return keyRange{}, false
+}
+
+// rdGet resolves a point Get over a stack (newest segment last), applying
+// range-tombstone precedence: at each level a point op wins immediately;
+// otherwise a covering range tombstone deletes the key (a nil base), exactly
+// as a point Del would in resolveMerge.  (Merge operands are out of scope
+// for this spike.)  Returns op==0 when the key is absent.
+func rdGet(stack []*rdSegment, key []byte) (op uint64, val []byte) {
+	for i := len(stack) - 1; i >= 0; i-- {
+		seg := stack[i]
+		o, v, _ := seg.s.Get(key)
+		if o != 0 { // A point Set/Del/Merge at this level shadows all below.
+			return o, v
+		}
+		if seg.covers(key) {
+			return OperationDel, nil // Range tombstone: deleted base.
+		}
+	}
+	return 0, nil
+}
+
+// ---- builders over real moss *segments ----
+
+// buildMossDelSeg builds a sorted segment of point Del tombstones (the
+// status-quo way to delete a set of keys).
+func buildMossDelSeg(t testing.TB, keys [][]byte) *segment {
+	var tot int
+	for i := range keys {
+		tot += len(keys[i])
+	}
+	b, err := newBatch(nil, BatchOptions{len(keys), tot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range keys {
+		if err := b.Del(keys[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev := SkipStats
+	SkipStats = true
+	b.doSort()
+	SkipStats = prev
+	return b.segment
+}
+
+// segBytes estimates a segment's in-memory/on-disk footprint: 16 bytes of
+// kvs metadata per entry (2 uint64) plus the key-val buf.
+func segBytes(s *segment) int { return 16*s.Len() + len(s.buf) }
+
+// ---- correctness (guards the precedence rule) ----
+
+func TestSpikeDelRangeCorrect(t *testing.T) {
+	const n = 1000
+	keys := spikeKeys(n, "seq")
+	vals := make([][]byte, n) // Index-style: empty values.
+
+	base := buildMossSeg(t, keys, vals)
+
+	const dropLo, dropHi = 400, 600 // Drop [keys[400], keys[600]).
+	drop := keyRange{keys[dropLo], keys[dropHi]}
+
+	// Two representations of the same drop.
+	empty := buildMossSeg(t, nil, nil)
+	stackRange := []*rdSegment{{base, nil}, {empty, []keyRange{drop}}}
+
+	delPt := buildMossDelSeg(t, keys[dropLo:dropHi])
+	stackPoint := []*rdSegment{{base, nil}, {delPt, nil}}
+
+	for i, k := range keys {
+		wantDeleted := i >= dropLo && i < dropHi
+		for name, stack := range map[string][]*rdSegment{
+			"range": stackRange, "point": stackPoint,
+		} {
+			op, _ := rdGet(stack, k)
+			deleted := op == 0 || op == OperationDel
+			if deleted != wantDeleted {
+				t.Fatalf("%s: key[%d] deleted=%v want %v", name, i, deleted, wantDeleted)
+			}
+		}
+	}
+
+	// Precedence: a newer Set ABOVE the range tombstone must survive it.
+	revive := buildMossSeg(t, [][]byte{keys[500]}, [][]byte{[]byte("revived")})
+	stackRevive := []*rdSegment{
+		{base, nil}, {empty, []keyRange{drop}}, {revive, nil},
+	}
+	if op, v := rdGet(stackRevive, keys[500]); op != OperationSet || string(v) != "revived" {
+		t.Fatalf("revive: op=%x val=%q, want Set/revived", op, v)
+	}
+	// A sibling still inside the range (no override) stays deleted.
+	if op, _ := rdGet(stackRevive, keys[550]); op != OperationDel {
+		t.Fatalf("revive: key[550] op=%x, want Del", op)
+	}
+}
+
+func TestSpikeDelRangeSizes(t *testing.T) {
+	const n = 1000000
+	keys := spikeKeys(n, "seq")
+	const dropLo, dropHi = 400000, 600000 // Drop 200k keys (20%).
+
+	delPt := buildMossDelSeg(t, keys[dropLo:dropHi])
+	ptBytes := segBytes(delPt)
+
+	// A range tombstone stores 2 keys (lo, hi) + one entry's metadata.
+	rangeBytes := 16 + len(keys[dropLo]) + len(keys[dropHi])
+
+	t.Logf("drop of %d keys: point-Del segment=%d bytes (%d tombstones), "+
+		"range tombstone=%d bytes -> %.0fx smaller",
+		dropHi-dropLo, ptBytes, delPt.Len(), rangeBytes,
+		float64(ptBytes)/float64(rangeBytes))
+}
+
+// ---- benchmarks ----
+
+func BenchmarkSpikeDelRange(b *testing.B) {
+	const n = 1000000
+	keys := spikeKeys(n, "seq")
+	vals := make([][]byte, n) // Index-style: empty values.
+	base := buildMossSeg(b, keys, vals)
+
+	const dropLo, dropHi = 400000, 600000 // Drop 200k keys (20%).
+	drop := keyRange{keys[dropLo], keys[dropHi]}
+	rd := []keyRange{drop}
+	delKeys := keys[dropLo:dropHi]
+	empty := buildMossSeg(b, nil, nil)
+	delPt := buildMossDelSeg(b, delKeys)
+
+	stackRange := []*rdSegment{{base, nil}, {empty, rd}}
+	stackPoint := []*rdSegment{{base, nil}, {delPt, nil}}
+
+	// (1) Maintenance: cost to record the drop.  Point-Del must enumerate
+	// the range (scan base) then build M tombstones; range builds one entry.
+	b.Run("maintain/point", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			// Enumerate keys in [lo, hi) as a real reindex/drop would.
+			c, _ := base.Cursor(drop.lo, drop.hi)
+			var found [][]byte
+			for {
+				op, k, _ := c.Current()
+				if op == 0 {
+					break
+				}
+				found = append(found, k)
+				if c.Next() != nil {
+					break
+				}
+			}
+			_ = buildMossDelSeg(b, found)
+		}
+	})
+	b.Run("maintain/range", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			s := buildMossSeg(b, nil, nil)
+			_ = &rdSegment{s, []keyRange{{drop.lo, drop.hi}}}
+		}
+	})
+
+	// (2) Point Get on keys inside the dropped range (both must report gone).
+	b.Run("get-in-range/point", func(b *testing.B) {
+		benchRdGet(b, stackPoint, delKeys, true)
+	})
+	b.Run("get-in-range/range", func(b *testing.B) {
+		benchRdGet(b, stackRange, delKeys, true)
+	})
+
+	// (3) Point Get on surviving keys (outside the range).
+	live := append(append([][]byte{}, keys[:dropLo]...), keys[dropHi:]...)
+	b.Run("get-live/point", func(b *testing.B) {
+		benchRdGet(b, stackPoint, live, false)
+	})
+	b.Run("get-live/range", func(b *testing.B) {
+		benchRdGet(b, stackRange, live, false)
+	})
+
+	// (4) Full scan of surviving keys after the drop.
+	wantLive := n - (dropHi - dropLo)
+	b.Run("scan/point", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if got := scanPoint(base, delPt); got != wantLive {
+				b.Fatalf("scan point got %d want %d", got, wantLive)
+			}
+		}
+	})
+	b.Run("scan/range", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if got := scanRange(base, rd); got != wantLive {
+				b.Fatalf("scan range got %d want %d", got, wantLive)
+			}
+		}
+	})
+}
+
+// benchRdGet times rdGet over the given keys; wantDeleted asserts each key's
+// resolved state so a broken model can't post a fast bogus number.
+func benchRdGet(b *testing.B, stack []*rdSegment, keys [][]byte, wantDeleted bool) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		k := keys[benchStridedIndex(i, len(keys))]
+		op, _ := rdGet(stack, k)
+		deleted := op == 0 || op == OperationDel
+		if deleted != wantDeleted {
+			b.Fatalf("key %q deleted=%v want %v", k, deleted, wantDeleted)
+		}
+	}
+}
+
+// scanPoint counts live keys by walking base and rejecting any key present
+// in the point-Del segment (one del-Get per base key).
+func scanPoint(base, del *segment) int {
+	c, _ := base.Cursor(nil, nil)
+	n := 0
+	for {
+		op, k, _ := c.Current()
+		if op == 0 {
+			break
+		}
+		if dop, _, _ := del.Get(k); dop == 0 {
+			n++
+		}
+		if c.Next() != nil {
+			break
+		}
+	}
+	return n
+}
+
+// scanRange counts live keys by walking base and Seek()ing past each covered
+// span in one jump -- the O(log) scan skip a range tombstone enables.
+func scanRange(base *segment, rd []keyRange) int {
+	c, _ := base.Cursor(nil, nil)
+	n := 0
+	for {
+		op, k, _ := c.Current()
+		if op == 0 {
+			break
+		}
+		if cr, ok := coveringRange(rd, k); ok {
+			if c.Seek(cr.hi) != nil { // Jump straight past the deleted span.
+				break
+			}
+			continue
+		}
+		n++
+		if c.Next() != nil {
+			break
+		}
+	}
+	return n
+}

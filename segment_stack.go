@@ -158,6 +158,18 @@ func (ss *segmentStack) resolveMerge(key []byte, segStart int,
 				return nil, err
 			}
 			if val == nil {
+				// No point op at this level.  A range tombstone covering
+				// key at this level deletes it (a nil base) -- but only
+				// after ruling out a point op here, so a same-level point
+				// op wins.  covers() short-circuits when the segment has
+				// no range tombstones.
+				if rd, ok := ss.a[seg].(rangeDeleter); ok && rd.covers(key) {
+					if len(mergeOperands) == 0 {
+						return nil, nil
+					}
+					return applyMergeOperands(ss.mergeOperator(), key, nil,
+						mergeOperands)
+				}
 				continue
 			}
 			if op == OperationMerge {

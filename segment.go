@@ -121,16 +121,31 @@ type segment struct {
 	// sorted" will have needSorterCh and waitSortedCh as both nil.
 	waitSortedCh chan struct{}
 
-	totOperationSet   uint64
-	totOperationDel   uint64
-	totOperationMerge uint64
-	totKeyByte        uint64
-	totValByte        uint64
+	totOperationSet      uint64
+	totOperationDel      uint64
+	totOperationMerge    uint64
+	totOperationDelRange uint64
+	totKeyByte           uint64
+	totValByte           uint64
 
 	rootCollection *collection // Non-nil when segment is from a batch.
 
 	// In-memory index, immutable after segment initialization.
 	index *segmentKeysIndex
+
+	// rangeDels holds this segment's OperationDelRange tombstones as a
+	// sorted (by lo), coalesced list of half-open [lo, hi) intervals,
+	// built at sort/load finalization from the inline DelRange entries.
+	// It is the lookup structure for range-delete coverage; nil/empty for
+	// the common case of a segment with no range tombstones, so point
+	// reads pay only a len==0 branch.  Immutable after finalization.
+	rangeDels []keyRange
+}
+
+// keyRange is a half-open [lo, hi) key interval; a DelRange tombstone.
+type keyRange struct {
+	lo []byte
+	hi []byte
 }
 
 // See the OperationXxx consts.
@@ -181,6 +196,16 @@ func (a *segment) Del(key []byte) error {
 // unique (not repeated) within the segment.
 func (a *segment) Merge(key, val []byte) error {
 	return a.mutate(OperationMerge, key, val)
+}
+
+// DelRange records a range-delete tombstone covering
+// [startKeyInclusive, endKeyExclusive) as a single entry whose key is the
+// startKeyInclusive and whose value is the endKeyExclusive.
+func (a *segment) DelRange(startKeyInclusive, endKeyExclusive []byte) error {
+	if bytes.Compare(startKeyInclusive, endKeyExclusive) >= 0 {
+		return ErrBadRange
+	}
+	return a.mutate(OperationDelRange, startKeyInclusive, endKeyExclusive)
 }
 
 // ------------------------------------------------------
@@ -277,6 +302,8 @@ func (a *segment) mutateEx(operation uint64,
 		a.totOperationDel++
 	case OperationMerge:
 		a.totOperationMerge++
+	case OperationDelRange:
+		a.totOperationDelRange++
 	default:
 	}
 
@@ -416,8 +443,105 @@ func (a *segment) Get(key []byte) (operation uint64, val []byte, err error) {
 
 	if pos >= 0 {
 		operation, _, val = a.getOperationKeyVal(pos)
+		if operation == OperationDelRange {
+			// A range tombstone is not a point entry: it happens to be
+			// keyed by its lo bound but must not answer a point lookup.
+			// Range-delete coverage is resolved via the rangeDels
+			// side-list (see covers), not the point-lookup binary search.
+			return 0, nil, nil
+		}
 	}
 	return
+}
+
+// rangeDeleter is implemented by segments that can carry range-delete
+// tombstones.  The read path and iterator resolve coverage through this
+// unexported interface, so the public Segment interface need not widen and
+// external Segment implementers remain compatible (they simply carry no
+// range tombstones).
+type rangeDeleter interface {
+	covers(key []byte) bool
+	coveringRange(key []byte) (keyRange, bool)
+	hasRangeDels() bool
+}
+
+// hasRangeDels reports whether this segment carries any range tombstones.
+func (a *segment) hasRangeDels() bool { return len(a.rangeDels) > 0 }
+
+// covers reports whether any of this segment's range tombstones covers
+// key.  It short-circuits (one branch) for the common case of a segment
+// with no range tombstones.
+func (a *segment) covers(key []byte) bool {
+	_, ok := a.coveringRange(key)
+	return ok
+}
+
+// coveringRange returns the range tombstone covering key, if any, via an
+// O(log R) search over the sorted, coalesced rangeDels list.
+func (a *segment) coveringRange(key []byte) (keyRange, bool) {
+	rd := a.rangeDels
+	if len(rd) == 0 {
+		return keyRange{}, false
+	}
+	// Rightmost range whose lo <= key (ranges are coalesced, so at most
+	// one can contain key).
+	i := sort.Search(len(rd), func(i int) bool {
+		return bytes.Compare(rd[i].lo, key) > 0
+	})
+	if i == 0 {
+		return keyRange{}, false
+	}
+	c := rd[i-1]
+	if bytes.Compare(key, c.hi) < 0 {
+		return c, true
+	}
+	return keyRange{}, false
+}
+
+// buildRangeDels collects this segment's inline OperationDelRange entries
+// into the rangeDels side-list: sorted by lo and coalesced into disjoint
+// half-open intervals.  Called at sort/load finalization; a no-op (and no
+// scan) when the segment has no range tombstones.
+func (a *segment) buildRangeDels() {
+	if a.totOperationDelRange == 0 {
+		a.rangeDels = nil
+		return
+	}
+
+	var rds []keyRange
+	n := a.Len()
+	for pos := 0; pos < n; pos++ {
+		op, key, val := a.getOperationKeyVal(pos)
+		if op == OperationDelRange {
+			rds = append(rds, keyRange{lo: key, hi: val})
+		}
+	}
+	if len(rds) == 0 {
+		a.rangeDels = nil
+		return
+	}
+
+	sort.Slice(rds, func(i, j int) bool {
+		return bytes.Compare(rds[i].lo, rds[j].lo) < 0
+	})
+
+	// Coalesce overlapping or adjacent ranges so coveringRange's binary
+	// search sees disjoint intervals.
+	coalesced := make([]keyRange, 0, len(rds))
+	for _, r := range rds {
+		if len(coalesced) > 0 {
+			last := &coalesced[len(coalesced)-1]
+			if bytes.Compare(r.lo, last.hi) <= 0 { // Overlap or adjacency.
+				if bytes.Compare(r.hi, last.hi) > 0 {
+					last.hi = r.hi
+				}
+				continue
+			}
+		}
+		coalesced = append(coalesced, r)
+	}
+
+	a.rangeDels = coalesced
 }
 
 // Searches for the key within the in-memory index of the segment
@@ -620,6 +744,10 @@ func (a *segment) doSort() {
 	// in sorted order; a no-op for small segments.
 	a.buildInMemIndex()
 
+	// Collect any range-delete tombstones into the coverage side-list; a
+	// no-op (no scan) when the segment has no range tombstones.
+	a.buildRangeDels()
+
 	if !SkipStats {
 		go a.rootCollection.updateStats(a)
 	}
@@ -684,14 +812,22 @@ func loadBasicSegment(sloc *SegmentLoc) (Segment, error) {
 		buf = sloc.mref.buf[bufStart : bufStart+sloc.BufBytes]
 	}
 
-	return &segment{
-		kvs:             kvs,
-		buf:             buf,
-		totOperationSet: sloc.TotOpsSet,
-		totOperationDel: sloc.TotOpsDel,
-		totKeyByte:      sloc.TotKeyByte,
-		totValByte:      sloc.TotValByte,
-	}, nil
+	seg := &segment{
+		kvs:                  kvs,
+		buf:                  buf,
+		totOperationSet:      sloc.TotOpsSet,
+		totOperationDel:      sloc.TotOpsDel,
+		totKeyByte:           sloc.TotKeyByte,
+		totValByte:           sloc.TotValByte,
+		totOperationDelRange: sloc.TotOpsDelRange,
+	}
+
+	// Rebuild the range-delete coverage side-list only when the segment
+	// actually has range tombstones (a one-time scan); zero-cost otherwise,
+	// so stores that never use DelRange pay nothing on load.
+	seg.buildRangeDels()
+
+	return seg, nil
 }
 
 // ------------------------------------------------------
@@ -740,15 +876,16 @@ func persistBasicSegment(
 	close(ioCh)
 
 	return SegmentLoc{
-		Kind:       seg.Kind(),
-		KvsOffset:  uint64(kvsPos),
-		KvsBytes:   uint64(resMap["kvs"].got),
-		BufOffset:  uint64(bufPos),
-		BufBytes:   uint64(resMap["buf"].got),
-		TotOpsSet:  seg.totOperationSet,
-		TotOpsDel:  seg.totOperationDel,
-		TotKeyByte: seg.totKeyByte,
-		TotValByte: seg.totValByte,
+		Kind:           seg.Kind(),
+		KvsOffset:      uint64(kvsPos),
+		KvsBytes:       uint64(resMap["kvs"].got),
+		BufOffset:      uint64(bufPos),
+		BufBytes:       uint64(resMap["buf"].got),
+		TotOpsSet:      seg.totOperationSet,
+		TotOpsDel:      seg.totOperationDel,
+		TotKeyByte:     seg.totKeyByte,
+		TotValByte:     seg.totValByte,
+		TotOpsDelRange: seg.totOperationDelRange,
 	}, nil
 }
 
